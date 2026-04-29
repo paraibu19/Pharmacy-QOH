@@ -1,13 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { 
   Plus, Upload, Trash2, Edit2, Check, X, FileSpreadsheet, 
-  ClipboardPaste, Save, AlertCircle, Info, ArrowLeftRight, Loader2
+  ClipboardPaste, Save, AlertCircle, Info, ArrowLeftRight, Loader2,
+  AlertTriangle, Settings2, CalendarClock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import * as XLSX from 'xlsx';
-import { format } from 'date-fns';
+import { format, differenceInDays, isBefore, startOfToday } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps } from '../lib/firebaseOperations';
 
@@ -18,8 +19,45 @@ export default function AdminDashboard() {
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [alertThreshold, setAlertThreshold] = useState<number>(90);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Expiration helper
+  const parseExpDate = (dateStr: string) => {
+    if (!dateStr || dateStr === '-' || dateStr === '.') return null;
+    try {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) return d;
+      
+      const parts = dateStr.split(/[-/]/);
+      if (parts.length === 3) {
+        return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+      } else if (parts.length === 2) {
+        return new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1);
+      }
+    } catch { }
+    return null;
+  };
+
+  const expiringItems = useMemo(() => {
+    const today = startOfToday();
+    return medications.map(med => {
+      const dates = [med.expiration1, med.expiration2, med.expiration3]
+        .map(parseExpDate)
+        .filter(d => d !== null && !isBefore(d, today)) as Date[];
+      
+      if (dates.length === 0) return null;
+      
+      const nextExp = new Date(Math.min(...dates.map(d => d.getTime())));
+      const daysLeft = differenceInDays(nextExp, today);
+      
+      if (daysLeft <= alertThreshold) {
+        return { ...med, daysLeft, nextExp };
+      }
+      return null;
+    }).filter(Boolean).sort((a, b) => (a?.daysLeft || 0) - (b?.daysLeft || 0));
+  }, [medications, alertThreshold]);
 
   // Form state for new/edit
   const [form, setForm] = useState<Partial<Medication>>({
@@ -138,6 +176,103 @@ export default function AdminDashboard() {
             <Plus className="w-4 h-4" />
             Add New Item
           </button>
+        </div>
+      </div>
+
+      {/* Expiration Alerts Widget */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-3 space-y-4">
+          <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden">
+            <div className="p-4 bg-[#F27D26]/5 border-b border-[#141414]/5 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-[#F27D26]/10 rounded-lg text-[#F27D26]">
+                  <AlertTriangle size={18} />
+                </div>
+                <h3 className="font-bold text-sm">Expiration Alerts</h3>
+                <span className="bg-[#F27D26] text-white text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  {expiringItems.length}
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Alert Threshold:</span>
+                <div className="flex bg-white border border-[#141414]/10 rounded-lg p-1">
+                  {[30, 60, 90].map(val => (
+                    <button
+                      key={val}
+                      onClick={() => setAlertThreshold(val)}
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${
+                        alertThreshold === val ? 'bg-[#141414] text-white' : 'text-[#141414]/40 hover:text-[#141414]'
+                      }`}
+                    >
+                      {val}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="max-h-[300px] overflow-y-auto">
+              {expiringItems.length > 0 ? (
+                <div className="divide-y divide-[#141414]/5">
+                  {expiringItems.map(item => item && (
+                    <div key={item.id} className="p-4 flex items-center justify-between hover:bg-[#F27D26]/[0.02] transition-colors">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-[#141414]">{item.itemName}</span>
+                        <span className="text-[10px] font-mono text-[#141414]/40">{item.itemCode}</span>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Expires In</div>
+                          <div className={`text-sm font-bold ${item.daysLeft <= 15 ? 'text-red-500' : item.daysLeft <= 30 ? 'text-[#F27D26]' : 'text-amber-500'}`}>
+                            {item.daysLeft} days
+                          </div>
+                        </div>
+                        <div className="text-right min-w-[80px]">
+                          <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Qty</div>
+                          <div className="text-sm font-bold">{item.qoh}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-10 text-center text-[#141414]/20 font-bold italic text-sm">
+                  No medications expiring within {alertThreshold} days.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="bg-[#141414] text-white p-6 rounded-2xl shadow-xl h-full flex flex-col justify-between">
+            <div>
+              <div className="p-3 bg-white/10 rounded-xl w-fit mb-4 text-[#F27D26]">
+                <Settings2 size={24} />
+              </div>
+              <h3 className="text-xl font-bold mb-2">Inventory Stats</h3>
+              <p className="text-white/50 text-sm mb-6">Real-time overview of your current pharmacy stock levels.</p>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between items-center py-3 border-b border-white/10">
+                  <span className="text-sm text-white/60">Total Items</span>
+                  <span className="text-lg font-bold">{medications.length}</span>
+                </div>
+                <div className="flex justify-between items-center py-3 border-b border-white/10">
+                  <span className="text-sm text-white/60">Total Stock</span>
+                  <span className="text-lg font-bold">{medications.reduce((acc, m) => acc + m.qoh, 0)}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-8 pt-6 border-t border-white/10">
+              <div className="flex items-center gap-2 text-xs font-bold text-[#F27D26]">
+                <CalendarClock size={14} />
+                Last Update: {format(new Date(), 'HH:mm')}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
