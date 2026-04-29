@@ -5,7 +5,7 @@ import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
 import { format, differenceInDays } from 'date-fns';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { useMedications } from '../hooks/useMedications';
 
 export default function UserHome() {
@@ -44,7 +44,7 @@ export default function UserHome() {
 
   // Handle PDF Export
   const downloadPDF = () => {
-    const doc = new jsPDF() as any;
+    const doc = new jsPDF();
     const locationName = PHARMACY_NAMES[selectedLocation];
     const now = format(new Date(), "eeee, dd-MM-yyyy, hh:mm a");
     // User requested format: DayName, dd-mm-yyyy, HH:MM AM/PM
@@ -65,7 +65,7 @@ export default function UserHome() {
       m.isNew ? 'NEW' : 'Existing'
     ]);
 
-    doc.autoTable({
+    autoTable(doc, {
       startY: 30,
       head: [['Code', 'Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3', 'Status']],
       body: tableData,
