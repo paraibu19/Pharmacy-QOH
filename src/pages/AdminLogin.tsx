@@ -15,7 +15,7 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // In a real app, verify against a backend. For now, simple check.
-    if (password === 'admin123') {
+    if (password.trim() === 'admin123') {
       onLogin();
       navigate('/admin/dashboard');
     } else {
