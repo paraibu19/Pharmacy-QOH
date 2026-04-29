@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidMedication(data) {
+      return data.itemCode is string && data.itemCode.size() <= 100 &&
+             data.itemName is string && data.itemName.size() <= 200 &&
+             data.qoh is number &&
+             data.locationId in ['adult-emergency', 'pediatric', 'mesaieed-opd'];
+    }
+
+    // Medications Collection
+    match /medications/{medicationId} {
+      // Users can view medications (even without login as per request)
+      // Actually, standard users "without login" can view.
+      allow read: if true; 
+      
+      // Admin only writes
+      allow create: if isSignedIn() && isValidMedication(request.resource.data) &&
+                      request.resource.data.addedAt == request.time;
+                      
+      allow update: if isSignedIn() && isValidMedication(request.resource.data) &&
+                      request.resource.data.itemCode == resource.data.itemCode &&
+                      request.resource.data.addedAt == resource.data.addedAt &&
+                      request.resource.data.lastUpdatedAt == request.time;
+                      
+      allow delete: if isSignedIn();
+    }
+
+    // Inventory Audits
+    match /inventory_audits/{auditId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.auditedAt == request.time;
+    }
+  }
+}

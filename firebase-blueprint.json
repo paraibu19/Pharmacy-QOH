@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "Medication": {
+      "title": "Medication",
+      "description": "Represents a medication item in the pharmacy inventory",
+      "type": "object",
+      "properties": {
+        "itemCode": { "type": "string", "description": "Unique identifies for the medication" },
+        "itemName": { "type": "string", "description": "Name of the medication" },
+        "qoh": { "type": "number", "description": "Quantity on hand" },
+        "expiration1": { "type": "string", "description": "Primary expiration date" },
+        "expiration2": { "type": "string", "description": "Secondary expiration date" },
+        "expiration3": { "type": "string", "description": "Tertiary expiration date" },
+        "locationId": { "type": "string", "enum": ["adult-emergency", "pediatric", "mesaieed-opd"] },
+        "addedAt": { "type": "string", "format": "date-time", "description": "When the item was first added" },
+        "lastUpdatedAt": { "type": "string", "format": "date-time", "description": "When the item was last modified" },
+        "updatedBy": { "type": "string", "description": "UID of the admin who updated" }
+      },
+      "required": ["itemCode", "itemName", "qoh", "locationId"]
+    },
+    "InventoryAudit": {
+      "title": "Inventory Audit",
+      "description": "Records cycle count results and variances",
+      "type": "object",
+      "properties": {
+        "itemCode": { "type": "string" },
+        "locationId": { "type": "string" },
+        "physicalCount": { "type": "number" },
+        "recordedQoh": { "type": "number" },
+        "variance": { "type": "number" },
+        "auditedAt": { "type": "string", "format": "date-time" },
+        "auditedBy": { "type": "string" }
+      },
+      "required": ["itemCode", "locationId", "physicalCount", "auditedAt"]
+    }
+  },
+  "firestore": {
+    "medications": {
+      "schema": "Medication",
+      "description": "Global collection of medications across all locations"
+    },
+    "inventory_audits": {
+      "schema": "InventoryAudit",
+      "description": "Log of periodic physical inventory checks"
+    }
+  }
+}
