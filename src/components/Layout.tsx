@@ -1,7 +1,8 @@
 import { ReactNode } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud } from 'lucide-react';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
+import { db } from '../lib/firebase';
 
 interface LayoutProps {
   children: ReactNode;
@@ -10,15 +11,33 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
+  const isCloudConnected = !!db;
+
   return (
     <div className="min-h-screen bg-[#FDFCFB] text-[#141414] font-sans">
       <nav className="border-b border-[#141414]/10 bg-white sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
-            <Link to="/" className="flex items-center gap-2 group">
-              <Pill className="w-6 h-6 text-[#F27D26] group-hover:rotate-12 transition-transform" />
-              <span className="font-bold text-lg tracking-tight">Aw-Pharmacy</span>
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link to="/" className="flex items-center gap-2 group">
+                <Pill className="w-6 h-6 text-[#F27D26] group-hover:rotate-12 transition-transform" />
+                <span className="font-bold text-lg tracking-tight">Aw-Pharmacy</span>
+              </Link>
+              
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${isCloudConnected ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+                {isCloudConnected ? (
+                  <>
+                    <Cloud className="w-3 h-3" />
+                    Cloud Sync
+                  </>
+                ) : (
+                  <>
+                    <CloudOff className="w-3 h-3" />
+                    Local Mode
+                  </>
+                )}
+              </div>
+            </div>
             
             <div className="flex gap-4 items-center">
               {isAdmin ? (
