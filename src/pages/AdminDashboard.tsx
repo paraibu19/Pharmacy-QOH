@@ -31,6 +31,7 @@ export default function AdminDashboard() {
     itemCode: '',
     itemName: '',
     qoh: 0,
+    lowStockThreshold: 0,
     expiration1: '',
     expiration2: '',
     expiration3: ''
@@ -127,6 +128,7 @@ export default function AdminDashboard() {
         itemCode: String(row.itemCode || row['item code'] || row['Item Code'] || ''),
         itemName: String(row.itemName || row['item name'] || row['Item Name'] || ''),
         qoh: Number(row.qoh || row.QOH || row['Quantity'] || 0),
+        lowStockThreshold: Number(row.lowStockThreshold || row['low stock'] || row['Threshold'] || 0),
         expiration1: String(row.expiration1 || row.Expiration1 || ''),
         expiration2: String(row.expiration2 || row.Expiration2 || ''),
         expiration3: String(row.expiration3 || row.Expiration3 || ''),
@@ -148,9 +150,10 @@ export default function AdminDashboard() {
         itemCode: parts[0]?.trim(),
         itemName: parts[1]?.trim(),
         qoh: Number(parts[2]?.trim()) || 0,
-        expiration1: parts[3]?.trim() || '',
-        expiration2: parts[4]?.trim() || '',
-        expiration3: parts[5]?.trim() || '',
+        lowStockThreshold: Number(parts[3]?.trim()) || 0,
+        expiration1: parts[4]?.trim() || '',
+        expiration2: parts[5]?.trim() || '',
+        expiration3: parts[6]?.trim() || '',
         locationId: selectedLocation,
       };
     }).filter(m => m !== null) as any[];
@@ -174,7 +177,7 @@ export default function AdminDashboard() {
     
     setEditingId(null);
     setIsAdding(false);
-    setForm({ itemCode: '', itemName: '', qoh: 0, expiration1: '', expiration2: '', expiration3: '' });
+    setForm({ itemCode: '', itemName: '', qoh: 0, lowStockThreshold: 0, expiration1: '', expiration2: '', expiration3: '' });
     clearDraft();
   };
 
@@ -190,6 +193,7 @@ export default function AdminDashboard() {
       itemCode: med.itemCode,
       itemName: med.itemName,
       qoh: med.qoh,
+      lowStockThreshold: med.lowStockThreshold ?? 0,
       expiration1: med.expiration1,
       expiration2: med.expiration2,
       expiration3: med.expiration3
@@ -331,6 +335,10 @@ export default function AdminDashboard() {
                   <span className="text-sm text-white/60">Total Stock</span>
                   <span className="text-lg font-bold">{medications.reduce((acc, m) => acc + m.qoh, 0)}</span>
                 </div>
+                <div className="flex justify-between items-center py-3 border-b border-white/10">
+                  <span className="text-sm text-white/60">Low Stock Items</span>
+                  <span className="text-lg font-bold text-red-400">{medications.filter(m => m.qoh <= (m.lowStockThreshold ?? 0)).length}</span>
+                </div>
               </div>
             </div>
             
@@ -366,7 +374,7 @@ export default function AdminDashboard() {
                 <div className="space-y-4">
                   <div className="p-4 bg-white/5 rounded-xl border border-white/10">
                     <p className="text-xs font-bold text-[#F27D26] mb-2">OPTION 1: UPLOAD EXCEL</p>
-                    <p className="text-xs opacity-60 mb-4">Required columns: itemCode, itemName, QOH, Expiration1, Expiration2, Expiration3</p>
+                    <p>Required columns: itemCode, itemName, QOH, LowStockThreshold, Expiration1, Expiration2, Expiration3</p>
                     <input 
                       type="file" 
                       accept=".xlsx,.xls" 
@@ -389,7 +397,7 @@ export default function AdminDashboard() {
                     <textarea 
                       value={bulkInput}
                       onChange={(e) => setBulkInput(e.target.value)}
-                      placeholder="code,name,qoh,exp1,exp2,exp3..."
+                      placeholder="code,name,qoh,threshold,exp1,exp2,exp3..."
                       className="w-full h-32 bg-transparent border border-white/10 rounded-lg p-3 text-xs font-mono focus:outline-none focus:border-[#F27D26] transition-colors"
                     />
                     <button 
@@ -464,12 +472,26 @@ export default function AdminDashboard() {
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <input 
-                    type="number" 
-                    className="w-20 p-1 border rounded text-sm"
-                    value={form.qoh}
-                    onChange={e => setForm({...form, qoh: parseInt(e.target.value) || 0})}
-                  />
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Qty:</span>
+                      <input 
+                        type="number" 
+                        className="w-20 p-1 border rounded text-sm"
+                        value={form.qoh}
+                        onChange={e => setForm({...form, qoh: parseInt(e.target.value) || 0})}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Low Alert:</span>
+                      <input 
+                        type="number" 
+                        className="w-20 p-1 border rounded text-sm"
+                        value={form.lowStockThreshold}
+                        onChange={e => setForm({...form, lowStockThreshold: parseInt(e.target.value) || 0})}
+                      />
+                    </div>
+                  </div>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex gap-2 text-xs">
@@ -487,18 +509,28 @@ export default function AdminDashboard() {
               </tr>
             )}
 
-            {!loading && medications.map(med => (
-              <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${editingId === med.id ? 'hidden' : ''}`}>
-                <td className="px-6 py-4">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-mono font-bold text-[#141414]/40">{med.itemCode}</span>
-                    <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="text-sm font-bold">{med.qoh}</span>
-                </td>
-                <td className="px-6 py-4">
+            {!loading && medications.map(med => {
+              const isLowStock = med.qoh <= (med.lowStockThreshold ?? 0);
+              return (
+                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${editingId === med.id ? 'hidden' : ''} ${isLowStock ? 'bg-red-50/50' : ''}`}>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-mono font-bold text-[#141414]/40">{med.itemCode}</span>
+                      <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-bold ${isLowStock ? 'text-red-500' : ''}`}>{med.qoh}</span>
+                      {isLowStock && (
+                        <div className="flex items-center gap-1 bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
+                          <AlertCircle size={8} />
+                          Low
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
                   <div className="flex gap-2 font-mono text-[10px]">
                     <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration1 || '-'}</span>
                     <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration2 || '-'}</span>
@@ -512,7 +544,8 @@ export default function AdminDashboard() {
                   </div>
                 </td>
               </tr>
-            ))}
+            );
+          })}
             
             {!loading && medications.length === 0 && !isAdding && (
               <tr>
