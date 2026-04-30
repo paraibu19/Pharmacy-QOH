@@ -149,10 +149,51 @@ export default function AdminDashboard() {
         setIsImporting(true);
         setError(null);
         setSuccess(null);
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const dataBuffer = evt.target?.result;
+        const wb = XLSX.read(dataBuffer, { type: 'array', cellDates: true });
         const allMedsList: any[] = [];
         let sheetsFound = 0;
+
+        const getRowValue = (row: any, keys: string[]) => {
+          const rowKeys = Object.keys(row);
+          for (const k of keys) {
+            const normalizedK = k.toLowerCase().replace(/[\s\-_.]/g, '');
+            const found = rowKeys.find(rk => {
+              const normalizedRK = rk.toLowerCase().replace(/[\s\-_.]/g, '');
+              // Match exact, prefix, or if RK contains "exp" and the specific digit
+              const digit = normalizedK.match(/\d/)?.[0];
+              const isExp = normalizedK.includes('exp');
+              const rkHasDigit = digit && normalizedRK.includes(digit);
+              const rkIsExp = normalizedRK.includes('exp') || normalizedRK.includes('expiry');
+              
+              return normalizedRK === normalizedK || 
+                     normalizedRK.startsWith(normalizedK) || 
+                     normalizedK.startsWith(normalizedRK) ||
+                     (isExp && rkHasDigit && rkIsExp);
+            });
+            if (found !== undefined) return row[found];
+          }
+          return undefined;
+        };
+
+        const formatExp = (val: any) => {
+          if (val === undefined || val === null || val === '') return '';
+          if (val instanceof Date) {
+            // Check if date is valid
+            if (isNaN(val.getTime())) return '';
+            return format(val, 'MMM-yyyy');
+          }
+          // If it's a number (Excel serial date) and not converted by cellDates: true for some reason
+          if (typeof val === 'number' && val > 30000) {
+            try {
+              const date = XLSX.SSF.parse_date_code(val);
+              return format(new Date(date.y, date.m - 1, date.d), 'MMM-yyyy');
+            } catch (e) {
+              return String(val);
+            }
+          }
+          return String(val);
+        };
 
         wb.SheetNames.forEach(wsname => {
           let locationId: PharmacyLocation | null = null;
@@ -169,16 +210,16 @@ export default function AdminDashboard() {
           sheetsFound++;
 
           const ws = wb.Sheets[wsname];
-          const data = XLSX.utils.sheet_to_json(ws) as any[];
+          const dataRows = XLSX.utils.sheet_to_json(ws) as any[];
 
-          const sheetMeds = data.map((row) => ({
-            itemCode: String(row.itemCode || row['item code'] || row['Item Code'] || row['ItemCode'] || ''),
-            itemName: String(row.itemName || row['item name'] || row['Item Name'] || row['ItemName'] || ''),
-            qoh: Number(row.qoh || row.QOH || row['Quantity'] || row['Qty'] || row['qty'] || 0),
-            lowStockThreshold: Number(row.lowStockThreshold || row['low stock'] || row['Threshold'] || row['threshold'] || 0),
-            expiration1: String(row.expiration1 || row.Expiration1 || row.Exp1 || row.exp1 || ''),
-            expiration2: String(row.expiration2 || row.Expiration2 || row.Exp2 || row.exp2 || ''),
-            expiration3: String(row.expiration3 || row.Expiration3 || row.Exp3 || row.exp3 || ''),
+          const sheetMeds = dataRows.map((row) => ({
+            itemCode: String(getRowValue(row, ['itemCode', 'Item Code', 'code', 'Item No', 'ItemNo']) || ''),
+            itemName: String(getRowValue(row, ['itemName', 'Item Name', 'name', 'Description', 'ItemName']) || ''),
+            qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory']) || 0),
+            lowStockThreshold: Number(getRowValue(row, ['lowStockThreshold', 'low stock', 'Threshold', 'Min Stock']) || 0),
+            expiration1: formatExp(getRowValue(row, ['expiration1', 'Exp1', 'Expiry 1', 'Expiration 1', 'Expir1'])),
+            expiration2: formatExp(getRowValue(row, ['expiration2', 'Exp2', 'Expiry 2', 'Expiration 2', 'Expir2'])),
+            expiration3: formatExp(getRowValue(row, ['expiration3', 'Exp3', 'Expiry 3', 'Expiration 3', 'Expir3'])),
             locationId: locationId!,
           })).filter(m => m.itemCode && m.itemName);
 
@@ -199,7 +240,7 @@ export default function AdminDashboard() {
         setIsImporting(false);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const handlePasteImport = async () => {
