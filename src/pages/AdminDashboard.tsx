@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Plus, Upload, Trash2, Edit2, Check, X, FileSpreadsheet, 
   ClipboardPaste, Save, AlertCircle, Info, ArrowLeftRight, Loader2,
-  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search
+  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
@@ -786,11 +786,21 @@ export default function AdminDashboard() {
 
             {!loading && medications.map(med => {
               const isLowStock = med.qoh <= (med.lowStockThreshold ?? 0);
+              const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
+              
               return (
                 <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${editingId === med.id ? 'hidden' : ''} ${isLowStock ? 'bg-red-50/50' : ''}`}>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-mono font-bold text-[#141414]/40">{med.itemCode}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold text-[#141414]/40">{med.itemCode}</span>
+                        {isNew && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-[1px] bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-extrabold rounded-full tracking-tight whitespace-nowrap">
+                            <Sparkles className="w-2 h-2" />
+                            NEW
+                          </span>
+                        )}
+                      </div>
                       <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
                     </div>
                   </td>
