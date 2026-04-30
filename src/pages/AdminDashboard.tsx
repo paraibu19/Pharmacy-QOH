@@ -190,25 +190,27 @@ export default function AdminDashboard() {
 
         const formatExp = (val: any) => {
           if (val === undefined || val === null || val === '') return '';
+          
+          let dateObj: Date | null = null;
+
           if (val instanceof Date) {
-            // Check if date is valid
-            if (isNaN(val.getTime())) return '';
-            return format(val, 'dd-MM-yyyy');
-          }
-          // If it's a number (Excel serial date)
-          if (typeof val === 'number') {
+            dateObj = val;
+          } else if (typeof val === 'number') {
+            // Excel serial date fallback
             try {
-              const date = XLSX.SSF.parse_date_code(val);
-              return format(new Date(date.y, date.m - 1, date.d), 'dd-MM-yyyy');
+              const parsed = XLSX.SSF.parse_date_code(val);
+              dateObj = new Date(parsed.y, parsed.m - 1, parsed.d);
             } catch (e) {
               return String(val);
             }
+          } else if (typeof val === 'string') {
+            dateObj = parseExpDate(val);
           }
-          // If it's already a string, try to normalize it if it looks like a date
-          if (typeof val === 'string' && val.length >= 5) {
-            const parsed = parseExpDate(val);
-            if (parsed) return format(parsed, 'dd-MM-yyyy');
+
+          if (dateObj && !isNaN(dateObj.getTime())) {
+            return format(dateObj, 'dd-MM-yyyy');
           }
+          
           return String(val);
         };
 
@@ -216,12 +218,15 @@ export default function AdminDashboard() {
           let locationId: PharmacyLocation | null = null;
           const lowerName = wsname.toLowerCase().trim();
           
-          if (lowerName === 'adult') locationId = PharmacyLocation.ADULT;
-          else if (lowerName === 'pediatric') locationId = PharmacyLocation.PEDIATRIC;
-          else if (lowerName === 'mesaieed') locationId = PharmacyLocation.MESAIEED;
-          else if (lowerName.includes('adult')) locationId = PharmacyLocation.ADULT;
-          else if (lowerName.includes('pediatric')) locationId = PharmacyLocation.PEDIATRIC;
-          else if (lowerName.includes('mesaieed')) locationId = PharmacyLocation.MESAIEED;
+          // Better location keywords
+          if (lowerName.match(/adult|male/i)) locationId = PharmacyLocation.ADULT;
+          else if (lowerName.match(/pediatric|peds|child/i)) locationId = PharmacyLocation.PEDIATRIC;
+          else if (lowerName.match(/mesaieed|mesai/i)) locationId = PharmacyLocation.MESAIEED;
+
+          // Single sheet fallback
+          if (!locationId && wb.SheetNames.length === 1) {
+            locationId = selectedLocation;
+          }
 
           if (!locationId) return;
           sheetsFound++;
@@ -229,32 +234,40 @@ export default function AdminDashboard() {
           const ws = wb.Sheets[wsname];
           const dataRows = XLSX.utils.sheet_to_json(ws) as any[];
 
-          const sheetMeds = dataRows.map((row) => ({
-            itemCode: String(getRowValue(row, ['itemCode', 'Item Code', 'code', 'Item No', 'ItemNo']) || ''),
-            itemName: String(getRowValue(row, ['itemName', 'Item Name', 'name', 'Description', 'ItemName']) || ''),
-            qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory']) || 0),
-            lowStockThreshold: Number(getRowValue(row, ['lowStockThreshold', 'low stock', 'Threshold', 'Min Stock']) || 0),
-            expiration1: formatExp(getRowValue(row, ['expiration1', 'Exp1', 'Expiry 1', 'Expiration 1', 'Expir1'])),
-            expiration2: formatExp(getRowValue(row, ['expiration2', 'Exp2', 'Expiry 2', 'Expiration 2', 'Expir2'])),
-            expiration3: formatExp(getRowValue(row, ['expiration3', 'Exp3', 'Expiry 3', 'Expiration 3', 'Expir3'])),
-            locationId: locationId!,
-          })).filter(m => m.itemCode && m.itemName);
+          const sheetMeds = dataRows.map((row) => {
+            // Very permissive field mapping
+            const itemCode = String(getRowValue(row, ['itemCode', 'Code', 'ItemNo', 'Item No', 'Product Code', 'Reference']) || '');
+            const itemName = String(getRowValue(row, ['itemName', 'Name', 'Description', 'ItemName', 'Item Name', 'Product']) || '');
+            
+            if (!itemName) return null;
+
+            return {
+              itemCode: itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`, // Fallback code if missing
+              itemName,
+              qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total']) || 0),
+              lowStockThreshold: Number(getRowValue(row, ['threshold', 'Min Stock', 'Low Alert', 'Limit']) || 0),
+              expiration1: formatExp(getRowValue(row, ['exp1', 'expir1', 'expir_1', 'expiry1', 'primary exp'])),
+              expiration2: formatExp(getRowValue(row, ['exp2', 'expir2', 'expir_2', 'expiry2', 'secondary exp'])),
+              expiration3: formatExp(getRowValue(row, ['exp3', 'expir3', 'expir_3', 'expiry3', 'final exp'])),
+              locationId: locationId!,
+            };
+          }).filter(Boolean) as any[];
 
           allMedsList.push(...sheetMeds);
         });
 
         if (allMedsList.length === 0) {
-          throw new Error("No valid data found. Check sheet names (Adult, Pediatric, Mesaieed) and columns (itemCode, itemName, qty).");
+          throw new Error("No data found. Ensure your Excel has columns like 'Name' and 'Quantity'.");
         }
 
         await medicationOps.bulkAdd(allMedsList);
-        setSuccess(`Successfully imported ${allMedsList.length} items from ${sheetsFound} sheets.`);
+        setSuccess(`Success: Imported/Updated ${allMedsList.length} items to ${sheetsFound} locations.`);
         setIsBulkMode(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (error: any) {
         setError(error.message);
       } finally {
         setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
     reader.readAsArrayBuffer(file);
