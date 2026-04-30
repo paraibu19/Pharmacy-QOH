@@ -30,23 +30,28 @@ export default function UserHome() {
   }, [medications, searchQuery]);
 
   const parseExpDate = (dateStr: string) => {
-    if (!dateStr || dateStr === '-') return null;
-    // Try common formats
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) return d;
-    
-    // Try DD-MM-YYYY or MM-YYYY
-    const parts = dateStr.split(/[-/]/);
-    if (parts.length === 3) {
-      const year = parseInt(parts[2]);
-      const month = parseInt(parts[1]) - 1;
-      const day = parseInt(parts[0]);
-      return new Date(year, month, day);
-    } else if (parts.length === 2) {
-      const year = parseInt(parts[1]);
-      const month = parseInt(parts[0]) - 1;
-      return new Date(year, month, 1);
-    }
+    if (!dateStr || dateStr === '-' || dateStr === '.') return null;
+    try {
+      // Try parsing dd-mm-yyyy explicitly
+      const parts = dateStr.split(/[-/.]/);
+      if (parts.length === 3) {
+        const d = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        const y = parseInt(parts[2]);
+        const fullYear = y < 100 ? 2000 + y : y;
+        const date = new Date(fullYear, m - 1, d);
+        if (!isNaN(date.getTime())) return date;
+      } else if (parts.length === 2) {
+        const m = parseInt(parts[0]);
+        const y = parseInt(parts[1]);
+        const fullYear = y < 100 ? 2000 + y : y;
+        const date = new Date(fullYear, m - 1, 1);
+        if (!isNaN(date.getTime())) return date;
+      }
+
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) return d;
+    } catch { }
     return null;
   };
 

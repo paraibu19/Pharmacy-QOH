@@ -97,15 +97,27 @@ export default function AdminDashboard() {
   const parseExpDate = (dateStr: string) => {
     if (!dateStr || dateStr === '-' || dateStr === '.') return null;
     try {
+      // Try parsing dd-mm-yyyy explicitly first
+      const parts = dateStr.split(/[-/.]/);
+      if (parts.length === 3) {
+        const d = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        const y = parseInt(parts[2]);
+        // Handle 2-digit years if they appear
+        const fullYear = y < 100 ? 2000 + y : y;
+        const date = new Date(fullYear, m - 1, d);
+        if (!isNaN(date.getTime())) return date;
+      } else if (parts.length === 2) {
+        // Handle mm-yyyy
+        const m = parseInt(parts[0]);
+        const y = parseInt(parts[1]);
+        const fullYear = y < 100 ? 2000 + y : y;
+        const date = new Date(fullYear, m - 1, 1);
+        if (!isNaN(date.getTime())) return date;
+      }
+      
       const d = new Date(dateStr);
       if (!isNaN(d.getTime())) return d;
-      
-      const parts = dateStr.split(/[-/]/);
-      if (parts.length === 3) {
-        return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-      } else if (parts.length === 2) {
-        return new Date(parseInt(parts[1]), parseInt(parts[0]) - 1, 1);
-      }
     } catch { }
     return null;
   };
@@ -131,7 +143,7 @@ export default function AdminDashboard() {
     if (expSearchQuery) {
       const query = expSearchQuery.toLowerCase();
       result = result.filter(item => {
-        const formattedDate = format(item.nextExp, 'MMM-yyyy').toLowerCase();
+        const formattedDate = format(item.nextExp, 'dd-MM-yyyy').toLowerCase();
         return formattedDate.includes(query);
       });
     }
@@ -181,16 +193,21 @@ export default function AdminDashboard() {
           if (val instanceof Date) {
             // Check if date is valid
             if (isNaN(val.getTime())) return '';
-            return format(val, 'MMM-yyyy');
+            return format(val, 'dd-MM-yyyy');
           }
-          // If it's a number (Excel serial date) and not converted by cellDates: true for some reason
-          if (typeof val === 'number' && val > 30000) {
+          // If it's a number (Excel serial date)
+          if (typeof val === 'number') {
             try {
               const date = XLSX.SSF.parse_date_code(val);
-              return format(new Date(date.y, date.m - 1, date.d), 'MMM-yyyy');
+              return format(new Date(date.y, date.m - 1, date.d), 'dd-MM-yyyy');
             } catch (e) {
               return String(val);
             }
+          }
+          // If it's already a string, try to normalize it if it looks like a date
+          if (typeof val === 'string' && val.length >= 5) {
+            const parsed = parseExpDate(val);
+            if (parsed) return format(parsed, 'dd-MM-yyyy');
           }
           return String(val);
         };
@@ -497,7 +514,7 @@ export default function AdminDashboard() {
                         <div className="text-right">
                           <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Expires On</div>
                           <div className="text-[10px] font-bold text-[#141414]">
-                            {format(item.nextExp, 'MMM-yyyy')}
+                            {format(item.nextExp, 'dd-MM-yyyy')}
                           </div>
                         </div>
                         <div className="text-right min-w-[70px]">
