@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import * as XLSX from 'xlsx';
-import { format, differenceInDays, isBefore, startOfToday } from 'date-fns';
+import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps } from '../lib/firebaseOperations';
 
@@ -150,6 +150,29 @@ export default function AdminDashboard() {
 
     return result.sort((a, b) => (a.daysLeft || 0) - (b.daysLeft || 0));
   }, [medications, alertThreshold, expSearchQuery]);
+
+  const expirationStats = useMemo(() => {
+    const today = new Date();
+    const currentM = startOfMonth(today);
+    const nextM = startOfMonth(addMonths(today, 1));
+    const thirdM = startOfMonth(addMonths(today, 2));
+
+    let current = 0;
+    let next = 0;
+    let third = 0;
+
+    medications.forEach(med => {
+      const d1 = parseExpDate(med.expiration1);
+      if (d1) {
+        const m = startOfMonth(d1);
+        if (isSameMonth(m, currentM)) current++;
+        else if (isSameMonth(m, nextM)) next++;
+        else if (isSameMonth(m, thirdM)) third++;
+      }
+    });
+
+    return { current, next, third };
+  }, [medications]);
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -573,9 +596,17 @@ export default function AdminDashboard() {
                   <span className="text-sm text-white/60">Total Items</span>
                   <span className="text-lg font-bold">{medications.length}</span>
                 </div>
-                <div className="flex justify-between items-center py-3 border-b border-white/10">
-                  <span className="text-sm text-white/60">Total Stock</span>
-                  <span className="text-lg font-bold">{medications.reduce((acc, m) => acc + m.qoh, 0)}</span>
+                <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
+                  <span className="text-sm text-white/60">EXP1 Current Month</span>
+                  <span className="text-lg font-bold text-red-400">{expirationStats.current}</span>
+                </div>
+                <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
+                  <span className="text-sm text-white/60">EXP1 Next Month</span>
+                  <span className="text-lg font-bold text-amber-400">{expirationStats.next}</span>
+                </div>
+                <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
+                  <span className="text-sm text-white/60">EXP1 After Next Month</span>
+                  <span className="text-lg font-bold text-sky-400">{expirationStats.third}</span>
                 </div>
                 <div className="flex justify-between items-center py-3 border-b border-white/10">
                   <span className="text-sm text-white/60">Low Stock Items</span>
