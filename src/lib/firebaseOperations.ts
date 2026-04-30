@@ -59,44 +59,48 @@ export const medicationOps = {
     if (!db) throw new Error("Database not initialized");
     if (meds.length === 0) return;
     
-    // Check uniqueness for all items
-    const locationId = meds[0]?.locationId;
-    if (!locationId) return;
+    // Group meds by locationId
+    const medsByLocation = meds.reduce((acc, med) => {
+      if (!acc[med.locationId]) acc[med.locationId] = [];
+      acc[med.locationId].push(med);
+      return acc;
+    }, {} as Record<string, typeof meds>);
 
     try {
-      const itemCodes = meds.map(m => m.itemCode);
-      
-      // Firestore 'in' query supports up to 30 values.
-      // We chunk the itemCodes and check in batches.
-      const chunkSize = 30;
-      const existingCodes: string[] = [];
-      
-      for (let i = 0; i < itemCodes.length; i += chunkSize) {
-        const chunk = itemCodes.slice(i, i + chunkSize);
-        const q = query(
-          collection(db, 'medications'),
-          where('locationId', '==', locationId),
-          where('itemCode', 'in', chunk)
-        );
-        const snapshot = await getDocs(q);
-        snapshot.docs.forEach(doc => existingCodes.push(doc.data().itemCode));
-      }
-
-      if (existingCodes.length > 0) {
-        throw new Error(`Item codes already exist in this location: ${existingCodes.join(', ')}`);
-      }
-
       const batch = writeBatch(db);
       const colRef = collection(db, 'medications');
-      
-      meds.forEach(m => {
-        const newDoc = doc(colRef);
-        batch.set(newDoc, {
-          ...m,
-          addedAt: serverTimestamp(),
-          lastUpdatedAt: serverTimestamp(),
+
+      for (const [locationId, locationMeds] of Object.entries(medsByLocation)) {
+        const itemCodes = locationMeds.map(m => m.itemCode);
+        
+        // Firestore 'in' query supports up to 30 values.
+        const chunkSize = 30;
+        const existingCodes: string[] = [];
+        
+        for (let i = 0; i < itemCodes.length; i += chunkSize) {
+          const chunk = itemCodes.slice(i, i + chunkSize);
+          const q = query(
+            colRef,
+            where('locationId', '==', locationId),
+            where('itemCode', 'in', chunk)
+          );
+          const snapshot = await getDocs(q);
+          snapshot.docs.forEach(doc => existingCodes.push(doc.data().itemCode));
+        }
+
+        if (existingCodes.length > 0) {
+          throw new Error(`Item codes already exist in ${locationId}: ${existingCodes.join(', ')}`);
+        }
+
+        locationMeds.forEach(m => {
+          const newDoc = doc(colRef);
+          batch.set(newDoc, {
+            ...m,
+            addedAt: serverTimestamp(),
+            lastUpdatedAt: serverTimestamp(),
+          });
         });
-      });
+      }
 
       await batch.commit();
     } catch (error) {

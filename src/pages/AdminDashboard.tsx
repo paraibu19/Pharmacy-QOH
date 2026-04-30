@@ -130,30 +130,51 @@ export default function AdminDashboard() {
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws) as any[];
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const allMedsList: any[] = [];
 
-      const newMedsList = data.map((row) => ({
-        itemCode: String(row.itemCode || row['item code'] || row['Item Code'] || ''),
-        itemName: String(row.itemName || row['item name'] || row['Item Name'] || ''),
-        qoh: Number(row.qoh || row.QOH || row['Quantity'] || 0),
-        lowStockThreshold: Number(row.lowStockThreshold || row['low stock'] || row['Threshold'] || 0),
-        expiration1: String(row.expiration1 || row.Expiration1 || ''),
-        expiration2: String(row.expiration2 || row.Expiration2 || ''),
-        expiration3: String(row.expiration3 || row.Expiration3 || ''),
-        locationId: selectedLocation,
-      })).filter(m => m.itemCode && m.itemName);
+        wb.SheetNames.forEach(wsname => {
+          let locationId: PharmacyLocation | null = null;
+          const lowerName = wsname.toLowerCase();
+          
+          if (lowerName.includes('adult')) locationId = PharmacyLocation.ADULT;
+          else if (lowerName.includes('pediatric')) locationId = PharmacyLocation.PEDIATRIC;
+          else if (lowerName.includes('mesaieed')) locationId = PharmacyLocation.MESAIEED;
 
-    try {
-      setError(null);
-      await medicationOps.bulkAdd(newMedsList);
-      setIsBulkMode(false);
-    } catch (error: any) {
-      setError(error.message);
-    }
+          // If no match, skip or use selected as fallback? 
+          // User said the file will have these 3 sheets specifically.
+          if (!locationId) return;
+
+          const ws = wb.Sheets[wsname];
+          const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+          const sheetMeds = data.map((row) => ({
+            itemCode: String(row.itemCode || row['item code'] || row['Item Code'] || ''),
+            itemName: String(row.itemName || row['item name'] || row['Item Name'] || ''),
+            qoh: Number(row.qoh || row.QOH || row['Quantity'] || 0),
+            lowStockThreshold: Number(row.lowStockThreshold || row['low stock'] || row['Threshold'] || 0),
+            expiration1: String(row.expiration1 || row.Expiration1 || ''),
+            expiration2: String(row.expiration2 || row.Expiration2 || ''),
+            expiration3: String(row.expiration3 || row.Expiration3 || ''),
+            locationId: locationId!,
+          })).filter(m => m.itemCode && m.itemName);
+
+          allMedsList.push(...sheetMeds);
+        });
+
+        if (allMedsList.length === 0) {
+          throw new Error("No valid data found in sheets (Expected 'Adult', 'Pediatric', or 'Mesaieed' sheet names)");
+        }
+
+        setError(null);
+        await medicationOps.bulkAdd(allMedsList);
+        setIsBulkMode(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      } catch (error: any) {
+        setError(error.message);
+      }
     };
     reader.readAsBinaryString(file);
   };
@@ -242,6 +263,15 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex gap-2">
+          {/* Hidden file input for direct trigger */}
+          <input 
+            type="file" 
+            accept=".xlsx,.xls" 
+            className="hidden" 
+            ref={fileInputRef}
+            onChange={handleExcelUpload}
+          />
+          
           {hasDraft && (
             <motion.div 
               initial={{ opacity: 0, x: 10 }}
@@ -268,7 +298,7 @@ export default function AdminDashboard() {
             </motion.div>
           )}
           <button 
-            onClick={() => setIsBulkMode(!isBulkMode)}
+            onClick={() => setIsBulkMode(true)}
             className="flex items-center gap-2 px-4 py-2 border border-[#141414]/10 rounded-xl text-sm font-bold hover:bg-[#141414]/5 transition-colors"
           >
             <ArrowLeftRight className="w-4 h-4" />
@@ -434,66 +464,88 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Bulk Section */}
       <AnimatePresence>
         {isBulkMode && (
-          <motion.div 
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="bg-[#141414] text-white p-6 rounded-2xl space-y-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsBulkMode(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-4xl bg-[#141414] text-white p-8 rounded-3xl shadow-2xl space-y-6"
+            >
               <div className="flex justify-between items-center">
-                <h3 className="font-bold flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5 text-[#F27D26]" />
-                  Bulk Update for {selectedLocation}
-                </h3>
-                <button onClick={() => setIsBulkMode(false)}><X className="w-5 h-5 opacity-50 hover:opacity-100" /></button>
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-[#F27D26]/20 rounded-2xl text-[#F27D26]">
+                    <FileSpreadsheet size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold">Bulk Stock Import</h3>
+                    <p className="text-white/40 text-sm">Upload Excel or paste a list of items</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsBulkMode(false)}
+                  className="p-2 hover:bg-white/10 rounded-xl transition-colors"
+                >
+                  <X className="w-6 h-6 opacity-50" />
+                </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="p-4 bg-white/5 rounded-xl border border-white/10">
-                    <p className="text-xs font-bold text-[#F27D26] mb-2">OPTION 1: UPLOAD EXCEL</p>
-                    <p>Required columns: itemCode, itemName, QOH, LowStockThreshold, Expiration1, Expiration2, Expiration3</p>
-                    <input 
-                      type="file" 
-                      accept=".xlsx,.xls" 
-                      className="hidden" 
-                      ref={fileInputRef}
-                      onChange={handleExcelUpload}
-                    />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="p-6 bg-white/5 rounded-2xl border border-white/10 flex flex-col items-center text-center">
+                    <div className="w-16 h-16 bg-[#F27D26]/10 rounded-full flex items-center justify-center mb-4">
+                      <Upload className="w-8 h-8 text-[#F27D26]" />
+                    </div>
+                    <p className="text-sm font-bold text-white mb-2 uppercase tracking-widest">Option 1: Excel File</p>
+                    <p className="text-xs text-white/40 mb-6 leading-relaxed">
+                      Upload an Excel workbook with sheets named <br/>
+                      <span className="text-[#F27D26] font-bold">"Adult"</span>, 
+                      <span className="text-[#F27D26] font-bold"> "Pediatric"</span>, or 
+                      <span className="text-[#F27D26] font-bold"> "Mesaieed"</span>.<br/>
+                      Columns: itemCode, itemName, QOH, Threshold, Exp1, Exp2, Exp3
+                    </p>
+                    
                     <button 
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-3 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-bold transition-all border border-white/5"
+                      className="w-full py-4 bg-white text-black hover:bg-white/90 rounded-2xl text-sm font-bold transition-all shadow-xl shadow-white/5"
                     >
                       Browse Excel File
                     </button>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="p-4 bg-white/5 rounded-xl border border-white/10">
-                    <p className="text-xs font-bold text-[#F27D26] mb-2">OPTION 2: PASTE LIST</p>
+                <div className="space-y-6">
+                  <div className="p-6 bg-white/5 rounded-2xl border border-white/10">
+                    <p className="text-xs font-bold text-white mb-4 uppercase tracking-widest">Option 2: Paste CSV/Tabs</p>
                     <textarea 
                       value={bulkInput}
                       onChange={(e) => setBulkInput(e.target.value)}
                       placeholder="code,name,qoh,threshold,exp1,exp2,exp3..."
-                      className="w-full h-32 bg-transparent border border-white/10 rounded-lg p-3 text-xs font-mono focus:outline-none focus:border-[#F27D26] transition-colors"
+                      className="w-full h-40 bg-[#141414] border border-white/10 rounded-xl p-4 text-xs font-mono focus:outline-none focus:border-[#F27D26] transition-colors resize-none"
                     />
                     <button 
                       onClick={handlePasteImport}
                       disabled={!bulkInput.trim()}
-                      className="w-full mt-4 py-3 bg-[#F27D26] hover:bg-[#F27D26]/90 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                      className="w-full mt-4 py-4 bg-[#F27D26] hover:bg-[#F27D26]/90 rounded-2xl text-sm font-bold transition-all disabled:opacity-50 shadow-xl shadow-[#F27D26]/20"
                     >
-                      Process List
+                      Process & Import List to {selectedLocation}
                     </button>
+                    <p className="text-[10px] text-white/30 text-center mt-3 lowercase italic font-mono">
+                      * Paste uses current selected location ({selectedLocation})
+                    </p>
                   </div>
                 </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
