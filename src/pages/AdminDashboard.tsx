@@ -1,8 +1,8 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Plus, Upload, Trash2, Edit2, Check, X, FileSpreadsheet, 
   ClipboardPaste, Save, AlertCircle, Info, ArrowLeftRight, Loader2,
-  AlertTriangle, Settings2, CalendarClock
+  AlertTriangle, Settings2, CalendarClock, History, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
@@ -12,6 +12,8 @@ import { format, differenceInDays, isBefore, startOfToday } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps } from '../lib/firebaseOperations';
 
+const DRAFT_STORAGE_KEY = 'admin_medication_draft';
+
 export default function AdminDashboard() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const { medications, loading } = useMedications(selectedLocation);
@@ -20,8 +22,58 @@ export default function AdminDashboard() {
   const [bulkInput, setBulkInput] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [alertThreshold, setAlertThreshold] = useState<number>(90);
+  const [hasDraft, setHasDraft] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Form state for new/edit
+  const [form, setForm] = useState<Partial<Medication>>({
+    itemCode: '',
+    itemName: '',
+    qoh: 0,
+    expiration1: '',
+    expiration2: '',
+    expiration3: ''
+  });
+
+  // Check for draft on mount
+  useEffect(() => {
+    const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (savedDraft) {
+      setHasDraft(true);
+    }
+  }, []);
+
+  // Auto-save logic
+  useEffect(() => {
+    if (isAdding || editingId) {
+      const draft = {
+        form,
+        isAdding,
+        editingId,
+        locationId: selectedLocation,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    }
+  }, [form, isAdding, editingId, selectedLocation]);
+
+  const restoreDraft = () => {
+    const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (savedDraft) {
+      const { form: draftForm, isAdding: draftAdding, editingId: draftEditingId, locationId: draftLocationId } = JSON.parse(savedDraft);
+      setSelectedLocation(draftLocationId);
+      setForm(draftForm);
+      setIsAdding(draftAdding);
+      setEditingId(draftEditingId);
+      setHasDraft(false);
+    }
+  };
+
+  const clearDraft = () => {
+    localStorage.removeItem(DRAFT_STORAGE_KEY);
+    setHasDraft(false);
+  };
 
   // Expiration helper
   const parseExpDate = (dateStr: string) => {
@@ -58,16 +110,6 @@ export default function AdminDashboard() {
       return null;
     }).filter(Boolean).sort((a, b) => (a?.daysLeft || 0) - (b?.daysLeft || 0));
   }, [medications, alertThreshold]);
-
-  // Form state for new/edit
-  const [form, setForm] = useState<Partial<Medication>>({
-    itemCode: '',
-    itemName: '',
-    qoh: 0,
-    expiration1: '',
-    expiration2: '',
-    expiration3: ''
-  });
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -133,6 +175,7 @@ export default function AdminDashboard() {
     setEditingId(null);
     setIsAdding(false);
     setForm({ itemCode: '', itemName: '', qoh: 0, expiration1: '', expiration2: '', expiration3: '' });
+    clearDraft();
   };
 
   const handleDelete = async (id: string) => {
@@ -162,6 +205,31 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex gap-2">
+          {hasDraft && (
+            <motion.div 
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700"
+            >
+              <History className="w-3.5 h-3.5" />
+              Unsaved changes found
+              <div className="flex gap-1 ml-2">
+                <button 
+                  onClick={restoreDraft}
+                  className="px-2 py-1 bg-amber-200 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Restore
+                </button>
+                <button 
+                  onClick={clearDraft}
+                  className="px-2 py-1 bg-white hover:bg-red-50 rounded-md transition-colors text-red-500"
+                >
+                  Discard
+                </button>
+              </div>
+            </motion.div>
+          )}
           <button 
             onClick={() => setIsBulkMode(!isBulkMode)}
             className="flex items-center gap-2 px-4 py-2 border border-[#141414]/10 rounded-xl text-sm font-bold hover:bg-[#141414]/5 transition-colors"
@@ -412,7 +480,7 @@ export default function AdminDashboard() {
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex justify-end gap-2">
-                    <button onClick={() => { setIsAdding(false); setEditingId(null); }} className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+                    <button onClick={() => { setIsAdding(false); setEditingId(null); clearDraft(); }} className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
                     <button onClick={() => handleSave()} className="p-1.5 bg-green-50 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-colors"><Check className="w-4 h-4" /></button>
                   </div>
                 </td>
