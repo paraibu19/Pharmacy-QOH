@@ -26,6 +26,7 @@ export default function AdminDashboard() {
   const [alertThreshold, setAlertThreshold] = useState<number>(90);
   const [hasDraft, setHasDraft] = useState(false);
   const [expSearchQuery, setExpSearchQuery] = useState('');
+  const [expSearchMonth, setExpSearchMonth] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -140,11 +141,20 @@ export default function AdminDashboard() {
       return null;
     }).filter(Boolean) as (Medication & { daysLeft: number; nextExp: Date })[];
 
+    if (expSearchMonth) {
+      const [year, month] = expSearchMonth.split('-').map(Number);
+      result = result.filter(item => {
+        return item.nextExp.getFullYear() === year && (item.nextExp.getMonth() + 1) === month;
+      });
+    }
+
     if (expSearchQuery) {
       const query = expSearchQuery.toLowerCase();
       result = result.filter(item => {
         const formattedDate = format(item.nextExp, 'dd-MM-yyyy').toLowerCase();
-        return formattedDate.includes(query);
+        const itemName = item.itemName.toLowerCase();
+        const itemCode = item.itemCode.toLowerCase();
+        return formattedDate.includes(query) || itemName.includes(query) || itemCode.includes(query);
       });
     }
 
@@ -504,15 +514,33 @@ export default function AdminDashboard() {
                 </span>
               </div>
               
-              <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                <div className="relative flex-1 md:flex-none">
+                  <CalendarClock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#141414]/30" />
+                  <input 
+                    type="month" 
+                    value={expSearchMonth}
+                    onChange={(e) => setExpSearchMonth(e.target.value)}
+                    className="w-full md:w-40 pl-9 pr-2 py-1.5 bg-white border border-[#141414]/10 rounded-lg text-[10px] font-bold focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 transition-all cursor-pointer"
+                  />
+                  {expSearchMonth && (
+                    <button 
+                      onClick={() => setExpSearchMonth('')}
+                      className="absolute right-8 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#141414]/5 rounded text-[#141414]/40"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+
                 <div className="relative flex-1 md:flex-none">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#141414]/30" />
                   <input 
                     type="text" 
-                    placeholder="Search mmm-yyyy..."
+                    placeholder="Search name/code..."
                     value={expSearchQuery}
                     onChange={(e) => setExpSearchQuery(e.target.value)}
-                    className="w-full md:w-48 pl-9 pr-3 py-1.5 bg-white border border-[#141414]/10 rounded-lg text-[10px] font-bold focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 transition-all"
+                    className="w-full md:w-40 pl-9 pr-8 py-1.5 bg-white border border-[#141414]/10 rounded-lg text-[10px] font-bold focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 transition-all"
                   />
                   {expSearchQuery && (
                     <button 
