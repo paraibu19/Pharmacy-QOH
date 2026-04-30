@@ -119,7 +119,13 @@ export default function AdminInventory() {
               onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
               className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${
                 selectedLocation === loc.id 
-                  ? 'bg-[#141414] text-white' 
+                  ? loc.id === PharmacyLocation.ADULT
+                    ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
+                    : loc.id === PharmacyLocation.PEDIATRIC
+                      ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
+                      : loc.id === PharmacyLocation.MESAIEED
+                        ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
+                        : 'bg-[#141414] text-white' 
                   : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
               }`}
             >

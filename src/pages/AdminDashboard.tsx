@@ -25,6 +25,7 @@ export default function AdminDashboard() {
   const [hasDraft, setHasDraft] = useState(false);
   const [expSearchQuery, setExpSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -131,6 +132,7 @@ export default function AdminDashboard() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        setIsImporting(true);
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const allMedsList: any[] = [];
@@ -153,11 +155,11 @@ export default function AdminDashboard() {
           const sheetMeds = data.map((row) => ({
             itemCode: String(row.itemCode || row['item code'] || row['Item Code'] || ''),
             itemName: String(row.itemName || row['item name'] || row['Item Name'] || ''),
-            qoh: Number(row.qoh || row.QOH || row['Quantity'] || 0),
-            lowStockThreshold: Number(row.lowStockThreshold || row['low stock'] || row['Threshold'] || 0),
-            expiration1: String(row.expiration1 || row.Expiration1 || ''),
-            expiration2: String(row.expiration2 || row.Expiration2 || ''),
-            expiration3: String(row.expiration3 || row.Expiration3 || ''),
+            qoh: Number(row.qoh || row.QOH || row['Quantity'] || row['Qty'] || row['qty'] || 0),
+            lowStockThreshold: Number(row.lowStockThreshold || row['low stock'] || row['Threshold'] || row['threshold'] || 0),
+            expiration1: String(row.expiration1 || row.Expiration1 || row.Exp1 || row.exp1 || ''),
+            expiration2: String(row.expiration2 || row.Expiration2 || row.Exp2 || row.exp2 || ''),
+            expiration3: String(row.expiration3 || row.Expiration3 || row.Exp3 || row.exp3 || ''),
             locationId: locationId!,
           })).filter(m => m.itemCode && m.itemName);
 
@@ -174,6 +176,8 @@ export default function AdminDashboard() {
         if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (error: any) {
         setError(error.message);
+      } finally {
+        setIsImporting(false);
       }
     };
     reader.readAsBinaryString(file);
@@ -181,6 +185,7 @@ export default function AdminDashboard() {
 
   const handlePasteImport = async () => {
     try {
+      setIsImporting(true);
       setError(null);
       const rows = bulkInput.split('\n');
       const newMedsList = rows.map((row) => {
@@ -203,6 +208,8 @@ export default function AdminDashboard() {
       setIsBulkMode(false);
     } catch (error: any) {
       setError(error.message);
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -515,8 +522,10 @@ export default function AdminDashboard() {
                     
                     <button 
                       onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-4 bg-white text-black hover:bg-white/90 rounded-2xl text-sm font-bold transition-all shadow-xl shadow-white/5"
+                      disabled={isImporting}
+                      className="w-full py-4 bg-white text-black hover:bg-white/90 rounded-2xl text-sm font-bold transition-all shadow-xl shadow-white/5 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
+                      {isImporting ? <Loader2 className="animate-spin w-4 h-4" /> : null}
                       Browse Excel File
                     </button>
                   </div>
@@ -533,9 +542,10 @@ export default function AdminDashboard() {
                     />
                     <button 
                       onClick={handlePasteImport}
-                      disabled={!bulkInput.trim()}
-                      className="w-full mt-4 py-4 bg-[#F27D26] hover:bg-[#F27D26]/90 rounded-2xl text-sm font-bold transition-all disabled:opacity-50 shadow-xl shadow-[#F27D26]/20"
+                      disabled={!bulkInput.trim() || isImporting}
+                      className="w-full mt-4 py-4 bg-[#F27D26] hover:bg-[#F27D26]/90 rounded-2xl text-sm font-bold transition-all disabled:opacity-50 shadow-xl shadow-[#F27D26]/20 flex items-center justify-center gap-2"
                     >
+                      {isImporting ? <Loader2 className="animate-spin w-4 h-4" /> : null}
                       Process & Import List to {selectedLocation}
                     </button>
                     <p className="text-[10px] text-white/30 text-center mt-3 lowercase italic font-mono">
