@@ -9,27 +9,33 @@ export function useMedications(locationId?: PharmacyLocation) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const refresh = async () => {
+    if (!db) {
+      try {
+        let items = await sharedDb.getMedications();
+        if (locationId) {
+          items = items.filter(m => m.locationId === locationId);
+        }
+        items.sort((a, b) => a.itemName.localeCompare(b.itemName));
+        setMedications(items);
+      } catch (err: any) {
+        setError(err.message);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!db) {
       const loadShared = async () => {
-        try {
-          let items = await sharedDb.getMedications();
-          if (locationId) {
-            items = items.filter(m => m.locationId === locationId);
-          }
-          items.sort((a, b) => a.itemName.localeCompare(b.itemName));
-          setMedications(items);
-        } catch (err: any) {
-          setError(err.message);
-        } finally {
-          setLoading(false);
-        }
+        setLoading(true);
+        await refresh();
+        setLoading(false);
       };
 
       loadShared();
       
       // Poll for updates every 10 seconds for "synchronization"
-      const interval = setInterval(loadShared, 10000);
+      const interval = setInterval(refresh, 10000);
       return () => clearInterval(interval);
     }
 
@@ -61,5 +67,5 @@ export function useMedications(locationId?: PharmacyLocation) {
     return () => unsubscribe();
   }, [locationId]);
 
-  return { medications, loading, error };
+  return { medications, loading, error, refresh };
 }

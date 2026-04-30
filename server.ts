@@ -18,7 +18,8 @@ if (!fs.existsSync(DATA_DIR)) {
 if (!fs.existsSync(MEDS_FILE)) fs.writeFileSync(MEDS_FILE, '[]');
 if (!fs.existsSync(AUDITS_FILE)) fs.writeFileSync(AUDITS_FILE, '[]');
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // API Routes
 app.get('/api/medications', (req, res) => {
@@ -61,25 +62,38 @@ app.delete('/api/medications/:id', (req, res) => {
 });
 
 app.post('/api/medications/bulk', (req, res) => {
-  const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
-  const newMeds = req.body.map((m: any) => {
-    const existingIndex = meds.findIndex((em: any) => em.locationId === m.locationId && em.itemCode === m.itemCode);
-    if (existingIndex !== -1) {
-      meds[existingIndex] = { ...meds[existingIndex], ...m, lastUpdatedAt: new Date().toISOString() };
-      return meds[existingIndex];
-    } else {
-      const nm = {
-        ...m,
-        id: Math.random().toString(36).substring(2, 11),
-        addedAt: new Date().toISOString(),
-        lastUpdatedAt: new Date().toISOString()
-      };
-      meds.push(nm);
-      return nm;
+  try {
+    const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+    const items = req.body;
+    
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'Body must be an array of medications' });
     }
-  });
-  fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
-  res.json({ count: newMeds.length });
+
+    const newMeds = items.map((m: any) => {
+      const existingIndex = meds.findIndex((em: any) => em.locationId === m.locationId && em.itemCode === m.itemCode);
+      if (existingIndex !== -1) {
+        meds[existingIndex] = { ...meds[existingIndex], ...m, lastUpdatedAt: new Date().toISOString() };
+        return meds[existingIndex];
+      } else {
+        const nm = {
+          ...m,
+          id: Math.random().toString(36).substring(2, 11),
+          addedAt: new Date().toISOString(),
+          lastUpdatedAt: new Date().toISOString()
+        };
+        meds.push(nm);
+        return nm;
+      }
+    });
+
+    fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+    console.log(`Successfully processed bulk import of ${newMeds.length} items.`);
+    res.json({ count: newMeds.length });
+  } catch (err: any) {
+    console.error('Bulk import error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/audits', (req, res) => {

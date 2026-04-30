@@ -18,7 +18,7 @@ const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
 export default function AdminDashboard() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
-  const { medications, loading } = useMedications(selectedLocation);
+  const { medications, loading, refresh } = useMedications(selectedLocation);
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
@@ -253,6 +253,7 @@ export default function AdminDashboard() {
           return String(val);
         };
 
+        let sheetsTotal = wb.SheetNames.length;
         wb.SheetNames.forEach(wsname => {
           let locationId: PharmacyLocation | null = null;
           const lowerName = wsname.toLowerCase().trim();
@@ -263,7 +264,7 @@ export default function AdminDashboard() {
           else if (lowerName.match(/mesaieed|mesai|msd|mes/i)) locationId = PharmacyLocation.MESAIEED;
 
           // Single sheet fallback
-          if (!locationId && wb.SheetNames.length === 1) {
+          if (!locationId && sheetsTotal === 1) {
             locationId = selectedLocation;
           }
 
@@ -296,10 +297,14 @@ export default function AdminDashboard() {
         });
 
         if (allMedsList.length === 0) {
-          throw new Error("No data found. Ensure your Excel has columns like 'Name' and 'Quantity'.");
+          if (sheetsFound === 0) {
+            throw new Error(`Could not identify locations from sheet names: ${wb.SheetNames.join(', ')}. Please rename sheets to 'Adult', 'Pediatric', or 'Mesaieed'.`);
+          }
+          throw new Error("No valid medication data found in the matched sheets.");
         }
 
         await medicationOps.bulkAdd(allMedsList);
+        await refresh();
         setSuccess(`Success: Imported/Updated ${allMedsList.length} items to ${sheetsFound} locations.`);
         setIsBulkMode(false);
       } catch (error: any) {
@@ -333,7 +338,9 @@ export default function AdminDashboard() {
       }).filter(m => m !== null) as any[];
 
       await medicationOps.bulkAdd(newMedsList);
+      await refresh();
       setBulkInput('');
+      setSuccess(`Successfully imported ${newMedsList.length} items.`);
       setIsBulkMode(false);
     } catch (error: any) {
       setError(error.message);
@@ -356,6 +363,7 @@ export default function AdminDashboard() {
         } as any);
       }
       
+      await refresh();
       setEditingId(null);
       setIsAdding(false);
       setForm({ itemCode: '', itemName: '', qoh: 0, lowStockThreshold: 0, expiration1: '', expiration2: '', expiration3: '' });
@@ -370,6 +378,7 @@ export default function AdminDashboard() {
       try {
         setError(null);
         await medicationOps.delete(id);
+        await refresh();
       } catch (err: any) {
         setError(err.message || 'Failed to delete medication. Please try again.');
         console.error(err);
