@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Plus, Upload, Trash2, Edit2, Check, X, FileSpreadsheet, 
   ClipboardPaste, Save, AlertCircle, Info, ArrowLeftRight, Loader2,
-  AlertTriangle, Settings2, CalendarClock, History, RotateCcw
+  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
@@ -23,6 +23,7 @@ export default function AdminDashboard() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [alertThreshold, setAlertThreshold] = useState<number>(90);
   const [hasDraft, setHasDraft] = useState(false);
+  const [expSearchQuery, setExpSearchQuery] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -95,7 +96,7 @@ export default function AdminDashboard() {
 
   const expiringItems = useMemo(() => {
     const today = startOfToday();
-    return medications.map(med => {
+    let result = medications.map(med => {
       const dates = [med.expiration1, med.expiration2, med.expiration3]
         .map(parseExpDate)
         .filter(d => d !== null && !isBefore(d, today)) as Date[];
@@ -109,8 +110,18 @@ export default function AdminDashboard() {
         return { ...med, daysLeft, nextExp };
       }
       return null;
-    }).filter(Boolean).sort((a, b) => (a?.daysLeft || 0) - (b?.daysLeft || 0));
-  }, [medications, alertThreshold]);
+    }).filter(Boolean) as (Medication & { daysLeft: number; nextExp: Date })[];
+
+    if (expSearchQuery) {
+      const query = expSearchQuery.toLowerCase();
+      result = result.filter(item => {
+        const formattedDate = format(item.nextExp, 'MMM-yyyy').toLowerCase();
+        return formattedDate.includes(query);
+      });
+    }
+
+    return result.sort((a, b) => (a.daysLeft || 0) - (b.daysLeft || 0));
+  }, [medications, alertThreshold, expSearchQuery]);
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -255,7 +266,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-3 space-y-4">
           <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden">
-            <div className="p-4 bg-[#F27D26]/5 border-b border-[#141414]/5 flex justify-between items-center">
+            <div className="p-4 bg-[#F27D26]/5 border-b border-[#141414]/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-[#F27D26]/10 rounded-lg text-[#F27D26]">
                   <AlertTriangle size={18} />
@@ -266,20 +277,41 @@ export default function AdminDashboard() {
                 </span>
               </div>
               
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Alert Threshold:</span>
-                <div className="flex bg-white border border-[#141414]/10 rounded-lg p-1">
-                  {[30, 60, 90].map(val => (
-                    <button
-                      key={val}
-                      onClick={() => setAlertThreshold(val)}
-                      className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${
-                        alertThreshold === val ? 'bg-[#141414] text-white' : 'text-[#141414]/40 hover:text-[#141414]'
-                      }`}
+              <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                <div className="relative flex-1 md:flex-none">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#141414]/30" />
+                  <input 
+                    type="text" 
+                    placeholder="Search mmm-yyyy..."
+                    value={expSearchQuery}
+                    onChange={(e) => setExpSearchQuery(e.target.value)}
+                    className="w-full md:w-48 pl-9 pr-3 py-1.5 bg-white border border-[#141414]/10 rounded-lg text-[10px] font-bold focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 transition-all"
+                  />
+                  {expSearchQuery && (
+                    <button 
+                      onClick={() => setExpSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#141414]/5 rounded text-[#141414]/40"
                     >
-                      {val}d
+                      <X size={12} />
                     </button>
-                  ))}
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest hidden sm:inline">Alert Threshold:</span>
+                  <div className="flex bg-white border border-[#141414]/10 rounded-lg p-1">
+                    {[30, 60, 90].map(val => (
+                      <button
+                        key={val}
+                        onClick={() => setAlertThreshold(val)}
+                        className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${
+                          alertThreshold === val ? 'bg-[#141414] text-white' : 'text-[#141414]/40 hover:text-[#141414]'
+                        }`}
+                      >
+                        {val}d
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -295,9 +327,15 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex items-center gap-6">
                         <div className="text-right">
-                          <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Expires In</div>
+                          <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Expires On</div>
+                          <div className="text-[10px] font-bold text-[#141414]">
+                            {format(item.nextExp, 'MMM-yyyy')}
+                          </div>
+                        </div>
+                        <div className="text-right min-w-[70px]">
+                          <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">In</div>
                           <div className={`text-sm font-bold ${item.daysLeft <= 15 ? 'text-red-500' : item.daysLeft <= 30 ? 'text-[#F27D26]' : 'text-amber-500'}`}>
-                            {item.daysLeft} days
+                            {item.daysLeft}d
                           </div>
                         </div>
                         <div className="text-right min-w-[80px]">
