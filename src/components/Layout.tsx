@@ -28,12 +28,12 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 {isCloudConnected ? (
                   <>
                     <Cloud className="w-3 h-3" />
-                    Cloud Sync
+                    Cloud Sync Active
                   </>
                 ) : (
                   <>
                     <CloudOff className="w-3 h-3" />
-                    Local Mode
+                    Local Mode (Sync Blocked)
                   </>
                 )}
               </div>
