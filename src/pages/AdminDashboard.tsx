@@ -146,50 +146,62 @@ export default function AdminDashboard() {
         locationId: selectedLocation,
       })).filter(m => m.itemCode && m.itemName);
 
-      await medicationOps.bulkAdd(newMedsList);
-      setIsBulkMode(false);
+      try {
+        await medicationOps.bulkAdd(newMedsList);
+        setIsBulkMode(false);
+      } catch (error: any) {
+        alert(error.message);
+      }
     };
     reader.readAsBinaryString(file);
   };
 
   const handlePasteImport = async () => {
-    const rows = bulkInput.split('\n');
-    const newMedsList = rows.map((row) => {
-      const parts = row.split(/\t|,/);
-      if (parts.length < 3) return null;
-      return {
-        itemCode: parts[0]?.trim(),
-        itemName: parts[1]?.trim(),
-        qoh: Number(parts[2]?.trim()) || 0,
-        lowStockThreshold: Number(parts[3]?.trim()) || 0,
-        expiration1: parts[4]?.trim() || '',
-        expiration2: parts[5]?.trim() || '',
-        expiration3: parts[6]?.trim() || '',
-        locationId: selectedLocation,
-      };
-    }).filter(m => m !== null) as any[];
+    try {
+      const rows = bulkInput.split('\n');
+      const newMedsList = rows.map((row) => {
+        const parts = row.split(/\t|,/);
+        if (parts.length < 3) return null;
+        return {
+          itemCode: parts[0]?.trim(),
+          itemName: parts[1]?.trim(),
+          qoh: Number(parts[2]?.trim()) || 0,
+          lowStockThreshold: Number(parts[3]?.trim()) || 0,
+          expiration1: parts[4]?.trim() || '',
+          expiration2: parts[5]?.trim() || '',
+          expiration3: parts[6]?.trim() || '',
+          locationId: selectedLocation,
+        };
+      }).filter(m => m !== null) as any[];
 
-    await medicationOps.bulkAdd(newMedsList);
-    setBulkInput('');
-    setIsBulkMode(false);
+      await medicationOps.bulkAdd(newMedsList);
+      setBulkInput('');
+      setIsBulkMode(false);
+    } catch (error: any) {
+      alert(error.message);
+    }
   };
 
   const handleSave = async (id?: string) => {
     if (!form.itemCode || !form.itemName) return;
     
-    if (editingId) {
-      await medicationOps.update(editingId, form);
-    } else {
-      await medicationOps.add({
-        ...form,
-        locationId: selectedLocation,
-      } as any);
+    try {
+      if (editingId) {
+        await medicationOps.update(editingId, form);
+      } else {
+        await medicationOps.add({
+          ...form,
+          locationId: selectedLocation,
+        } as any);
+      }
+      
+      setEditingId(null);
+      setIsAdding(false);
+      setForm({ itemCode: '', itemName: '', qoh: 0, lowStockThreshold: 0, expiration1: '', expiration2: '', expiration3: '' });
+      clearDraft();
+    } catch (error: any) {
+      alert(error.message);
     }
-    
-    setEditingId(null);
-    setIsAdding(false);
-    setForm({ itemCode: '', itemName: '', qoh: 0, lowStockThreshold: 0, expiration1: '', expiration2: '', expiration3: '' });
-    clearDraft();
   };
 
   const handleDelete = async (id: string) => {
