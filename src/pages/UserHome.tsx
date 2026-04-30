@@ -137,7 +137,7 @@ export default function UserHome() {
       {/* Hero / Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight mb-2">Inventory View</h1>
+          <h1 className="text-4xl font-bold tracking-tight mb-2">User View</h1>
           <p className="text-[#141414]/60 max-w-xl">
             Real-time medication availability at Alwakra emergency pharmacies and Mesaieed OPD pharmacy.
           </p>
