@@ -139,7 +139,7 @@ export default function UserHome() {
         <div>
           <h1 className="text-4xl font-bold tracking-tight mb-2">Inventory View</h1>
           <p className="text-[#141414]/60 max-w-xl">
-            Real-time medication availability across all Qatar pharmacy locations.
+            Real-time medication availability at Alwakra emergency pharmacies and Mesaieed OPD pharmacy.
           </p>
         </div>
         
