@@ -169,6 +169,31 @@ export default function UserHome() {
         </div>
       </div>
 
+      {(qohThreshold !== '' || expStart || expEnd) && (
+        <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
+            <Filter className="w-3 h-3" />
+            Active Filters:
+          </span>
+          {qohThreshold !== '' && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
+              Max QOH: <span className="text-[#F27D26] text-xs leading-none">{qohThreshold.toLocaleString()}</span>
+            </span>
+          )}
+          {(expStart || expEnd) && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
+              Expiry: <span className="text-[#F27D26]">{expStart || 'Any'}</span> – <span className="text-[#F27D26]">{expEnd || 'Any'}</span>
+            </span>
+          )}
+          <button 
+            onClick={() => { setQohThreshold(''); setExpStart(''); setExpEnd(''); }}
+            className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
+          >
+            Clear All
+          </button>
+        </div>
+      )}
+
       {/* Controls */}
       <div className="space-y-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center bg-white p-6 rounded-2xl border border-[#141414]/10 shadow-sm">
@@ -272,7 +297,7 @@ export default function UserHome() {
                     type="number"
                     value={qohThreshold}
                     onChange={(e) => setQohThreshold(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="e.g. 50"
+                    placeholder="e.g. 1,000"
                     className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-medium"
                   />
                 </div>

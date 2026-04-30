@@ -631,23 +631,23 @@ export default function AdminDashboard() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center py-3 border-b border-white/10">
                   <span className="text-sm text-white/60">Total Items</span>
-                  <span className="text-lg font-bold">{medications.length}</span>
+                  <span className="text-lg font-bold">{medications.length.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
                   <span className="text-sm text-white/60">EXP1 Current Month</span>
-                  <span className="text-lg font-bold text-red-400">{expirationStats.current}</span>
+                  <span className="text-lg font-bold text-red-400">{expirationStats.current.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
                   <span className="text-sm text-white/60">EXP1 Next Month</span>
-                  <span className="text-lg font-bold text-amber-400">{expirationStats.next}</span>
+                  <span className="text-lg font-bold text-amber-400">{expirationStats.next.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
                   <span className="text-sm text-white/60">EXP1 After Next Month</span>
-                  <span className="text-lg font-bold text-sky-400">{expirationStats.third}</span>
+                  <span className="text-lg font-bold text-sky-400">{expirationStats.third.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-center py-3 border-b border-white/10">
                   <span className="text-sm text-white/60">Low Stock Items</span>
-                  <span className="text-lg font-bold text-red-400">{medications.filter(m => m.qoh <= (m.lowStockThreshold ?? 0)).length}</span>
+                  <span className="text-lg font-bold text-red-400">{(medications.filter(m => m.qoh <= (m.lowStockThreshold ?? 0)).length).toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -875,14 +875,21 @@ export default function AdminDashboard() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-bold ${isLowStock ? 'text-red-500' : ''}`}>{med.qoh.toLocaleString()}</span>
-                      {isLowStock && (
-                        <div className="flex items-center gap-1 bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
-                          <AlertCircle size={8} />
-                          Low
-                        </div>
-                      )}
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-bold ${isLowStock ? 'text-red-500' : ''}`}>{med.qoh.toLocaleString()}</span>
+                        {isLowStock && (
+                          <div className="flex items-center gap-1 bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
+                            <AlertCircle size={8} />
+                            Low
+                          </div>
+                        )}
+                      </div>
+                      {med.lowStockThreshold ? (
+                        <span className="text-[10px] font-medium text-[#141414]/30 uppercase tracking-tighter">
+                          Threshold: {med.lowStockThreshold.toLocaleString()}
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                   <td className="px-6 py-4">

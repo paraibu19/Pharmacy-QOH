@@ -39,7 +39,7 @@ export default function AdminInventory() {
     if (physical === undefined) return;
     
     const variance = physical - med.qoh;
-    if (confirm(`Adjust QOH for ${med.itemName}? Variance: ${variance > 0 ? '+' : ''}${variance}`)) {
+    if (confirm(`Adjust QOH for ${med.itemName}? Variance: ${variance > 0 ? '+' : ''}${variance.toLocaleString()}`)) {
       await auditOps.reconcille(med.id, physical, selectedLocation, med.itemCode, med.itemName, med.qoh);
       setPhysicalCounts(prev => {
         const next = { ...prev };
@@ -96,9 +96,9 @@ export default function AdminInventory() {
       {/* Stats Bar */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { label: 'Total Items', value: sortedMeds.length, icon: History, color: 'blue' },
-          { label: 'Variance Detected', value: Object.keys(physicalCounts).length, icon: AlertTriangle, color: 'orange' },
-          { label: 'Last Sync', value: 'Today, 10:45 AM', icon: RefreshCw, color: 'emerald' },
+          { label: 'Total Items', value: sortedMeds.length.toLocaleString(), icon: History, color: 'blue' },
+          { label: 'Variances Tracked', value: Object.keys(physicalCounts).length.toLocaleString(), icon: AlertTriangle, color: 'orange' },
+          { label: 'Last Sync', value: 'Real-time', icon: RefreshCw, color: 'emerald' },
         ].map((stat, i) => (
           <div key={i} className="bg-white p-5 rounded-2xl border border-[#141414]/10 flex items-center justify-between shadow-sm">
             <div>
