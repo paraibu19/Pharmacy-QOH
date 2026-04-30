@@ -176,7 +176,11 @@ export default function UserHome() {
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all ${
                     selectedLocation === loc.id 
-                      ? 'bg-[#F27D26] text-white shadow-md shadow-[#F27D26]/20' 
+                      ? loc.id === PharmacyLocation.ADULT
+                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-md shadow-emerald-700/10'
+                        : loc.id === PharmacyLocation.PEDIATRIC
+                          ? 'bg-sky-100 text-sky-700 border border-sky-200 shadow-md shadow-sky-700/10'
+                          : 'bg-[#F27D26] text-white shadow-md shadow-[#F27D26]/20' 
                       : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
                   }`}
                 >

@@ -504,7 +504,15 @@ export default function AdminDashboard() {
             key={loc.id}
             onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              selectedLocation === loc.id ? 'bg-white shadow-sm text-[#141414]' : 'text-[#141414]/40 hover:text-[#141414]'
+              selectedLocation === loc.id 
+                ? loc.id === PharmacyLocation.ADULT
+                  ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
+                  : loc.id === PharmacyLocation.PEDIATRIC
+                    ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
+                    : loc.id === PharmacyLocation.MESAIEED
+                      ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
+                      : 'bg-white shadow-sm text-[#141414]'
+                : 'text-[#141414]/40 hover:text-[#141414]'
             }`}
           >
             {loc.name.replace('Aw-', '')}
