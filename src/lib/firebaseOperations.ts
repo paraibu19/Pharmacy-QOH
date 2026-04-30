@@ -4,10 +4,13 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { Medication, PharmacyLocation, InventoryAudit } from '../types';
+import { localDb } from './localStorageDb';
 
 export const medicationOps = {
   async add(med: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>) {
-    if (!db) throw new Error("Database not initialized");
+    if (!db) {
+      return localDb.addMedication(med as any);
+    }
     const path = 'medications';
     
     // Check uniqueness
@@ -33,7 +36,9 @@ export const medicationOps = {
   },
 
   async update(id: string, data: Partial<Medication>) {
-    if (!db) throw new Error("Database not initialized");
+    if (!db) {
+      return localDb.updateMedication(id, data);
+    }
     const path = `medications/${id}`;
     try {
       return await updateDoc(doc(db, 'medications', id), {
@@ -46,7 +51,9 @@ export const medicationOps = {
   },
 
   async delete(id: string) {
-    if (!db) throw new Error("Database not initialized");
+    if (!db) {
+      return localDb.deleteMedication(id);
+    }
     const path = `medications/${id}`;
     try {
       return await deleteDoc(doc(db, 'medications', id));
@@ -56,7 +63,25 @@ export const medicationOps = {
   },
 
   async bulkAdd(meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[]) {
-    if (!db) throw new Error("Database not initialized");
+    if (!db) {
+      // LocalStorage duplicate check
+      const localMeds = localDb.getMedications();
+      const medsByLocation = meds.reduce((acc, med) => {
+        if (!acc[med.locationId]) acc[med.locationId] = [];
+        acc[med.locationId].push(med);
+        return acc;
+      }, {} as Record<string, typeof meds>);
+
+      for (const [locationId, locationMeds] of Object.entries(medsByLocation)) {
+        const itemCodes = locationMeds.map(m => m.itemCode);
+        const duplicates = localMeds.filter(m => m.locationId === locationId && itemCodes.includes(m.itemCode));
+        if (duplicates.length > 0) {
+          throw new Error(`Some item codes already exist in ${locationId}. Please check your file.`);
+        }
+      }
+      return localDb.bulkAdd(meds as any);
+    }
+
     if (meds.length === 0) return;
     
     // Group meds by locationId
@@ -111,7 +136,23 @@ export const medicationOps = {
 
 export const auditOps = {
   async reconcille(medId: string, physicalCount: number, locationId: PharmacyLocation, itemCode: string, itemName: string, recordedQoh: number) {
-    if (!db) throw new Error("Database not initialized");
+    if (!db) {
+      localDb.updateMedication(medId, { qoh: physicalCount });
+      const audits = localDb.getAudits();
+      audits.push({
+        id: Math.random().toString(),
+        itemCode,
+        itemName,
+        locationId,
+        physicalCount,
+        recordedQoh,
+        variance: physicalCount - recordedQoh,
+        auditedAt: new Date(),
+      } as any);
+      localDb.saveAudits(audits);
+      return;
+    }
+
     const batch = writeBatch(db);
     
     // 1. Update medication QOH
@@ -140,3 +181,4 @@ export const auditOps = {
     }
   }
 };
+

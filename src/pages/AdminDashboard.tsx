@@ -12,6 +12,8 @@ import { format, differenceInDays, isBefore, startOfToday } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps } from '../lib/firebaseOperations';
 
+import { db } from '../lib/firebase';
+
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
 export default function AdminDashboard() {
@@ -25,9 +27,21 @@ export default function AdminDashboard() {
   const [hasDraft, setHasDraft] = useState(false);
   const [expSearchQuery, setExpSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-dismiss alerts
+  useEffect(() => {
+    if (success || error) {
+      const timer = setTimeout(() => {
+        setSuccess(null);
+        setError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [success, error]);
 
   // Form state for new/edit
   const [form, setForm] = useState<Partial<Medication>>({
@@ -133,28 +147,33 @@ export default function AdminDashboard() {
     reader.onload = async (evt) => {
       try {
         setIsImporting(true);
+        setError(null);
+        setSuccess(null);
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
         const allMedsList: any[] = [];
+        let sheetsFound = 0;
 
         wb.SheetNames.forEach(wsname => {
           let locationId: PharmacyLocation | null = null;
-          const lowerName = wsname.toLowerCase();
+          const lowerName = wsname.toLowerCase().trim();
           
-          if (lowerName.includes('adult')) locationId = PharmacyLocation.ADULT;
+          if (lowerName === 'adult') locationId = PharmacyLocation.ADULT;
+          else if (lowerName === 'pediatric') locationId = PharmacyLocation.PEDIATRIC;
+          else if (lowerName === 'mesaieed') locationId = PharmacyLocation.MESAIEED;
+          else if (lowerName.includes('adult')) locationId = PharmacyLocation.ADULT;
           else if (lowerName.includes('pediatric')) locationId = PharmacyLocation.PEDIATRIC;
           else if (lowerName.includes('mesaieed')) locationId = PharmacyLocation.MESAIEED;
 
-          // If no match, skip or use selected as fallback? 
-          // User said the file will have these 3 sheets specifically.
           if (!locationId) return;
+          sheetsFound++;
 
           const ws = wb.Sheets[wsname];
           const data = XLSX.utils.sheet_to_json(ws) as any[];
 
           const sheetMeds = data.map((row) => ({
-            itemCode: String(row.itemCode || row['item code'] || row['Item Code'] || ''),
-            itemName: String(row.itemName || row['item name'] || row['Item Name'] || ''),
+            itemCode: String(row.itemCode || row['item code'] || row['Item Code'] || row['ItemCode'] || ''),
+            itemName: String(row.itemName || row['item name'] || row['Item Name'] || row['ItemName'] || ''),
             qoh: Number(row.qoh || row.QOH || row['Quantity'] || row['Qty'] || row['qty'] || 0),
             lowStockThreshold: Number(row.lowStockThreshold || row['low stock'] || row['Threshold'] || row['threshold'] || 0),
             expiration1: String(row.expiration1 || row.Expiration1 || row.Exp1 || row.exp1 || ''),
@@ -167,11 +186,11 @@ export default function AdminDashboard() {
         });
 
         if (allMedsList.length === 0) {
-          throw new Error("No valid data found in sheets (Expected 'Adult', 'Pediatric', or 'Mesaieed' sheet names)");
+          throw new Error("No valid data found. Check sheet names (Adult, Pediatric, Mesaieed) and columns (itemCode, itemName, qty).");
         }
 
-        setError(null);
         await medicationOps.bulkAdd(allMedsList);
+        setSuccess(`Successfully imported ${allMedsList.length} items from ${sheetsFound} sheets.`);
         setIsBulkMode(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (error: any) {
@@ -264,8 +283,16 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Medication Management</h1>
+        <div className="flex flex-col">
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-[#141414]">Medication Management</h1>
+            {!db && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-amber-700 border border-amber-200 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm">
+                <AlertCircle className="w-3 h-3" />
+                Local Storage Mode
+              </span>
+            )}
+          </div>
           <p className="text-[#141414]/50">Add, update or delete pharmacy stock items</p>
         </div>
         
@@ -327,7 +354,7 @@ export default function AdminDashboard() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between gap-4"
+            className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between gap-4 shadow-sm"
           >
             <div className="flex items-center gap-3 text-red-700">
               <AlertCircle size={18} />
@@ -336,6 +363,25 @@ export default function AdminDashboard() {
             <button 
               onClick={() => setError(null)}
               className="p-1 hover:bg-red-100 rounded-lg transition-colors text-red-500"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+        {success && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-4 shadow-sm"
+          >
+            <div className="flex items-center gap-3 text-emerald-700">
+              <Check size={18} />
+              <p className="text-sm font-bold">{success}</p>
+            </div>
+            <button 
+              onClick={() => setSuccess(null)}
+              className="p-1 hover:bg-emerald-100 rounded-lg transition-colors text-emerald-500"
             >
               <X size={16} />
             </button>

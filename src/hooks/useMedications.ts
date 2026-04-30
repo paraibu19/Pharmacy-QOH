@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Medication, PharmacyLocation } from '../types';
+import { localDb } from '../lib/localStorageDb';
 
 export function useMedications(locationId?: PharmacyLocation) {
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -10,8 +11,22 @@ export function useMedications(locationId?: PharmacyLocation) {
 
   useEffect(() => {
     if (!db) {
-      setLoading(false);
-      return;
+      const loadLocal = () => {
+        let items = localDb.getMedications();
+        if (locationId) {
+          items = items.filter(m => m.locationId === locationId);
+        }
+        // Simple sort since it's local
+        items.sort((a, b) => a.itemName.localeCompare(b.itemName));
+        setMedications(items);
+        setLoading(false);
+      };
+
+      loadLocal();
+      
+      // Listen for local updates
+      window.addEventListener('local-storage-update', loadLocal);
+      return () => window.removeEventListener('local-storage-update', loadLocal);
     }
 
     setLoading(true);
