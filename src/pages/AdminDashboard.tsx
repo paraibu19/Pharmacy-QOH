@@ -820,18 +820,20 @@ export default function AdminDashboard() {
                       <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Qty:</span>
                       <input 
                         type="number" 
+                        step="any"
                         className="w-20 p-1 border rounded text-sm"
                         value={form.qoh}
-                        onChange={e => setForm({...form, qoh: parseInt(e.target.value) || 0})}
+                        onChange={e => setForm({...form, qoh: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
                       />
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Low Alert:</span>
                       <input 
                         type="number" 
+                        step="any"
                         className="w-20 p-1 border rounded text-sm"
                         value={form.lowStockThreshold}
-                        onChange={e => setForm({...form, lowStockThreshold: parseInt(e.target.value) || 0})}
+                        onChange={e => setForm({...form, lowStockThreshold: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
                       />
                     </div>
                   </div>

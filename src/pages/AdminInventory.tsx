@@ -30,7 +30,7 @@ export default function AdminInventory() {
   const handlePhysicalCountChange = (id: string, value: string) => {
     setPhysicalCounts(prev => ({
       ...prev,
-      [id]: parseInt(value) || 0
+      [id]: value === '' ? 0 : parseFloat(value)
     }));
   };
 
@@ -191,6 +191,7 @@ export default function AdminInventory() {
                     <td className="px-6 py-4">
                       <input
                         type="number"
+                        step="any"
                         min="0"
                         value={physicalCounts[med.id] ?? ''}
                         placeholder={med.qoh.toLocaleString()}

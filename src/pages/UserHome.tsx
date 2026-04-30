@@ -295,6 +295,7 @@ export default function UserHome() {
                   </label>
                   <input
                     type="number"
+                    step="any"
                     value={qohThreshold}
                     onChange={(e) => setQohThreshold(e.target.value === '' ? '' : Number(e.target.value))}
                     placeholder="e.g. 1,000"
