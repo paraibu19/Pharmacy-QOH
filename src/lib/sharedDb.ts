@@ -2,7 +2,7 @@ import { Medication, InventoryAudit } from '../types';
 
 export const sharedDb = {
   async getMedications(): Promise<Medication[]> {
-    const res = await fetch('/api/medications');
+    const res = await fetch(`/api/medications?t=${Date.now()}`);
     return res.json();
   },
 
@@ -37,7 +37,7 @@ export const sharedDb = {
   },
 
   async getAudits(): Promise<InventoryAudit[]> {
-    const res = await fetch('/api/audits');
+    const res = await fetch(`/api/audits?t=${Date.now()}`);
     return res.json();
   },
 

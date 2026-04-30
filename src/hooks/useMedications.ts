@@ -8,8 +8,11 @@ export function useMedications(locationId?: PharmacyLocation) {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastSynced, setLastSynced] = useState<Date>(new Date());
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  const refresh = async () => {
+  const refresh = async (showLoading = false) => {
+    if (showLoading) setIsSyncing(true);
     if (!db) {
       try {
         let items = await sharedDb.getMedications();
@@ -18,8 +21,11 @@ export function useMedications(locationId?: PharmacyLocation) {
         }
         items.sort((a, b) => a.itemName.localeCompare(b.itemName));
         setMedications(items);
+        setLastSynced(new Date());
       } catch (err: any) {
         setError(err.message);
+      } finally {
+        if (showLoading) setIsSyncing(false);
       }
     }
   };
@@ -34,8 +40,8 @@ export function useMedications(locationId?: PharmacyLocation) {
 
       loadShared();
       
-      // Poll for updates every 10 seconds for "synchronization"
-      const interval = setInterval(refresh, 10000);
+      // Poll for updates every 5 seconds for "synchronization"
+      const interval = setInterval(() => refresh(), 5000);
       return () => clearInterval(interval);
     }
 
@@ -55,6 +61,7 @@ export function useMedications(locationId?: PharmacyLocation) {
           items.push({ id: doc.id, ...doc.data() } as Medication);
         });
         setMedications(items);
+        setLastSynced(new Date());
         setLoading(false);
       },
       (err) => {
@@ -67,5 +74,5 @@ export function useMedications(locationId?: PharmacyLocation) {
     return () => unsubscribe();
   }, [locationId]);
 
-  return { medications, loading, error, refresh };
+  return { medications, loading, error, refresh, lastSynced, isSyncing };
 }

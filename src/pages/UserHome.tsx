@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Download, MapPin, Sparkles, Filter, Loader2, X } from 'lucide-react';
+import { Search, Download, MapPin, Sparkles, Filter, Loader2, X, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
@@ -18,7 +18,7 @@ export default function UserHome() {
   
   const [showSuggestions, setShowSuggestions] = useState(false);
   
-  const { medications, loading } = useMedications(selectedLocation);
+  const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
 
   const suggestions = useMemo(() => {
     if (searchQuery.length < 1) return [];
@@ -144,6 +144,17 @@ export default function UserHome() {
         </div>
         
         <div className="flex gap-3">
+          <button 
+            onClick={() => refresh(true)}
+            disabled={isSyncing}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
+              isSyncing ? 'bg-[#141414]/5 text-[#141414]/40' : 'bg-[#141414]/5 text-[#141414]/40 hover:bg-[#141414]/10'
+            }`}
+          >
+            {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            Synced {format(lastSynced, 'HH:mm')}
+          </button>
+
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all ${

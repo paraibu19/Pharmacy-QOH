@@ -13,7 +13,7 @@ export default function AdminInventory() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   
-  const { medications, loading } = useMedications(selectedLocation);
+  const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>({});
 
   const sortedMeds = useMemo(() => {
@@ -98,14 +98,28 @@ export default function AdminInventory() {
         {[
           { label: 'Total Items', value: sortedMeds.length.toLocaleString(), icon: History, color: 'blue' },
           { label: 'Variances Tracked', value: Object.keys(physicalCounts).length.toLocaleString(), icon: AlertTriangle, color: 'orange' },
-          { label: 'Last Sync', value: 'Real-time', icon: RefreshCw, color: 'emerald' },
+          { 
+            label: 'System Sync', 
+            value: isSyncing ? 'Syncing...' : format(lastSynced, 'HH:mm:ss'), 
+            icon: RefreshCw, 
+            color: 'emerald',
+            interactive: true,
+            onClick: () => refresh(true)
+          },
         ].map((stat, i) => (
-          <div key={i} className="bg-white p-5 rounded-2xl border border-[#141414]/10 flex items-center justify-between shadow-sm">
+          <div 
+            key={i} 
+            onClick={stat.onClick}
+            className={`bg-white p-5 rounded-2xl border border-[#141414]/10 flex items-center justify-between shadow-sm ${stat.interactive ? 'cursor-pointer hover:bg-[#141414]/[0.02] active:scale-[0.98] transition-all' : ''}`}
+          >
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1">{stat.label}</p>
-              <p className="text-2xl font-black">{stat.value}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-2xl font-black">{stat.value}</p>
+                {stat.interactive && isSyncing && <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />}
+              </div>
             </div>
-            <stat.icon className={`w-8 h-8 opacity-20`} />
+            <stat.icon className={`w-8 h-8 opacity-20 ${stat.interactive && isSyncing ? 'animate-spin' : ''}`} />
           </div>
         ))}
       </div>

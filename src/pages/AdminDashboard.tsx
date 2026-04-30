@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Plus, Upload, Trash2, Edit2, Check, X, FileSpreadsheet, 
   ClipboardPaste, Save, AlertCircle, Info, ArrowLeftRight, Loader2,
-  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles
+  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
@@ -18,7 +18,7 @@ const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
 export default function AdminDashboard() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
-  const { medications, loading, refresh } = useMedications(selectedLocation);
+  const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
@@ -444,12 +444,25 @@ export default function AdminDashboard() {
         <div className="flex flex-col">
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold text-[#141414]">Medication Management</h1>
-            {!db && (
-              <span className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 border border-blue-200 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm">
-                <Sparkles className="w-3 h-3" />
-                Shared Server Sync
+            <button 
+              onClick={() => refresh(true)}
+              disabled={isSyncing}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all ${
+                db 
+                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+                : 'bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200'
+              } disabled:opacity-50`}
+            >
+              {isSyncing ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                db ? <Check className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />
+              )}
+              {db ? 'Real-time Sync' : 'Server Sync'}
+              <span className="opacity-50 font-medium ml-1">
+                {format(lastSynced, 'HH:mm:ss')}
               </span>
-            )}
+            </button>
           </div>
           <p className="text-[#141414]/50">Add, update or delete pharmacy stock items</p>
         </div>
