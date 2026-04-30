@@ -794,11 +794,13 @@ export default function AdminDashboard() {
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-mono font-bold text-[#141414]/40">{med.itemCode}</span>
-                        {isNew && (
+                        {isNew ? (
                           <span className="inline-flex items-center gap-1 px-1.5 py-[1px] bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-extrabold rounded-full tracking-tight whitespace-nowrap">
                             <Sparkles className="w-2 h-2" />
                             NEW
                           </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-[#141414]/20">-</span>
                         )}
                       </div>
                       <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>

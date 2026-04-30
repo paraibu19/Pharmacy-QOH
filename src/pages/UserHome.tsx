@@ -364,7 +364,7 @@ export default function UserHome() {
                           NEW
                         </span>
                       ) : (
-                        <span className="text-[10px] font-bold text-[#141414]/20">STABLE</span>
+                        <span className="text-[10px] font-bold text-[#141414]/20 ml-2">-</span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm font-mono font-medium text-[#141414]/80">{med.itemCode}</td>

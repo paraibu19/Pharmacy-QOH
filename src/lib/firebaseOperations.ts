@@ -70,15 +70,14 @@ export const medicationOps = {
       meds.forEach(med => {
         const existingIndex = medsToSave.findIndex(m => m.locationId === med.locationId && m.itemCode === med.itemCode);
         if (existingIndex !== -1) {
-          // Update existing - Reset addedAt for New status timer
+          // Update existing - Preserve original addedAt
           medsToSave[existingIndex] = {
             ...medsToSave[existingIndex],
             ...med,
-            addedAt: new Date().toISOString(),
             lastUpdatedAt: new Date().toISOString()
           };
         } else {
-          // Add new
+          // Add new - Mark as NEW
           medsToSave.push({
             ...med,
             id: Math.random().toString(36).substring(2, 11),
@@ -127,15 +126,14 @@ export const medicationOps = {
 
         locationMeds.forEach(m => {
           if (existingMeds[m.itemCode]) {
-            // Update - Reset addedAt so it appears "New" for 10 days after this upload
+            // Update - Preserve original addedAt so status naturally changes to '-' after 10 days
             const medRef = doc(db, 'medications', existingMeds[m.itemCode]);
             batch.update(medRef, {
               ...m,
-              addedAt: serverTimestamp(),
               lastUpdatedAt: serverTimestamp(),
             });
           } else {
-            // Create
+            // Create - Genuinely new item, will show "NEW" for 10 days
             const newDoc = doc(colRef);
             batch.set(newDoc, {
               ...m,
