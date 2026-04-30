@@ -24,7 +24,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 <span className="font-bold text-lg tracking-tight">Aw-Pharmacy</span>
               </Link>
               
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${isCloudConnected ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'}`}>
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${isCloudConnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
                 {isCloudConnected ? (
                   <>
                     <Cloud className="w-3 h-3" />
@@ -32,8 +32,8 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                   </>
                 ) : (
                   <>
-                    <CloudOff className="w-3 h-3" />
-                    Local Mode (Sync Blocked)
+                    <Cloud className="w-3 h-3" />
+                    Server Sync Active
                   </>
                 )}
               </div>

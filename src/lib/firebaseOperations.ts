@@ -3,13 +3,13 @@ import {
   serverTimestamp, writeBatch, query, where, getDocs 
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { Medication, PharmacyLocation, InventoryAudit } from '../types';
-import { localDb } from './localStorageDb';
+import { Medication, PharmacyLocation } from '../types';
+import { sharedDb } from './sharedDb';
 
 export const medicationOps = {
   async add(med: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>) {
     if (!db) {
-      return localDb.addMedication(med as any);
+      return sharedDb.addMedication(med);
     }
     const path = 'medications';
     
@@ -37,7 +37,7 @@ export const medicationOps = {
 
   async update(id: string, data: Partial<Medication>) {
     if (!db) {
-      return localDb.updateMedication(id, data);
+      return sharedDb.updateMedication(id, data);
     }
     const path = `medications/${id}`;
     try {
@@ -52,7 +52,7 @@ export const medicationOps = {
 
   async delete(id: string) {
     if (!db) {
-      return localDb.deleteMedication(id);
+      return sharedDb.deleteMedication(id);
     }
     const path = `medications/${id}`;
     try {
@@ -64,31 +64,7 @@ export const medicationOps = {
 
   async bulkAdd(meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[]) {
     if (!db) {
-      const localMeds = localDb.getMedications();
-      const medsToSave = [...localMeds];
-
-      meds.forEach(med => {
-        const existingIndex = medsToSave.findIndex(m => m.locationId === med.locationId && m.itemCode === med.itemCode);
-        if (existingIndex !== -1) {
-          // Update existing - Preserve original addedAt
-          medsToSave[existingIndex] = {
-            ...medsToSave[existingIndex],
-            ...med,
-            lastUpdatedAt: new Date().toISOString()
-          };
-        } else {
-          // Add new - Mark as NEW
-          medsToSave.push({
-            ...med,
-            id: Math.random().toString(36).substring(2, 11),
-            addedAt: new Date().toISOString(),
-            lastUpdatedAt: new Date().toISOString()
-          } as Medication);
-        }
-      });
-
-      localDb.saveMedications(medsToSave);
-      return;
+      return sharedDb.bulkAdd(meds);
     }
 
     if (meds.length === 0) return;
@@ -154,20 +130,15 @@ export const medicationOps = {
 export const auditOps = {
   async reconcille(medId: string, physicalCount: number, locationId: PharmacyLocation, itemCode: string, itemName: string, recordedQoh: number) {
     if (!db) {
-      localDb.updateMedication(medId, { qoh: physicalCount });
-      const audits = localDb.getAudits();
-      audits.push({
-        id: Math.random().toString(),
+      await sharedDb.updateMedication(medId, { qoh: physicalCount });
+      return sharedDb.addAudit({
         itemCode,
         itemName,
         locationId,
         physicalCount,
         recordedQoh,
         variance: physicalCount - recordedQoh,
-        auditedAt: new Date(),
-      } as any);
-      localDb.saveAudits(audits);
-      return;
+      });
     }
 
     const batch = writeBatch(db);
