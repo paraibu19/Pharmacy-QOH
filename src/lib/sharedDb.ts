@@ -48,5 +48,9 @@ export const sharedDb = {
       body: JSON.stringify(audit)
     });
     return res.json();
+  },
+
+  async reset(): Promise<void> {
+    await fetch('/api/system/reset', { method: 'POST' });
   }
 };

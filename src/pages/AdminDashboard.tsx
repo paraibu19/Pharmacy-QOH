@@ -10,7 +10,7 @@ import { LOCATIONS } from '../constants';
 import * as XLSX from 'xlsx';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
-import { medicationOps } from '../lib/firebaseOperations';
+import { medicationOps, systemOps } from '../lib/firebaseOperations';
 
 import { db } from '../lib/firebase';
 
@@ -30,6 +30,10 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -352,6 +356,18 @@ export default function AdminDashboard() {
   const handleSave = async (id?: string) => {
     if (!form.itemCode || !form.itemName) return;
     
+    // Check for duplicate item code within the same location
+    const formattedCode = form.itemCode.trim().toLowerCase();
+    const isDuplicate = medications.some(m => 
+      m.itemCode.trim().toLowerCase() === formattedCode && 
+      m.id !== editingId
+    );
+
+    if (isDuplicate) {
+      setError(`Duplicate Item Code: "${form.itemCode}" already exists in this location.`);
+      return;
+    }
+    
     try {
       setError(null);
       if (editingId) {
@@ -397,6 +413,29 @@ export default function AdminDashboard() {
       expiration2: med.expiration2,
       expiration3: med.expiration3
     });
+  };
+
+  const handleSystemReset = async () => {
+    const currentAdminPassword = localStorage.getItem('adminPassword') || 'admin123';
+    
+    if (resetPassword !== currentAdminPassword) {
+      setResetError('Incorrect password. Reset aborted.');
+      return;
+    }
+
+    try {
+      setIsResetting(true);
+      setResetError('');
+      await systemOps.resetAll();
+      await refresh();
+      setSuccess('Application has been successfully reset.');
+      setIsResetModalOpen(false);
+      setResetPassword('');
+    } catch (err: any) {
+      setResetError(err.message || 'Reset failed.');
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   return (
@@ -921,6 +960,119 @@ export default function AdminDashboard() {
           </tbody>
         </table>
       </div>
+
+      {/* Danger Zone */}
+      <div className="mt-12 p-8 bg-red-50/30 border border-red-100 rounded-3xl">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-red-600">
+              <AlertCircle size={20} />
+              <h3 className="text-lg font-bold uppercase tracking-tight">Danger Zone</h3>
+            </div>
+            <p className="text-sm text-red-600/60 max-w-md">
+              Resetting will permanently delete all medications across all locations and clear the entire audit history. This action cannot be undone.
+            </p>
+          </div>
+          <button 
+            onClick={() => setIsResetModalOpen(true)}
+            className="px-6 py-4 bg-red-600 text-white rounded-2xl text-sm font-bold hover:bg-red-700 transition-all shadow-xl shadow-red-200 flex items-center gap-2"
+          >
+            <RotateCcw className="w-5 h-5" />
+            Reset Application Data
+          </button>
+        </div>
+      </div>
+
+      {/* Global Reset Confirmation Modal */}
+      <AnimatePresence>
+        {isResetModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-hidden">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                if (!isResetting) {
+                  setIsResetModalOpen(false);
+                  setResetPassword('');
+                  setResetError('');
+                }
+              }}
+              className="absolute inset-0 bg-red-950/20 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="relative w-full max-w-md bg-white p-8 rounded-[32px] shadow-2xl border border-red-100 space-y-6"
+            >
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center text-red-600 animate-pulse">
+                  <AlertTriangle size={40} />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-2xl font-bold text-[#141414]">Master System Reset</h3>
+                  <p className="text-sm text-[#141414]/60">
+                    This will wipe all data across Adult, Pediatric, and Mesaieed pharmacies.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-4 border-t border-[#141414]/5">
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                    Re-enter Admin Password
+                  </label>
+                  <input 
+                    type="password"
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-5 py-4 bg-[#141414]/5 border border-transparent rounded-2xl focus:bg-white focus:border-red-500 transition-all font-bold tracking-widest"
+                    autoFocus
+                  />
+                </div>
+
+                {resetError && (
+                  <motion.p 
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="text-red-500 text-xs font-bold ml-1 text-center"
+                  >
+                    {resetError}
+                  </motion.p>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button 
+                    onClick={() => {
+                      setIsResetModalOpen(false);
+                      setResetPassword('');
+                      setResetError('');
+                    }}
+                    disabled={isResetting}
+                    className="py-4 bg-[#141414]/5 rounded-2xl text-sm font-bold hover:bg-[#141414]/10 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleSystemReset}
+                    disabled={!resetPassword || isResetting}
+                    className="py-4 bg-red-600 text-white rounded-2xl text-sm font-bold hover:bg-red-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isResetting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    Wipe Data
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

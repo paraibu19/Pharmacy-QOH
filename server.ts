@@ -113,6 +113,12 @@ app.post('/api/audits', (req, res) => {
   res.status(201).json(newAudit);
 });
 
+app.post('/api/system/reset', (req, res) => {
+  fs.writeFileSync(MEDS_FILE, '[]');
+  fs.writeFileSync(AUDITS_FILE, '[]');
+  res.json({ success: true });
+});
+
 async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
