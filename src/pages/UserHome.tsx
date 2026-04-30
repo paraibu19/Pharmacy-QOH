@@ -32,23 +32,25 @@ export default function UserHome() {
   const parseExpDate = (dateStr: string) => {
     if (!dateStr || dateStr === '-' || dateStr === '.') return null;
     try {
-      // Try parsing dd-mm-yyyy explicitly
+      // Try parsing dd-mm-yyyy explicitly first
       const parts = dateStr.split(/[-/.]/);
       if (parts.length === 3) {
         const d = parseInt(parts[0]);
         const m = parseInt(parts[1]);
         const y = parseInt(parts[2]);
+        // Handle 2-digit years if they appear
         const fullYear = y < 100 ? 2000 + y : y;
         const date = new Date(fullYear, m - 1, d);
         if (!isNaN(date.getTime())) return date;
       } else if (parts.length === 2) {
+        // Handle mm-yyyy
         const m = parseInt(parts[0]);
         const y = parseInt(parts[1]);
         const fullYear = y < 100 ? 2000 + y : y;
         const date = new Date(fullYear, m - 1, 1);
         if (!isNaN(date.getTime())) return date;
       }
-
+      
       const d = new Date(dateStr);
       if (!isNaN(d.getTime())) return d;
     } catch { }

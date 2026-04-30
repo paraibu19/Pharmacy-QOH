@@ -172,16 +172,22 @@ export default function AdminDashboard() {
             const normalizedK = k.toLowerCase().replace(/[\s\-_.]/g, '');
             const found = rowKeys.find(rk => {
               const normalizedRK = rk.toLowerCase().replace(/[\s\-_.]/g, '');
-              // Match exact, prefix, or if RK contains "exp" and the specific digit
-              const digit = normalizedK.match(/\d/)?.[0];
-              const isExp = normalizedK.includes('exp');
-              const rkHasDigit = digit && normalizedRK.includes(digit);
-              const rkIsExp = normalizedRK.includes('exp') || normalizedRK.includes('expiry');
               
-              return normalizedRK === normalizedK || 
-                     normalizedRK.startsWith(normalizedK) || 
-                     normalizedK.startsWith(normalizedRK) ||
-                     (isExp && rkHasDigit && rkIsExp);
+              // Exact match or prefix/suffix match
+              if (normalizedRK === normalizedK || normalizedRK.startsWith(normalizedK) || normalizedK.startsWith(normalizedRK)) {
+                return true;
+              }
+
+              // Special handling for Exp 1, 2, 3
+              const digitMatch = normalizedK.match(/\d/);
+              if (digitMatch && (normalizedK.includes('exp') || normalizedK.includes('expiry'))) {
+                const digit = digitMatch[0];
+                const rkHasDigit = normalizedRK.includes(digit);
+                const rkIsExp = normalizedRK.includes('exp') || normalizedRK.includes('expiry');
+                if (rkHasDigit && rkIsExp) return true;
+              }
+              
+              return false;
             });
             if (found !== undefined) return row[found];
           }
@@ -218,10 +224,10 @@ export default function AdminDashboard() {
           let locationId: PharmacyLocation | null = null;
           const lowerName = wsname.toLowerCase().trim();
           
-          // Better location keywords
-          if (lowerName.match(/adult|male/i)) locationId = PharmacyLocation.ADULT;
-          else if (lowerName.match(/pediatric|peds|child/i)) locationId = PharmacyLocation.PEDIATRIC;
-          else if (lowerName.match(/mesaieed|mesai/i)) locationId = PharmacyLocation.MESAIEED;
+          // Location keywords with more variants
+          if (lowerName.match(/adult|male|main/i)) locationId = PharmacyLocation.ADULT;
+          else if (lowerName.match(/pediatric|peds|child|ped/i)) locationId = PharmacyLocation.PEDIATRIC;
+          else if (lowerName.match(/mesaieed|mesai|msd|mes/i)) locationId = PharmacyLocation.MESAIEED;
 
           // Single sheet fallback
           if (!locationId && wb.SheetNames.length === 1) {
@@ -242,13 +248,13 @@ export default function AdminDashboard() {
             if (!itemName) return null;
 
             return {
-              itemCode: itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`, // Fallback code if missing
+              itemCode: itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`,
               itemName,
-              qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total']) || 0),
-              lowStockThreshold: Number(getRowValue(row, ['threshold', 'Min Stock', 'Low Alert', 'Limit']) || 0),
-              expiration1: formatExp(getRowValue(row, ['exp1', 'expir1', 'expir_1', 'expiry1', 'primary exp'])),
-              expiration2: formatExp(getRowValue(row, ['exp2', 'expir2', 'expir_2', 'expiry2', 'secondary exp'])),
-              expiration3: formatExp(getRowValue(row, ['exp3', 'expir3', 'expir_3', 'expiry3', 'final exp'])),
+              qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total', 'Available']) || 0),
+              lowStockThreshold: Number(getRowValue(row, ['threshold', 'Min Stock', 'Low Alert', 'Limit', 'Min']) || 0),
+              expiration1: formatExp(getRowValue(row, ['exp1', 'expir1', 'expir_1', 'expiry1', 'primary exp', 'expiration1', 'exp date 1'])),
+              expiration2: formatExp(getRowValue(row, ['exp2', 'expir2', 'expir_2', 'expiry2', 'secondary exp', 'expiration2', 'exp date 2'])),
+              expiration3: formatExp(getRowValue(row, ['exp3', 'expir3', 'expir_3', 'expiry3', 'final exp', 'expiration3', 'exp date 3'])),
               locationId: locationId!,
             };
           }).filter(Boolean) as any[];
