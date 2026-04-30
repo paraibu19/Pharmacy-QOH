@@ -604,7 +604,7 @@ export default function AdminDashboard() {
                         </div>
                         <div className="text-right min-w-[80px]">
                           <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Qty</div>
-                          <div className="text-sm font-bold">{item.qoh}</div>
+                          <div className="text-sm font-bold">{item.qoh.toLocaleString()}</div>
                         </div>
                       </div>
                     </div>
@@ -876,7 +876,7 @@ export default function AdminDashboard() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm font-bold ${isLowStock ? 'text-red-500' : ''}`}>{med.qoh}</span>
+                      <span className={`text-sm font-bold ${isLowStock ? 'text-red-500' : ''}`}>{med.qoh.toLocaleString()}</span>
                       {isLowStock && (
                         <div className="flex items-center gap-1 bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
                           <AlertCircle size={8} />

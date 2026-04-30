@@ -244,7 +244,7 @@ export default function UserHome() {
                           <span className="text-[10px] font-mono text-[#141414]/40">{s.itemCode}</span>
                         </div>
                         <div className="text-[10px] font-bold text-[#F27D26] bg-[#F27D26]/10 px-2 py-0.5 rounded-full">
-                          {s.qoh} in stock
+                          {s.qoh.toLocaleString()} in stock
                         </div>
                       </button>
                     ))}
@@ -371,7 +371,7 @@ export default function UserHome() {
                     <td className="px-6 py-4 text-sm font-bold text-[#141414]">{med.itemName}</td>
                     <td className="px-6 py-4">
                       <span className={`text-sm font-bold ${med.qoh < 10 ? 'text-red-500' : 'text-[#141414]'}`}>
-                        {med.qoh}
+                        {med.qoh.toLocaleString()}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration1 || '-'}</td>

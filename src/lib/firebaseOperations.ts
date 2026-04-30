@@ -128,7 +128,7 @@ export const medicationOps = {
 };
 
 export const auditOps = {
-  async reconcille(medId: string, physicalCount: number, locationId: PharmacyLocation, itemCode: string, itemName: string, recordedQoh: number) {
+  async reconcille(medId: string, physicalCount: number, locationId: PharmacyLocation, itemCode: string, itemName: string, recordedQoh: number, auditedBy: string = 'System') {
     if (!db) {
       await sharedDb.updateMedication(medId, { qoh: physicalCount });
       return sharedDb.addAudit({
@@ -138,6 +138,7 @@ export const auditOps = {
         physicalCount,
         recordedQoh,
         variance: physicalCount - recordedQoh,
+        auditedBy,
       });
     }
 
@@ -160,6 +161,7 @@ export const auditOps = {
       recordedQoh,
       variance: physicalCount - recordedQoh,
       auditedAt: serverTimestamp(),
+      auditedBy,
     });
 
     try {

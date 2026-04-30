@@ -185,7 +185,7 @@ export default function AdminInventory() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold bg-[#141414]/5 px-2 py-1 rounded">{med.qoh}</span>
+                        <span className="text-sm font-bold bg-[#141414]/5 px-2 py-1 rounded">{med.qoh.toLocaleString()}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -193,7 +193,7 @@ export default function AdminInventory() {
                         type="number"
                         min="0"
                         value={physicalCounts[med.id] ?? ''}
-                        placeholder={med.qoh.toString()}
+                        placeholder={med.qoh.toLocaleString()}
                         onChange={(e) => handlePhysicalCountChange(med.id, e.target.value)}
                         className={`w-24 px-3 py-2 bg-transparent border rounded-lg text-sm font-bold transition-all ${
                           hasVariance ? 'border-orange-200 bg-orange-50' : 'border-[#141414]/10 focus:border-[#141414]'
@@ -206,7 +206,7 @@ export default function AdminInventory() {
                           variance > 0 ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
                         }`}>
                           <ArrowUpRight className={`w-3 h-3 ${variance < 0 ? 'rotate-180' : ''}`} />
-                          {variance > 0 ? '+' : ''}{variance}
+                          {variance > 0 ? '+' : ''}{variance.toLocaleString()}
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold w-fit">
