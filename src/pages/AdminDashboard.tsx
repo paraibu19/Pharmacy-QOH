@@ -24,6 +24,7 @@ export default function AdminDashboard() {
   const [alertThreshold, setAlertThreshold] = useState<number>(90);
   const [hasDraft, setHasDraft] = useState(false);
   const [expSearchQuery, setExpSearchQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -146,18 +147,20 @@ export default function AdminDashboard() {
         locationId: selectedLocation,
       })).filter(m => m.itemCode && m.itemName);
 
-      try {
-        await medicationOps.bulkAdd(newMedsList);
-        setIsBulkMode(false);
-      } catch (error: any) {
-        alert(error.message);
-      }
+    try {
+      setError(null);
+      await medicationOps.bulkAdd(newMedsList);
+      setIsBulkMode(false);
+    } catch (error: any) {
+      setError(error.message);
+    }
     };
     reader.readAsBinaryString(file);
   };
 
   const handlePasteImport = async () => {
     try {
+      setError(null);
       const rows = bulkInput.split('\n');
       const newMedsList = rows.map((row) => {
         const parts = row.split(/\t|,/);
@@ -178,7 +181,7 @@ export default function AdminDashboard() {
       setBulkInput('');
       setIsBulkMode(false);
     } catch (error: any) {
-      alert(error.message);
+      setError(error.message);
     }
   };
 
@@ -186,6 +189,7 @@ export default function AdminDashboard() {
     if (!form.itemCode || !form.itemName) return;
     
     try {
+      setError(null);
       if (editingId) {
         await medicationOps.update(editingId, form);
       } else {
@@ -200,13 +204,19 @@ export default function AdminDashboard() {
       setForm({ itemCode: '', itemName: '', qoh: 0, lowStockThreshold: 0, expiration1: '', expiration2: '', expiration3: '' });
       clearDraft();
     } catch (error: any) {
-      alert(error.message);
+      setError(error.message);
     }
   };
 
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this item?')) {
-      await medicationOps.delete(id);
+      try {
+        setError(null);
+        await medicationOps.delete(id);
+      } catch (err: any) {
+        setError(err.message || 'Failed to delete medication. Please try again.');
+        console.error(err);
+      }
     }
   };
 
@@ -273,6 +283,28 @@ export default function AdminDashboard() {
           </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3 text-red-700">
+              <AlertCircle size={18} />
+              <p className="text-sm font-bold">{error}</p>
+            </div>
+            <button 
+              onClick={() => setError(null)}
+              className="p-1 hover:bg-red-100 rounded-lg transition-colors text-red-500"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Expiration Alerts Widget */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
