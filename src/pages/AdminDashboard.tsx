@@ -61,7 +61,6 @@ export default function AdminDashboard() {
     itemCode: '',
     itemName: '',
     qoh: 0,
-    lowStockThreshold: 0,
     minQty: 0,
     maxQty: 0,
     expiration1: '',
@@ -219,7 +218,7 @@ export default function AdminDashboard() {
     return [...medications].sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       
-      if (['qoh', 'lowStockThreshold', 'minQty', 'maxQty'].includes(sortField)) {
+      if (['qoh', 'minQty', 'maxQty'].includes(sortField)) {
         const valA = Number(a[sortField as keyof Medication]) || 0;
         const valB = Number(b[sortField as keyof Medication]) || 0;
         return (valA - valB) * multiplier;
@@ -346,7 +345,6 @@ export default function AdminDashboard() {
               itemCode: itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`,
               itemName,
               qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total', 'Available']) || 0),
-              lowStockThreshold: Number(getRowValue(row, ['threshold', 'Min Stock', 'Low Alert', 'Limit', 'Min Stock']) || 0),
               minQty: Number(getRowValue(row, ['minQty', 'Min', 'Order Min', 'Minimum']) || 0),
               maxQty: Number(getRowValue(row, ['maxQty', 'Max', 'Order Max', 'Maximum']) || 0),
               expiration1: formatExp(getRowValue(row, ['exp1', 'expir1', 'expir_1', 'expiry1', 'primary exp', 'expiration1', 'exp date 1'])),
@@ -392,7 +390,6 @@ export default function AdminDashboard() {
           itemCode: parts[0]?.trim(),
           itemName: parts[1]?.trim(),
           qoh: Number(parts[2]?.trim()) || 0,
-          lowStockThreshold: Number(parts[3]?.trim()) || 0,
           minQty: Number(parts[4]?.trim()) || 0,
           maxQty: Number(parts[5]?.trim()) || 0,
           expiration1: parts[6]?.trim() || '',
@@ -443,7 +440,7 @@ export default function AdminDashboard() {
       await refresh();
       setEditingId(null);
       setIsAdding(false);
-      setForm({ itemCode: '', itemName: '', qoh: 0, lowStockThreshold: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '' });
+      setForm({ itemCode: '', itemName: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '' });
       clearDraft();
     } catch (error: any) {
       setError(error.message);
@@ -469,7 +466,6 @@ export default function AdminDashboard() {
       itemCode: med.itemCode,
       itemName: med.itemName,
       qoh: med.qoh,
-      lowStockThreshold: med.lowStockThreshold ?? 0,
       minQty: med.minQty ?? 0,
       maxQty: med.maxQty ?? 0,
       expiration1: med.expiration1,
@@ -791,8 +787,8 @@ export default function AdminDashboard() {
                   <span className="text-lg font-bold text-sky-400">{expirationStats.third.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-center py-3 border-b border-white/10">
-                  <span className="text-sm text-white/60">Low Stock Items</span>
-                  <span className="text-lg font-bold text-red-400">{(medications.filter(m => m.qoh <= (m.lowStockThreshold ?? 0)).length).toLocaleString()}</span>
+                  <span className="text-sm text-white/60">Low Stock Items (qoh &le; 10)</span>
+                  <span className="text-lg font-bold text-red-400">{(medications.filter(m => m.qoh <= 10).length).toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -853,7 +849,7 @@ export default function AdminDashboard() {
                       <span className="text-[#F27D26] font-bold">"Adult"</span>, 
                       <span className="text-[#F27D26] font-bold"> "Pediatric"</span>, or 
                       <span className="text-[#F27D26] font-bold"> "Mesaieed"</span>.<br/>
-                      Columns: itemCode, itemName, QOH, Threshold, Min, Max, Exp1, Exp2, Exp3
+                      Columns: itemCode, itemName, QOH, Min, Max, Exp1, Exp2, Exp3
                     </p>
                     
                     <button 
@@ -873,7 +869,7 @@ export default function AdminDashboard() {
                     <textarea 
                       value={bulkInput}
                       onChange={(e) => setBulkInput(e.target.value)}
-                      placeholder="code,name,qoh,threshold,min,max,exp1,exp2,exp3..."
+                      placeholder="code,name,qoh,min,max,exp1,exp2,exp3..."
                       className="w-full h-40 bg-[#141414] border border-white/10 rounded-xl p-4 text-xs font-mono focus:outline-none focus:border-[#F27D26] transition-colors resize-none"
                     />
                     <button 
@@ -1002,27 +998,15 @@ export default function AdminDashboard() {
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Qty:</span>
-                      <input 
-                        type="number" 
-                        step="any"
-                        className="w-20 p-1 border rounded text-sm"
-                        value={form.qoh}
-                        onChange={e => setForm({...form, qoh: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Low Alert:</span>
-                      <input 
-                        type="number" 
-                        step="any"
-                        className="w-20 p-1 border rounded text-sm"
-                        value={form.lowStockThreshold}
-                        onChange={e => setForm({...form, lowStockThreshold: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
-                      />
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Qty:</span>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="w-20 p-1 border rounded text-sm"
+                      value={form.qoh}
+                      onChange={e => setForm({...form, qoh: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
+                    />
                   </div>
                 </td>
                 <td className="px-6 py-4">
@@ -1065,7 +1049,7 @@ export default function AdminDashboard() {
               </tr>
             )}
             {!loading && sortedMedications.map(med => {
-              const isLowStock = med.qoh <= (med.lowStockThreshold ?? 0);
+              const isLowStock = med.qoh <= 10;
               const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
               
               // Expiration check for highlighting
@@ -1119,11 +1103,6 @@ export default function AdminDashboard() {
                           </div>
                         )}
                       </div>
-                      {med.lowStockThreshold ? (
-                        <span className="text-[10px] font-medium text-[#141414]/30 uppercase tracking-tighter">
-                          Threshold: {med.lowStockThreshold.toLocaleString()}
-                        </span>
-                      ) : null}
                     </div>
                   </td>
                   <td className="px-6 py-4">

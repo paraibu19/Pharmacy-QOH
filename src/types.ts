@@ -22,7 +22,6 @@ export interface Medication {
   addedAt: string;
   lastUpdatedAt: string;
   updatedBy?: string;
-  lowStockThreshold?: number;
   minQty?: number;
   maxQty?: number;
   isNew?: boolean; // UI helper

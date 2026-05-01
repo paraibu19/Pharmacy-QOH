@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
-  Eye, EyeOff, Settings, Key
+  Eye, EyeOff, Settings, Key, LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -420,6 +420,14 @@ export default function OrderView() {
         </div>
         
         <div className="flex gap-3">
+          <button 
+            onClick={() => setIsAuthenticated(false)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-red-100 rounded-full text-[10px] font-bold uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all shadow-sm"
+          >
+            <LogOut className="w-3 h-3" />
+            Logout
+          </button>
+
           <button 
             onClick={() => setIsChangingPassword(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#141414]/10 rounded-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 hover:bg-[#141414]/5 transition-all shadow-sm"
