@@ -879,9 +879,10 @@ export default function AdminDashboard() {
 
       {/* Table Container */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-[#141414]/5 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
+        <div className="overflow-x-auto max-h-[70vh]">
+          <table className="w-full text-left">
+            <thead className="sticky top-0 z-10 bg-white">
+              <tr className="bg-[#141414]/5 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
               <th className="px-6 py-4">Item Details</th>
               <th className="px-6 py-4">Quantity on Hand</th>
               <th className="px-6 py-4">Min / Max</th>
@@ -1078,6 +1079,7 @@ export default function AdminDashboard() {
           </tbody>
         </table>
       </div>
+    </div>
 
       {/* Danger Zone */}
       <div className="mt-12 p-8 bg-red-50/30 border border-red-100 rounded-3xl">

@@ -616,10 +616,10 @@ export default function OrderView() {
             <p className="text-sm font-bold text-[#141414]/40 uppercase tracking-widest">Inventory Loading...</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[70vh]">
             <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#141414]/5 border-bottom border-[#141414]/10">
+              <thead className="sticky top-0 z-10 bg-white">
+                <tr className="bg-[#141414]/5 border-b border-[#141414]/10">
                   <th 
                     className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
                     onClick={() => toggleSort('itemCode')}
