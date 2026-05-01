@@ -910,8 +910,25 @@ export default function AdminDashboard() {
               const isLowStock = med.qoh <= (med.lowStockThreshold ?? 0);
               const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
               
+              // Expiration check for highlighting
+              const today = startOfToday();
+              const dates = [med.expiration1, med.expiration2, med.expiration3]
+                .map(parseExpDate)
+                .filter(d => d !== null && !isBefore(d, today)) as Date[];
+              
+              let expirationAlertClass = '';
+              if (dates.length > 0) {
+                const nextExp = new Date(Math.min(...dates.map(d => d.getTime())));
+                const daysLeft = differenceInDays(nextExp, today);
+                if (daysLeft <= 15) {
+                  expirationAlertClass = 'bg-red-100/80';
+                } else if (daysLeft <= 30) {
+                  expirationAlertClass = 'bg-yellow-100/80';
+                }
+              }
+              
               return (
-                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${editingId === med.id ? 'hidden' : ''} ${isLowStock ? 'bg-red-50/50' : ''}`}>
+                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${editingId === med.id ? 'hidden' : ''} ${expirationAlertClass || (isLowStock ? 'bg-red-50/50' : '')}`}>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
