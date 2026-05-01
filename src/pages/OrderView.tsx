@@ -38,6 +38,7 @@ export default function OrderView() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortField, setSortField] = useState<SortField>('itemName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  const [orderTarget, setOrderTarget] = useState<number>(1);
   
   const [showSuggestions, setShowSuggestions] = useState(false);
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
@@ -124,19 +125,20 @@ export default function OrderView() {
     return null;
   };
 
-  const calculateOrder = (med: Medication) => {
+  const calculateOrder = (med: Medication, target: number = 1) => {
     const qoh = med.qoh || 0;
     const max = med.maxQty || 0;
     const min = med.minQty || 0;
+    const targetMax = max * target;
     
-    if (max === 0 || min === 0) return 0;
+    if (targetMax === 0 || min === 0) return 0;
     
-    if (max <= qoh || (max - qoh) <= min) {
+    if (targetMax <= qoh || (targetMax - qoh) < min) {
       return 0;
     }
     
-    // Formula: FLOOR(Max-QOH, Min)
-    return Math.floor((max - qoh) / min) * min;
+    // Formula: FLOOR(TargetMax-QOH, Min)
+    return Math.floor((targetMax - qoh) / min) * min;
   };
 
   const suggestions = useMemo(() => {
@@ -189,7 +191,7 @@ export default function OrderView() {
 
     const mapped = result.map(m => ({
       ...m,
-      orderQty: calculateOrder(m),
+      orderQty: calculateOrder(m, orderTarget),
       isNew: m.addedAt ? differenceInDays(new Date(), (m.addedAt as any).toDate?.() || new Date(m.addedAt)) < 10 : false
     }));
 
@@ -453,12 +455,17 @@ export default function OrderView() {
         </div>
       </div>
 
-      {(qohThreshold !== '' || lowStockOnly || expStart || expEnd) && (
+      {(qohThreshold !== '' || lowStockOnly || expStart || expEnd || orderTarget !== 1) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
             Active Filters:
           </span>
+          {orderTarget !== 1 && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
+              Target: <span className="text-[#F27D26]">{orderTarget * 100}% of Max</span>
+            </span>
+          )}
           {qohThreshold !== '' && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
               Max QOH: <span className="text-[#F27D26]">{qohThreshold}</span>
@@ -470,7 +477,7 @@ export default function OrderView() {
             </span>
           )}
           <button 
-            onClick={() => { setQohThreshold(''); setLowStockOnly(false); setExpStart(''); setExpEnd(''); }}
+            onClick={() => { setQohThreshold(''); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -481,33 +488,60 @@ export default function OrderView() {
       {/* Controls */}
       <div className="bg-white p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-6">
         <div className="flex flex-col md:flex-row justify-between gap-4">
-          <div className="flex flex-wrap gap-2">
-            {LOCATIONS.map(loc => (
-              <button
-                key={loc.id}
-                onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-                className={`px-6 py-2.5 rounded-2xl text-xs font-bold transition-all ${
-                  selectedLocation === loc.id 
-                    ? 'bg-[#141414] text-white shadow-lg' 
-                    : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
-                }`}
-              >
-                {loc.name.replace('Aw-', '')}
-              </button>
-            ))}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-2">
+              {LOCATIONS.map(loc => (
+                <button
+                  key={loc.id}
+                  onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
+                  className={`px-6 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+                    selectedLocation === loc.id 
+                      ? 'bg-[#141414] text-white shadow-lg' 
+                      : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
+                  }`}
+                >
+                  {loc.name.replace('Aw-', '')}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 whitespace-nowrap ml-1">Order Target:</span>
+              <div className="flex bg-[#141414]/5 p-1 rounded-2xl border border-[#141414]/5">
+                {[
+                  { label: 'Full 100%', value: 1 },
+                  { label: '70% Max', value: 0.7 },
+                  { label: '50% Max', value: 0.5 }
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setOrderTarget(opt.value)}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                      orderTarget === opt.value
+                        ? 'bg-[#F27D26] text-white shadow-md'
+                        : 'text-[#141414]/40 hover:text-[#141414]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <button 
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-              showFilters || lowStockOnly || qohThreshold !== '' || expStart || expEnd
-              ? 'bg-[#F27D26] text-white shadow-lg'
-              : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            {showFilters ? 'Hide Filters' : 'Advanced Filters'}
-          </button>
+          <div className="flex items-start">
+            <button 
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
+                showFilters || lowStockOnly || qohThreshold !== '' || expStart || expEnd || orderTarget !== 1
+                ? 'bg-[#F27D26] text-white shadow-lg'
+                : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              {showFilters ? 'Hide Filters' : 'Advanced Filters'}
+            </button>
+          </div>
         </div>
 
         <div className="relative">
