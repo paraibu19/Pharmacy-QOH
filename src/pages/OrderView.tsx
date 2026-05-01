@@ -616,12 +616,12 @@ export default function OrderView() {
             <p className="text-sm font-bold text-[#141414]/40 uppercase tracking-widest">Inventory Loading...</p>
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-[70vh]">
+          <div className="overflow-x-auto max-h-[75vh]">
             <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 z-10 bg-white">
+              <thead className="sticky top-0 z-20 bg-white shadow-sm">
                 <tr className="bg-[#141414]/5 border-b border-[#141414]/10">
                   <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                     onClick={() => toggleSort('itemCode')}
                   >
                     <div className="flex items-center gap-1">
@@ -630,7 +630,7 @@ export default function OrderView() {
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                     onClick={() => toggleSort('itemName')}
                   >
                     <div className="flex items-center gap-1">
@@ -639,7 +639,7 @@ export default function OrderView() {
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                     onClick={() => toggleSort('qoh')}
                   >
                     <div className="flex items-center gap-1">
@@ -647,10 +647,10 @@ export default function OrderView() {
                       {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
                     </div>
                   </th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02]">Min</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02]">Max</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0">Min</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0">Max</th>
                   <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors bg-emerald-50/30"
+                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors bg-emerald-50/30 sticky top-0"
                     onClick={() => toggleSort('orderQty')}
                   >
                     <div className="flex items-center gap-1">
@@ -658,7 +658,7 @@ export default function OrderView() {
                       {sortField === 'orderQty' && <ArrowUpDown className="w-3 h-3 text-emerald-500" />}
                     </div>
                   </th>
-                  <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Actions</th>
+                  <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Actions</th>
                 </tr>
               </thead>
               <tbody>

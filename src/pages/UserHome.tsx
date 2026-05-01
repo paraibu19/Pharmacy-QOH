@@ -412,12 +412,12 @@ export default function UserHome() {
 
       {/* Main Table View */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
-        <div className="overflow-x-auto max-h-[70vh]">
+        <div className="overflow-x-auto max-h-[75vh]">
           <table className="w-full text-left border-collapse">
-            <thead className="sticky top-0 z-10 bg-white">
+            <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="bg-[#141414]/5 border-b border-[#141414]/10">
                 <th 
-                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                   onClick={() => toggleSort('isNew')}
                 >
                   <div className="flex items-center gap-1">
@@ -426,7 +426,7 @@ export default function UserHome() {
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                   onClick={() => toggleSort('itemCode')}
                 >
                   <div className="flex items-center gap-1">
@@ -435,7 +435,7 @@ export default function UserHome() {
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                   onClick={() => toggleSort('itemName')}
                 >
                   <div className="flex items-center gap-1">
@@ -444,7 +444,7 @@ export default function UserHome() {
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                   onClick={() => toggleSort('qoh')}
                 >
                   <div className="flex items-center gap-1">
@@ -452,9 +452,9 @@ export default function UserHome() {
                     {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
                   </div>
                 </th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Exp 1</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Exp 2</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Exp 3</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Exp 1</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Exp 2</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Exp 3</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#141414]/5">

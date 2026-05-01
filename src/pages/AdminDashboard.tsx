@@ -879,15 +879,15 @@ export default function AdminDashboard() {
 
       {/* Table Container */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
-        <div className="overflow-x-auto max-h-[70vh]">
+        <div className="overflow-x-auto max-h-[75vh]">
           <table className="w-full text-left">
-            <thead className="sticky top-0 z-10 bg-white">
+            <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="bg-[#141414]/5 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
-              <th className="px-6 py-4">Item Details</th>
-              <th className="px-6 py-4">Quantity on Hand</th>
-              <th className="px-6 py-4">Min / Max</th>
-              <th className="px-6 py-4">Expirations (1 / 2 / 3)</th>
-              <th className="px-6 py-4 text-right">Actions</th>
+              <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Item Details</th>
+              <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Quantity on Hand</th>
+              <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Min / Max</th>
+              <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Expirations (1 / 2 / 3)</th>
+              <th className="px-6 py-4 text-right sticky top-0 bg-[#F9F9F9]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#141414]/5">

@@ -305,12 +305,12 @@ export default function AdminInventory() {
 
       {/* Audit Table */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
-        <div className="overflow-x-auto max-h-[70vh]">
+        <div className="overflow-x-auto max-h-[75vh]">
           <table className="w-full text-left">
-            <thead className="sticky top-0 z-10 bg-white">
+            <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="bg-[#141414]/[0.02] text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
                 <th 
-                  className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors"
+                  className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors sticky top-0 bg-[#F9F9F9]"
                   onClick={() => toggleSort('itemName')}
                 >
                   <div className="flex items-center gap-2">
@@ -318,16 +318,16 @@ export default function AdminInventory() {
                     {sortField === 'itemName' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
                   </div>
                 </th>
-                <th className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors" onClick={() => toggleSort('qoh')}>
+                <th className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors sticky top-0 bg-[#F9F9F9]" onClick={() => toggleSort('qoh')}>
                   <div className="flex items-center gap-2">
                     System QOH
                     {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
                   </div>
                 </th>
-                <th className="px-6 py-4">Min / Max</th>
-                <th className="px-6 py-4">Physical Count</th>
-                <th className="px-6 py-4">Variance</th>
-                <th className="px-6 py-4 text-right">Action</th>
+                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Min / Max</th>
+                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Physical Count</th>
+                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Variance</th>
+                <th className="px-6 py-4 text-right sticky top-0 bg-[#F9F9F9]">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#141414]/5">
