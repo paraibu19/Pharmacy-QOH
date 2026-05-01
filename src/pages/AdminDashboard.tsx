@@ -975,7 +975,12 @@ export default function AdminDashboard() {
                           <span className="text-[10px] font-bold text-[#141414]/20">-</span>
                         )}
                       </div>
-                      <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
+                      <button 
+                        onClick={() => startEdit(med)}
+                        className="text-sm font-bold text-[#141414] hover:text-[#F27D26] transition-colors text-left"
+                      >
+                        {med.itemName}
+                      </button>
                     </div>
                   </td>
                   <td className="px-6 py-4">
