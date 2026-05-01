@@ -13,7 +13,7 @@ import autoTable from 'jspdf-autotable';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
 
-type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty';
+type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQty';
 type SortOrder = 'asc' | 'desc';
 
 export default function OrderView() {
@@ -195,10 +195,16 @@ export default function OrderView() {
 
     return mapped.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
-      if (sortField === 'qoh' || sortField === 'orderQty') {
-        return (a[sortField] - b[sortField]) * multiplier;
+      
+      if (['qoh', 'orderQty', 'minQty', 'maxQty'].includes(sortField)) {
+        const valA = Number(a[sortField as keyof typeof a]) || 0;
+        const valB = Number(b[sortField as keyof typeof b]) || 0;
+        return (valA - valB) * multiplier;
       }
-      return a[sortField].localeCompare(b[sortField]) * multiplier;
+      
+      const valA = String(a[sortField as keyof typeof a] || '');
+      const valB = String(b[sortField as keyof typeof b] || '');
+      return valA.localeCompare(valB) * multiplier;
     });
   }, [medications, searchQuery, qohThreshold, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
 
@@ -647,8 +653,24 @@ export default function OrderView() {
                       {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
                     </div>
                   </th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0">Min</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0">Max</th>
+                  <th 
+                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                    onClick={() => toggleSort('minQty')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Min
+                      {sortField === 'minQty' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                    onClick={() => toggleSort('maxQty')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Max
+                      {sortField === 'maxQty' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                    </div>
+                  </th>
                   <th 
                     className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors bg-emerald-50/30 sticky top-0"
                     onClick={() => toggleSort('orderQty')}

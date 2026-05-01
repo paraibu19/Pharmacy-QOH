@@ -40,6 +40,8 @@ export default function AdminDashboard() {
   const [editMin, setEditMin] = useState<string>('');
   const [editMax, setEditMax] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [sortField, setSortField] = useState<string>('itemName');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -203,6 +205,45 @@ export default function AdminDashboard() {
 
     return { current, next, third };
   }, [medications]);
+
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const sortedMedications = useMemo(() => {
+    return [...medications].sort((a, b) => {
+      const multiplier = sortOrder === 'asc' ? 1 : -1;
+      
+      if (['qoh', 'lowStockThreshold', 'minQty', 'maxQty'].includes(sortField)) {
+        const valA = Number(a[sortField as keyof Medication]) || 0;
+        const valB = Number(b[sortField as keyof Medication]) || 0;
+        return (valA - valB) * multiplier;
+      }
+      
+      if (sortField.startsWith('expiration')) {
+        const dateA = parseExpDate(a[sortField as keyof Medication] as string);
+        const dateB = parseExpDate(b[sortField as keyof Medication] as string);
+        
+        if (!dateA && !dateB) return 0;
+        if (!dateA) return 1 * multiplier;
+        if (!dateB) return -1 * multiplier;
+        
+        return (dateA.getTime() - dateB.getTime()) * multiplier;
+      }
+      
+      const valA = String(a[sortField as keyof Medication] || '').toLowerCase();
+      const valB = String(b[sortField as keyof Medication] || '').toLowerCase();
+      
+      if (valA < valB) return -1 * multiplier;
+      if (valA > valB) return 1 * multiplier;
+      return 0;
+    });
+  }, [medications, sortField, sortOrder]);
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -883,17 +924,57 @@ export default function AdminDashboard() {
           <table className="w-full text-left">
             <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="bg-[#141414]/5 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
-              <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Item Details</th>
-              <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Quantity on Hand</th>
-              <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Min / Max</th>
-              <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Expirations (1 / 2 / 3)</th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                onClick={() => toggleSort('itemName')}
+              >
+                <div className="flex items-center gap-1">
+                  Item Details
+                  {sortField === 'itemName' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
+                </div>
+              </th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                onClick={() => toggleSort('qoh')}
+              >
+                <div className="flex items-center gap-1">
+                  Quantity on Hand
+                  {sortField === 'qoh' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
+                </div>
+              </th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                onClick={() => toggleSort('minQty')}
+              >
+                <div className="flex items-center gap-1">
+                  Min / Max
+                  {sortField === 'minQty' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
+                </div>
+              </th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                onClick={() => toggleSort('expiration1')}
+              >
+                <div className="flex items-center gap-1">
+                  Expirations (1 / 2 / 3)
+                  {sortField === 'expiration1' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
+                </div>
+              </th>
               <th className="px-6 py-4 text-right sticky top-0 bg-[#F9F9F9]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#141414]/5">
             {loading && (
               <tr>
-                <td colSpan={4} className="px-6 py-10 text-center">
+                <td colSpan={5} className="px-6 py-10 text-center">
                   <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#F27D26]" />
                 </td>
               </tr>
@@ -983,8 +1064,7 @@ export default function AdminDashboard() {
                 </td>
               </tr>
             )}
-
-            {!loading && medications.map(med => {
+            {!loading && sortedMedications.map(med => {
               const isLowStock = med.qoh <= (med.lowStockThreshold ?? 0);
               const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
               

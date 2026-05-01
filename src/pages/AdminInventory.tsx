@@ -9,7 +9,7 @@ import { format } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { auditOps } from '../lib/firebaseOperations';
 
-type SortField = 'itemName' | 'itemCode' | 'qoh';
+type SortField = 'itemName' | 'itemCode' | 'qoh' | 'minQty' | 'physical' | 'variance';
 type SortOrder = 'asc' | 'desc';
 
 export default function AdminInventory() {
@@ -85,12 +85,29 @@ export default function AdminInventory() {
     
     return result.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
-      if (sortField === 'qoh') {
-        return (a.qoh - b.qoh) * multiplier;
+      
+      if (sortField === 'qoh' || sortField === 'minQty') {
+        const valA = (a[sortField] as number) || 0;
+        const valB = (b[sortField] as number) || 0;
+        return (valA - valB) * multiplier;
       }
+      
+      if (sortField === 'physical' || sortField === 'variance') {
+        const physA = physicalCounts[a.id] ?? a.qoh;
+        const physB = physicalCounts[b.id] ?? b.qoh;
+        
+        if (sortField === 'physical') {
+          return (physA - physB) * multiplier;
+        } else {
+          const varA = physA - a.qoh;
+          const varB = physB - b.qoh;
+          return (varA - varB) * multiplier;
+        }
+      }
+      
       return a[sortField].localeCompare(b[sortField]) * multiplier;
     });
-  }, [medications, searchQuery, sortField, sortOrder, lowStockOnly, expStart, expEnd]);
+  }, [medications, searchQuery, sortField, sortOrder, lowStockOnly, expStart, expEnd, physicalCounts]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -318,15 +335,42 @@ export default function AdminInventory() {
                     {sortField === 'itemName' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
                   </div>
                 </th>
-                <th className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors sticky top-0 bg-[#F9F9F9]" onClick={() => toggleSort('qoh')}>
+                <th 
+                  className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors sticky top-0 bg-[#F9F9F9]" 
+                  onClick={() => toggleSort('qoh')}
+                >
                   <div className="flex items-center gap-2">
                     System QOH
                     {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
                   </div>
                 </th>
-                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Min / Max</th>
-                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Physical Count</th>
-                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">Variance</th>
+                <th 
+                  className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  onClick={() => toggleSort('minQty')}
+                >
+                  <div className="flex items-center gap-1">
+                    Min / Max
+                    {sortField === 'minQty' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  onClick={() => toggleSort('physical')}
+                >
+                  <div className="flex items-center gap-1">
+                    Physical Count
+                    {sortField === 'physical' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  onClick={() => toggleSort('variance')}
+                >
+                  <div className="flex items-center gap-1">
+                    Variance
+                    {sortField === 'variance' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
+                  </div>
+                </th>
                 <th className="px-6 py-4 text-right sticky top-0 bg-[#F9F9F9]">Action</th>
               </tr>
             </thead>

@@ -8,7 +8,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useMedications } from '../hooks/useMedications';
 
-type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew';
+type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3';
 type SortOrder = 'asc' | 'desc';
 
 export default function UserHome() {
@@ -119,13 +119,27 @@ export default function UserHome() {
 
     return mapped.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
+      
       if (sortField === 'qoh') {
         return (a.qoh - b.qoh) * multiplier;
       }
+      
       if (sortField === 'isNew') {
         return (Number(b.isNew) - Number(a.isNew)) * multiplier;
       }
-      return a[sortField].localeCompare(b[sortField]) * multiplier;
+
+      if (sortField.startsWith('expiration')) {
+        const dateA = parseExpDate(a[sortField as keyof Medication] as string);
+        const dateB = parseExpDate(b[sortField as keyof Medication] as string);
+        
+        if (!dateA && !dateB) return 0;
+        if (!dateA) return 1 * multiplier;
+        if (!dateB) return -1 * multiplier;
+        
+        return (dateA.getTime() - dateB.getTime()) * multiplier;
+      }
+
+      return a[sortField as keyof typeof a].localeCompare(b[sortField as keyof typeof b]) * multiplier;
     });
   }, [medications, searchQuery, qohThreshold, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
 
@@ -452,9 +466,33 @@ export default function UserHome() {
                     {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
                   </div>
                 </th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Exp 1</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Exp 2</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Exp 3</th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                  onClick={() => toggleSort('expiration1')}
+                >
+                  <div className="flex items-center gap-1">
+                    Exp 1
+                    {sortField === 'expiration1' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                  onClick={() => toggleSort('expiration2')}
+                >
+                  <div className="flex items-center gap-1">
+                    Exp 2
+                    {sortField === 'expiration2' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                  onClick={() => toggleSort('expiration3')}
+                >
+                  <div className="flex items-center gap-1">
+                    Exp 3
+                    {sortField === 'expiration3' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#141414]/5">
