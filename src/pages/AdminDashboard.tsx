@@ -846,6 +846,13 @@ export default function AdminDashboard() {
                       {isImporting ? <Loader2 className="animate-spin w-4 h-4" /> : null}
                       Browse Excel File
                     </button>
+                    <input 
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleExcelUpload}
+                      accept=".xlsx, .xls"
+                      className="hidden"
+                    />
                   </div>
                 </div>
 
