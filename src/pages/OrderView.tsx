@@ -141,6 +141,14 @@ export default function OrderView() {
     return Math.floor((targetMax - qoh) / min) * min;
   };
 
+  const targetCounts = useMemo(() => {
+    return {
+      full: medications.filter(m => calculateOrder(m, 1) > 0).length,
+      seventy: medications.filter(m => calculateOrder(m, 0.7) > 0).length,
+      fifty: medications.filter(m => calculateOrder(m, 0.5) > 0).length,
+    };
+  }, [medications]);
+
   const suggestions = useMemo(() => {
     if (searchQuery.length < 1) return [];
     const lowerQuery = searchQuery.toLowerCase();
@@ -509,20 +517,25 @@ export default function OrderView() {
               <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 whitespace-nowrap ml-1">Order Target:</span>
               <div className="flex bg-[#141414]/5 p-1 rounded-2xl border border-[#141414]/5">
                 {[
-                  { label: 'Full 100%', value: 1 },
-                  { label: '70% Max', value: 0.7 },
-                  { label: '50% Max', value: 0.5 }
+                  { label: 'Full 100%', value: 1, count: targetCounts.full },
+                  { label: '70% Max', value: 0.7, count: targetCounts.seventy },
+                  { label: '50% Max', value: 0.5, count: targetCounts.fifty }
                 ].map(opt => (
                   <button
                     key={opt.value}
                     onClick={() => setOrderTarget(opt.value)}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
                       orderTarget === opt.value
                         ? 'bg-[#F27D26] text-white shadow-md'
                         : 'text-[#141414]/40 hover:text-[#141414]'
                     }`}
                   >
                     {opt.label}
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] ${
+                      orderTarget === opt.value ? 'bg-white/20' : 'bg-[#141414]/10'
+                    }`}>
+                      {opt.count}
+                    </span>
                   </button>
                 ))}
               </div>
