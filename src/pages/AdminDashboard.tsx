@@ -523,11 +523,11 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="space-y-8 pb-20">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div className="flex flex-col">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-[#141414]">Medication Management</h1>
+    <div className="space-y-6 md:space-y-8 pb-20 px-4 md:px-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-6">
+        <div className="flex flex-col w-full md:w-auto">
+          <div className="flex items-center justify-between md:justify-start gap-3">
+            <h1 className="text-2xl md:text-3xl font-bold text-[#141414]">Management</h1>
             <button 
               onClick={() => refresh(true)}
               disabled={isSyncing}
@@ -544,8 +544,8 @@ export default function AdminDashboard() {
               ) : (
                 db ? <Check className={`w-3 h-3 ${showSyncPulse ? 'animate-pulse' : ''}`} /> : <RefreshCw className="w-3 h-3" />
               )}
-              {showSyncPulse ? 'Live Updated' : db ? 'Real-time Sync' : 'Server Sync'}
-              <span className="opacity-50 font-medium ml-1">
+              {showSyncPulse ? 'Live' : db ? 'Sync' : 'Server'}
+              <span className="opacity-50 font-medium ml-1 hidden sm:inline">
                 {format(lastSynced, 'HH:mm:ss')}
               </span>
               {showSyncPulse && (
@@ -553,28 +553,21 @@ export default function AdminDashboard() {
               )}
             </button>
           </div>
-          <p className="text-[#141414]/50">Add, update or delete pharmacy stock items</p>
+          <p className="text-[#141414]/50 text-sm md:text-base">Stock inventory control panel</p>
         </div>
         
-        <div className="flex gap-2">
-          {/* Hidden file input for direct trigger */}
-          <input 
-            type="file" 
-            accept=".xlsx,.xls" 
-            className="hidden" 
-            ref={fileInputRef}
-            onChange={handleExcelUpload}
-          />
-          
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
           {hasDraft && (
             <motion.div 
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700"
+              className="flex-1 md:flex-none flex items-center justify-between md:justify-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-[10px] font-bold text-amber-700"
             >
-              <History className="w-3.5 h-3.5" />
-              Unsaved changes found
-              <div className="flex gap-1 ml-2">
+              <div className="flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Unsaved changes</span>
+              </div>
+              <div className="flex gap-1">
                 <button 
                   onClick={restoreDraft}
                   className="px-2 py-1 bg-amber-200 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1"
@@ -593,17 +586,17 @@ export default function AdminDashboard() {
           )}
           <button 
             onClick={() => setIsBulkMode(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-[#141414]/10 rounded-xl text-sm font-bold hover:bg-[#141414]/5 transition-colors"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 border border-[#141414]/10 rounded-xl text-xs sm:text-sm font-bold hover:bg-[#141414]/5 transition-colors"
           >
             <ArrowLeftRight className="w-4 h-4" />
             Bulk Import
           </button>
           <button 
             onClick={() => setIsAdding(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#F27D26] text-white rounded-xl text-sm font-bold hover:bg-[#F27D26]/90 transition-colors shadow-lg shadow-[#F27D26]/20"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-[#F27D26] text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-[#F27D26]/90 transition-colors shadow-lg shadow-[#F27D26]/20"
           >
             <Plus className="w-4 h-4" />
-            Add New Item
+            Add New
           </button>
         </div>
       </div>
@@ -817,16 +810,16 @@ export default function AdminDashboard() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-4xl bg-[#141414] text-white p-8 rounded-3xl shadow-2xl space-y-6"
+              className="relative w-full max-w-4xl bg-[#141414] text-white p-6 md:p-8 rounded-[2rem] md:rounded-3xl shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto"
             >
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center sticky top-0 bg-[#141414] z-10 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-3 bg-[#F27D26]/20 rounded-2xl text-[#F27D26]">
-                    <FileSpreadsheet size={24} />
+                  <div className="p-2 md:p-3 bg-[#F27D26]/20 rounded-2xl text-[#F27D26]">
+                    <FileSpreadsheet size={20} className="md:w-6 md:h-6" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold">Bulk Stock Import</h3>
-                    <p className="text-white/40 text-sm">Upload Excel or paste a list of items</p>
+                    <h3 className="text-lg md:text-xl font-bold">Bulk Stock Import</h3>
+                    <p className="text-white/40 text-[10px] md:text-sm">Upload Excel or paste a list of items</p>
                   </div>
                 </div>
                 <button 
@@ -837,15 +830,15 @@ export default function AdminDashboard() {
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
                 <div className="space-y-6">
-                  <div className="p-6 bg-white/5 rounded-2xl border border-white/10 flex flex-col items-center text-center">
-                    <div className="w-16 h-16 bg-[#F27D26]/10 rounded-full flex items-center justify-center mb-4">
-                      <Upload className="w-8 h-8 text-[#F27D26]" />
+                  <div className="p-4 md:p-6 bg-white/5 rounded-2xl border border-white/10 flex flex-col items-center text-center">
+                    <div className="w-12 h-12 md:w-16 md:h-16 bg-[#F27D26]/10 rounded-full flex items-center justify-center mb-4">
+                      <Upload className="w-6 h-6 md:w-8 md:h-8 text-[#F27D26]" />
                     </div>
-                    <p className="text-sm font-bold text-white mb-2 uppercase tracking-widest">Option 1: Excel File</p>
-                    <p className="text-xs text-white/40 mb-6 leading-relaxed">
-                      Upload an Excel workbook with sheets named <br/>
+                    <p className="text-xs font-bold text-white mb-2 uppercase tracking-widest">Option 1: Excel File</p>
+                    <p className="text-[10px] md:text-xs text-white/40 mb-6 leading-relaxed">
+                      Upload an Excel workbook with sheets named <br className="hidden md:block"/>
                       <span className="text-[#F27D26] font-bold">"Adult"</span>, 
                       <span className="text-[#F27D26] font-bold"> "Pediatric"</span>, or 
                       <span className="text-[#F27D26] font-bold"> "Mesaieed"</span>.<br/>
@@ -864,13 +857,13 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="space-y-6">
-                  <div className="p-6 bg-white/5 rounded-2xl border border-white/10">
-                    <p className="text-xs font-bold text-white mb-4 uppercase tracking-widest">Option 2: Paste CSV/Tabs</p>
+                  <div className="p-4 md:p-6 bg-white/5 rounded-2xl border border-white/10">
+                    <p className="text-[10px] font-bold text-white mb-4 uppercase tracking-widest">Option 2: Paste List</p>
                     <textarea 
                       value={bulkInput}
                       onChange={(e) => setBulkInput(e.target.value)}
                       placeholder="code,name,qoh,min,max,exp1,exp2,exp3..."
-                      className="w-full h-40 bg-[#141414] border border-white/10 rounded-xl p-4 text-xs font-mono focus:outline-none focus:border-[#F27D26] transition-colors resize-none"
+                      className="w-full h-32 md:h-40 bg-[#141414] border border-white/10 rounded-xl p-4 text-[10px] font-mono focus:outline-none focus:border-[#F27D26] transition-colors resize-none"
                     />
                     <button 
                       onClick={handlePasteImport}
@@ -878,9 +871,9 @@ export default function AdminDashboard() {
                       className="w-full mt-4 py-4 bg-[#F27D26] hover:bg-[#F27D26]/90 rounded-2xl text-sm font-bold transition-all disabled:opacity-50 shadow-xl shadow-[#F27D26]/20 flex items-center justify-center gap-2"
                     >
                       {isImporting ? <Loader2 className="animate-spin w-4 h-4" /> : null}
-                      Process & Import List to {selectedLocation}
+                      Process to {selectedLocation.split('-').pop()}
                     </button>
-                    <p className="text-[10px] text-white/30 text-center mt-3 lowercase italic font-mono">
+                    <p className="text-[9px] text-white/30 text-center mt-3 lowercase italic font-mono">
                       * Paste uses current selected location ({selectedLocation})
                     </p>
                   </div>
@@ -892,12 +885,12 @@ export default function AdminDashboard() {
       </AnimatePresence>
 
       {/* Location Filter */}
-      <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-2xl w-fit">
+      <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-fit overflow-x-auto no-scrollbar">
         {LOCATIONS.map(loc => (
           <button
             key={loc.id}
             onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`flex-1 md:flex-none whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
               selectedLocation === loc.id 
                 ? loc.id === PharmacyLocation.ADULT
                   ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
@@ -915,8 +908,9 @@ export default function AdminDashboard() {
       </div>
 
       {/* Table Container */}
-      <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
-        <div className="overflow-x-auto max-h-[75vh]">
+      <div className="bg-white rounded-3xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto max-h-[75vh]">
           <table className="w-full text-left">
             <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="bg-[#141414]/5 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
@@ -1137,6 +1131,139 @@ export default function AdminDashboard() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="md:hidden divide-y divide-[#141414]/5">
+        {loading && (
+          <div className="p-10 flex flex-col items-center justify-center gap-4">
+            <Loader2 className="w-8 h-8 animate-spin text-[#F27D26]" />
+            <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Loading Items...</p>
+          </div>
+        )}
+        
+        {/* Inline Add/Edit Form for Mobile */}
+        {(isAdding || editingId) && (
+          <div className="p-4 bg-[#F27D26]/5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <input 
+                type="text" 
+                placeholder="Item Code" 
+                autoFocus
+                className="w-full text-xs font-mono p-3 bg-white border rounded-xl"
+                value={form.itemCode}
+                onChange={e => setForm({...form, itemCode: e.target.value})}
+              />
+              <input 
+                type="number" 
+                placeholder="Stock Qty" 
+                className="w-full text-xs p-3 bg-white border rounded-xl"
+                value={form.qoh}
+                onChange={e => setForm({...form, qoh: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
+              />
+            </div>
+            <input 
+              type="text" 
+              placeholder="Full Medication Name" 
+              className="w-full text-sm font-bold p-3 bg-white border rounded-xl"
+              value={form.itemName}
+              onChange={e => setForm({...form, itemName: e.target.value})}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-2 bg-white p-2 rounded-xl border">
+                <span className="text-[10px] font-bold text-[#141414]/40">Min:</span>
+                <input type="number" className="w-full text-sm font-bold" value={form.minQty} onChange={e => setForm({...form, minQty: e.target.value === '' ? 0 : parseFloat(e.target.value)})} />
+              </div>
+              <div className="flex items-center gap-2 bg-white p-2 rounded-xl border">
+                <span className="text-[10px] font-bold text-[#141414]/40">Max:</span>
+                <input type="number" className="w-full text-sm font-bold" value={form.maxQty} onChange={e => setForm({...form, maxQty: e.target.value === '' ? 0 : parseFloat(e.target.value)})} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input type="text" placeholder="Exp 1" className="flex-1 p-2 bg-white border rounded-lg text-xs" value={form.expiration1} onChange={e => setForm({...form, expiration1: e.target.value})} />
+              <input type="text" placeholder="Exp 2" className="flex-1 p-2 bg-white border rounded-lg text-xs" value={form.expiration2} onChange={e => setForm({...form, expiration2: e.target.value})} />
+              <input type="text" placeholder="Exp 3" className="flex-1 p-2 bg-white border rounded-lg text-xs" value={form.expiration3} onChange={e => setForm({...form, expiration3: e.target.value})} />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button 
+                onClick={() => { setIsAdding(false); setEditingId(null); clearDraft(); }} 
+                className="flex-1 py-3 bg-white text-red-500 rounded-xl font-bold border border-red-100"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => handleSave()} 
+                className="flex-1 py-3 bg-[#F27D26] text-white rounded-xl font-bold"
+              >
+                Save Item
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!loading && sortedMedications.map(med => {
+          const isLowStock = med.qoh <= 10;
+          const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
+          
+          return (
+            <motion.div 
+              layout
+              key={med.id} 
+              className={`p-4 space-y-4 ${editingId === med.id ? 'hidden' : ''} ${isLowStock ? 'bg-red-50/20' : ''}`}
+            >
+              <div className="flex justify-between items-start">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-[#141414] leading-tight truncate max-w-[200px]">{med.itemName}</h3>
+                    {isNew && (
+                      <span className="px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] rounded text-[8px] font-black uppercase tracking-widest whitespace-nowrap">
+                        NEW
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => startEdit(med)} className="p-2 bg-[#141414]/5 rounded-lg text-[#141414]/40"><Edit2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => handleDelete(med.id)} className="p-2 bg-red-50 rounded-lg text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40">Current Stock</p>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xl font-black ${isLowStock ? 'text-red-500' : ''}`}>{med.qoh.toLocaleString()}</span>
+                    {isLowStock && (
+                      <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[8px] font-bold uppercase">Low</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col justify-center border-l border-[#141414]/10 pl-4">
+                   <div className="flex items-center gap-4 text-[10px] font-bold">
+                     <div className="flex flex-col">
+                       <span className="text-[#141414]/40 text-[8px] uppercase">Min</span>
+                       <span>{med.minQty || 0}</span>
+                     </div>
+                     <div className="flex flex-col">
+                       <span className="text-[#141414]/40 text-[8px] uppercase">Max</span>
+                       <span>{med.maxQty || 0}</span>
+                     </div>
+                   </div>
+                </div>
+              </div>
+
+              <div className="bg-[#141414]/[0.03] p-2 rounded-xl">
+                 <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ml-1">Expirations</p>
+                 <div className="flex gap-2 font-mono text-[9px]">
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration1 || '-'}</span>
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration2 || '-'}</span>
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration3 || '-'}</span>
+                 </div>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
 

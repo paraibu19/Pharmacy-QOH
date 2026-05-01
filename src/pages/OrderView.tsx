@@ -404,25 +404,25 @@ export default function OrderView() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-12 space-y-8">
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6 md:space-y-8">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-4xl font-bold tracking-tight">Order View</h1>
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Order View</h1>
             <span className="px-2.5 py-1 bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/20 rounded-full text-[10px] font-bold uppercase tracking-widest">
-              Advanced Tools
+              Advanced
             </span>
           </div>
-          <p className="text-[#141414]/60 max-w-xl">
+          <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">
             Manage min/max stock quantities and generate automated store orders.
           </p>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <button 
             onClick={() => setIsAuthenticated(false)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-red-100 rounded-full text-[10px] font-bold uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all shadow-sm"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-red-100 rounded-full text-[10px] font-bold uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all shadow-sm"
           >
             <LogOut className="w-3 h-3" />
             Logout
@@ -430,7 +430,7 @@ export default function OrderView() {
 
           <button 
             onClick={() => setIsChangingPassword(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-white border border-[#141414]/10 rounded-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 hover:bg-[#141414]/5 transition-all shadow-sm"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-[#141414]/10 rounded-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 hover:bg-[#141414]/5 transition-all shadow-sm"
           >
             <Settings className="w-3 h-3" />
             Security
@@ -439,33 +439,33 @@ export default function OrderView() {
           <button 
             onClick={() => refresh(true)}
             disabled={isSyncing}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
+            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
               showSyncPulse 
                 ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
                 : 'bg-[#141414]/5 text-[#141414]/40 hover:bg-[#141414]/10'
             }`}
           >
             {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className={`w-3 h-3 ${showSyncPulse ? 'animate-spin' : ''}`} />}
-            {showSyncPulse ? 'Live Syncing...' : `Synced ${format(lastSynced, 'HH:mm')}`}
+            {showSyncPulse ? 'Live' : `Synced ${format(lastSynced, 'HH:mm')}`}
             {showSyncPulse && (
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
             )}
           </button>
 
-          <div className="flex items-center gap-1 bg-[#141414]/5 p-1 rounded-full border border-[#141414]/10">
+          <div className="flex w-full md:w-auto items-center gap-1 bg-[#141414]/5 p-1 rounded-full border border-[#141414]/10">
             <button 
               onClick={downloadCSV}
-              className="px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all shadow-sm flex items-center gap-2 border border-[#141414]/5"
+              className="flex-1 md:flex-none px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all shadow-sm flex items-center justify-center gap-2 border border-[#141414]/5"
             >
               <FileSpreadsheet className="w-3 h-3" />
-              CSV Order
+              CSV
             </button>
             <button 
               onClick={downloadPDF}
-              className="px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-red-50 hover:text-red-600 transition-all shadow-sm flex items-center gap-2 border border-[#141414]/5"
+              className="flex-1 md:flex-none px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-red-50 hover:text-red-600 transition-all shadow-sm flex items-center justify-center gap-2 border border-[#141414]/5"
             >
               <Download className="w-3 h-3" />
-              PDF Order
+              PDF
             </button>
           </div>
         </div>
@@ -479,7 +479,7 @@ export default function OrderView() {
           </span>
           {orderTarget !== 1 && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Target: <span className="text-[#F27D26]">{orderTarget * 100}% of Max</span>
+              Target: <span className="text-[#F27D26]">{orderTarget * 100}%</span>
             </span>
           )}
           {qohThreshold !== '' && (
@@ -489,7 +489,7 @@ export default function OrderView() {
           )}
           {lowStockOnly && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Low Stock ({'< 10'})
+              Low Stock
             </span>
           )}
           <button 
@@ -502,7 +502,7 @@ export default function OrderView() {
       )}
 
       {/* Controls */}
-      <div className="bg-white p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-6">
+      <div className="bg-white p-4 md:p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-6">
         <div className="flex flex-col md:flex-row justify-between gap-4">
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap gap-2">
@@ -510,7 +510,7 @@ export default function OrderView() {
                 <button
                   key={loc.id}
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-                  className={`px-6 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+                  className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all ${
                     selectedLocation === loc.id 
                       ? 'bg-[#141414] text-white shadow-lg' 
                       : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
@@ -521,18 +521,18 @@ export default function OrderView() {
               ))}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 whitespace-nowrap ml-1">Order Target:</span>
-              <div className="flex bg-[#141414]/5 p-1 rounded-2xl border border-[#141414]/5">
+              <div className="flex bg-[#141414]/5 p-1 rounded-2xl border border-[#141414]/5 overflow-x-auto no-scrollbar">
                 {[
-                  { label: 'Full 100%', value: 1, count: targetCounts.full },
-                  { label: '70% Max', value: 0.7, count: targetCounts.seventy },
-                  { label: '50% Max', value: 0.5, count: targetCounts.fifty }
+                  { label: 'Full', value: 1, count: targetCounts.full },
+                  { label: '70%', value: 0.7, count: targetCounts.seventy },
+                  { label: '50%', value: 0.5, count: targetCounts.fifty }
                 ].map(opt => (
                   <button
                     key={opt.value}
                     onClick={() => setOrderTarget(opt.value)}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 ${
+                    className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
                       orderTarget === opt.value
                         ? 'bg-[#F27D26] text-white shadow-md'
                         : 'text-[#141414]/40 hover:text-[#141414]'
@@ -553,14 +553,14 @@ export default function OrderView() {
           <div className="flex items-start">
             <button 
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
+              className={`w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
                 showFilters || lowStockOnly || qohThreshold !== '' || expStart || expEnd || orderTarget !== 1
                 ? 'bg-[#F27D26] text-white shadow-lg'
                 : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
               }`}
             >
               <Filter className="w-4 h-4" />
-              {showFilters ? 'Hide Filters' : 'Advanced Filters'}
+              {showFilters ? 'Hide' : 'Filters'}
             </button>
           </div>
         </div>
@@ -569,12 +569,12 @@ export default function OrderView() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#141414]/30" />
           <input 
             type="text"
-            placeholder="Search item name or code..."
+            placeholder="Search name or code..."
             value={searchQuery}
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-4 bg-[#141414]/[0.03] border-none rounded-2xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium"
+            className="w-full pl-12 pr-4 py-4 bg-[#141414]/[0.03] border border-transparent rounded-2xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium"
           />
 
           <AnimatePresence>
@@ -613,7 +613,7 @@ export default function OrderView() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-[#141414]/5 rounded-2xl border border-[#141414]/10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 p-4 bg-[#141414]/5 rounded-2xl border border-[#141414]/10">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Threshold</label>
                   <input
@@ -633,7 +633,7 @@ export default function OrderView() {
                     }`}
                   >
                     <AlertTriangle className="w-4 h-4" />
-                    Low Stock ({'< 10'})
+                    Low Stock
                   </button>
                 </div>
                 <div className="space-y-1.5">
@@ -656,8 +656,8 @@ export default function OrderView() {
                 </div>
                 <div className="flex items-end">
                   <button
-                    onClick={() => { setQohThreshold(''); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setSearchQuery(''); }}
-                    className="w-full py-2.5 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center gap-2"
+                    onClick={() => { setQohThreshold(''); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+                    className="w-full h-10 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center gap-2"
                   >
                     <X className="w-4 h-4" />
                     Reset
@@ -669,7 +669,7 @@ export default function OrderView() {
         </AnimatePresence>
       </div>
 
-      {/* Main Table */}
+      {/* Main Content View - Table on desktop, Cards on mobile */}
       <div className="bg-white rounded-3xl border border-[#141414]/10 shadow-sm overflow-hidden">
         {loading ? (
           <div className="p-24 flex flex-col items-center justify-center gap-4">
@@ -677,130 +677,193 @@ export default function OrderView() {
             <p className="text-sm font-bold text-[#141414]/40 uppercase tracking-widest">Inventory Loading...</p>
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-[75vh]">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 z-20 bg-white shadow-sm">
-                <tr className="bg-[#141414]/5 border-b border-[#141414]/10">
-                  <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
-                    onClick={() => toggleSort('itemCode')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Item Code
-                      {sortField === 'itemCode' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
-                    onClick={() => toggleSort('itemName')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Item Name
-                      {sortField === 'itemName' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
-                    onClick={() => toggleSort('qoh')}
-                  >
-                    <div className="flex items-center gap-1">
-                      QOH
-                      {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0 cursor-pointer hover:bg-[#141414]/5 transition-colors"
-                    onClick={() => toggleSort('minQty')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Min
-                      {sortField === 'minQty' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0 cursor-pointer hover:bg-[#141414]/5 transition-colors"
-                    onClick={() => toggleSort('maxQty')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Max
-                      {sortField === 'maxQty' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors bg-emerald-50/30 sticky top-0"
-                    onClick={() => toggleSort('orderQty')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Order Qty
-                      {sortField === 'orderQty' && <ArrowUpDown className="w-3 h-3 text-emerald-500" />}
-                    </div>
-                  </th>
-                  <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedMeds.map((med) => {
-                  const isEditing = editingId === med.id;
-                  const isOrdered = med.orderQty > 0;
-                  
-                  return (
-                    <motion.tr 
-                      layout
-                      key={med.id} 
-                      className={`group border-b border-[#141414]/5 transition-colors hover:bg-[#141414]/[0.02] ${isOrdered ? 'bg-emerald-50/10' : ''}`}
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto max-h-[75vh]">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-20 bg-white shadow-sm">
+                  <tr className="bg-[#141414]/5 border-b border-[#141414]/10">
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                      onClick={() => toggleSort('itemCode')}
                     >
-                      <td className="px-6 py-4 font-mono text-xs text-[#141414]/50">{med.itemCode}</td>
-                      <td className="px-6 py-4">
-                        <button 
-                          onClick={() => startEdit(med)}
-                          className="flex items-center gap-2 group/name text-left"
-                        >
-                          <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                      <div className="flex items-center gap-1">
+                        Item Code
+                        {sortField === 'itemCode' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                      onClick={() => toggleSort('itemName')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Item Name
+                        {sortField === 'itemName' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                      onClick={() => toggleSort('qoh')}
+                    >
+                      <div className="flex items-center gap-1">
+                        QOH
+                        {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                      onClick={() => toggleSort('minQty')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Min
+                        {sortField === 'minQty' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 bg-[#F27D26]/[0.02] sticky top-0 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                      onClick={() => toggleSort('maxQty')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Max
+                        {sortField === 'maxQty' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors bg-emerald-50/30 sticky top-0"
+                      onClick={() => toggleSort('orderQty')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Order Qty
+                        {sortField === 'orderQty' && <ArrowUpDown className="w-3 h-3 text-emerald-500" />}
+                      </div>
+                    </th>
+                    <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#141414]/5">
+                  {sortedMeds.map((med) => {
+                    const isOrdered = med.orderQty > 0;
+                    
+                    return (
+                      <motion.tr 
+                        layout
+                        key={med.id} 
+                        className={`group border-b border-[#141414]/5 transition-colors hover:bg-[#141414]/[0.02] ${isOrdered ? 'bg-emerald-50/10' : ''}`}
+                      >
+                        <td className="px-6 py-4 font-mono text-xs text-[#141414]/50">{med.itemCode}</td>
+                        <td className="px-6 py-4">
+                          <button 
+                            onClick={() => startEdit(med)}
+                            className="flex items-center gap-2 group/name text-left"
+                          >
+                            <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                            {med.isNew && (
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
+                                NEW
+                              </span>
+                            )}
+                            <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
+                          </button>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-full text-xs font-black ${
+                            med.qoh < 10 ? 'bg-red-100 text-red-600' : 'bg-[#141414]/5 text-[#141414]'
+                          }`}>
+                            {med.qoh.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
+                          <span className="font-medium text-[#141414]/60">{med.minQty || 0}</span>
+                        </td>
+                        <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
+                          <span className="font-medium text-[#141414]/60">{med.maxQty || 0}</span>
+                        </td>
+                        <td className="px-6 py-4 bg-emerald-50/30">
+                          {isOrdered ? (
+                            <span className="flex items-center gap-2 text-emerald-600 font-black">
+                              <span className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-xs">
+                                {med.orderQty.toLocaleString()}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-[#141414]/20 text-xs">-</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button 
+                            onClick={() => startEdit(med)}
+                            className="w-8 h-8 opacity-0 group-hover:opacity-100 bg-[#141414]/5 text-[#141414]/40 rounded-lg flex items-center justify-center hover:bg-[#F27D26] hover:text-white transition-all ml-auto"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden divide-y divide-[#141414]/5">
+              {sortedMeds.map((med) => {
+                const isOrdered = med.orderQty > 0;
+                return (
+                  <motion.div 
+                    layout
+                    key={med.id}
+                    className={`p-4 space-y-4 ${isOrdered ? 'bg-emerald-50/10' : ''}`}
+                    onClick={() => startEdit(med)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-[#141414]">{med.itemName}</h3>
                           {med.isNew && (
-                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
+                            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[8px] font-black uppercase tracking-widest">
                               NEW
                             </span>
                           )}
-                          <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
-                        </button>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-black ${
+                        </div>
+                        <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</p>
+                      </div>
+                      <div className="text-right">
+                        <div className={`px-3 py-1 rounded-full text-xs font-black ${
                           med.qoh < 10 ? 'bg-red-100 text-red-600' : 'bg-[#141414]/5 text-[#141414]'
                         }`}>
                           {med.qoh.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
-                        <span className="font-medium text-[#141414]/60">{med.minQty || 0}</span>
-                      </td>
-                      <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
-                        <span className="font-medium text-[#141414]/60">{med.maxQty || 0}</span>
-                      </td>
-                      <td className="px-6 py-4 bg-emerald-50/30">
-                        {isOrdered ? (
-                          <span className="flex items-center gap-2 text-emerald-600 font-black">
-                            <span className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-xs">
-                              {med.orderQty.toLocaleString()}
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="text-[#141414]/20 text-xs">-</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => startEdit(med)}
-                          className="w-8 h-8 opacity-0 group-hover:opacity-100 bg-[#141414]/5 text-[#141414]/40 rounded-lg flex items-center justify-center hover:bg-[#F27D26] hover:text-white transition-all mx-auto"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </motion.tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </div>
+                        <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mt-1">Stock</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-0 border border-[#141414]/5 rounded-xl overflow-hidden bg-[#141414]/[0.02]">
+                      <div className="p-2 border-right border-[#141414]/5 text-center bg-[#F27D26]/[0.03]">
+                        <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Min</p>
+                        <p className="text-xs font-bold text-[#F27D26]">{med.minQty || 0}</p>
+                      </div>
+                      <div className="p-2 border-right border-[#141414]/5 text-center bg-[#F27D26]/[0.03]">
+                        <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Max</p>
+                        <p className="text-xs font-bold text-[#F27D26]">{med.maxQty || 0}</p>
+                      </div>
+                      <div className="p-2 text-center bg-emerald-500/10">
+                        <p className="text-[8px] font-bold uppercase tracking-wider text-emerald-600/60 mb-0.5">Order</p>
+                        <p className="text-xs font-black text-emerald-600">{med.orderQty || '-'}</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {sortedMeds.length === 0 && !loading && (
+          <div className="p-20 text-center flex flex-col items-center gap-4">
+            <div className="w-16 h-16 bg-[#141414]/5 rounded-full flex items-center justify-center">
+              <Search className="w-8 h-8 text-[#141414]/20" />
+            </div>
+            <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-sm">No results found</p>
           </div>
         )}
       </div>

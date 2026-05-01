@@ -178,38 +178,39 @@ export default function UserHome() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       {/* Hero / Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight mb-2">User View</h1>
-          <p className="text-[#141414]/60 max-w-xl">
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">User View</h1>
+          <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">
             Real-time medication availability at Alwakra emergency pharmacies and Mesaieed OPD pharmacy.
           </p>
         </div>
         
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <button 
             onClick={() => refresh(true)}
             disabled={isSyncing}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
+            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
               isSyncing ? 'bg-[#141414]/5 text-[#141414]/40' : 'bg-[#141414]/5 text-[#141414]/40 hover:bg-[#141414]/10'
             }`}
           >
             {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            Synced {format(lastSynced, 'HH:mm')}
+            <span className="hidden sm:inline">Synced</span> {format(lastSynced, 'HH:mm')}
           </button>
 
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all ${
+            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold transition-all ${
               showFilters || qohThreshold !== '' || expStart || expEnd
               ? 'bg-[#F27D26] text-white shadow-lg shadow-[#F27D26]/20'
               : 'bg-white border border-[#141414]/10 text-[#141414]/60 hover:bg-[#141414]/5'
             }`}
           >
             <Filter className="w-4 h-4" />
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
+            <span className="hidden sm:inline">{showFilters ? 'Hide' : 'Show'} Filters</span>
+            <span className="sm:hidden">Filters</span>
             {(qohThreshold !== '' || expStart || expEnd) && (
               <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse" />
             )}
@@ -217,10 +218,10 @@ export default function UserHome() {
           
           <button 
             onClick={downloadPDF}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#141414] text-white rounded-full text-sm font-bold shadow-lg shadow-black/10 hover:translate-y-[-2px] transition-all active:translate-y-0"
+            className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-[#141414] text-white rounded-full text-sm font-bold shadow-lg shadow-black/10 hover:translate-y-[-2px] transition-all active:translate-y-0"
           >
             <Download className="w-4 h-4" />
-            Download PDF Report
+            Download PDF
           </button>
         </div>
       </div>
@@ -257,7 +258,7 @@ export default function UserHome() {
 
       {/* Controls */}
       <div className="space-y-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center bg-white p-6 rounded-2xl border border-[#141414]/10 shadow-sm">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center bg-white p-4 md:p-6 rounded-2xl border border-[#141414]/10 shadow-sm">
           <div className="lg:col-span-1">
             <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-[#141414]/40 mb-2 ml-1">
               Select Pharmacy Location
@@ -299,10 +300,10 @@ export default function UserHome() {
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-[#141414]/5 md:bg-white border md:border-[#141414]/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all placeholder:text-[#141414]/30 text-sm font-medium"
+                className="w-full pl-11 pr-4 py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all placeholder:text-[#141414]/30 text-sm font-medium"
               />
               {searchQuery && (
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2 py-0.5 bg-[#141414]/5 rounded text-[10px] font-bold text-[#141414]/40">
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-[#141414]/5 rounded text-[10px] font-bold text-[#141414]/40">
                   <Filter className="w-3 h-3" />
                   {filteredMeds.length} Match
                 </div>
@@ -349,7 +350,7 @@ export default function UserHome() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 bg-[#141414]/5 p-4 rounded-2xl border border-[#141414]/10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 bg-[#141414]/5 p-4 rounded-2xl border border-[#141414]/10">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
                     Threshold
@@ -412,7 +413,7 @@ export default function UserHome() {
                       setExpEnd('');
                       setSearchQuery('');
                     }}
-                    className="w-full h-[42px] flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all"
+                    className="w-full h-10 flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all"
                   >
                     <X className="w-4 h-4" />
                     Reset
@@ -424,9 +425,10 @@ export default function UserHome() {
         </AnimatePresence>
       </div>
 
-      {/* Main Table View */}
+      {/* Main Content View - Table on desktop, Cards on mobile */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
-        <div className="overflow-x-auto max-h-[75vh]">
+        {/* Desktop View Table */}
+        <div className="hidden md:block overflow-x-auto max-h-[75vh]">
           <table className="w-full text-left border-collapse">
             <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="bg-[#141414]/5 border-b border-[#141414]/10">
@@ -539,20 +541,76 @@ export default function UserHome() {
                   </motion.tr>
                 ))}
               </AnimatePresence>
-              
-              {filteredMeds.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-6 py-20 text-center">
-                    <div className="flex flex-col items-center gap-2 opacity-20">
-                      <Search className="w-12 h-12" />
-                      <p className="font-bold">No medications found matching your criteria</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
+
+        {/* Mobile View Cards */}
+        <div className="md:hidden divide-y divide-[#141414]/5">
+          {loading && (
+            <div className="p-12 text-center flex flex-col items-center gap-2 opacity-50">
+              <Loader2 className="w-8 h-8 animate-spin text-[#F27D26]" />
+              <p className="font-bold text-xs uppercase tracking-widest">Loading Inventory...</p>
+            </div>
+          )}
+          
+          <AnimatePresence mode="popLayout">
+            {!loading && filteredMeds.map((med) => (
+              <motion.div 
+                layout
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                key={med.id}
+                className="p-4 space-y-3"
+              >
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-[#141414]">{med.itemName}</h3>
+                      {med.isNew && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-bold rounded-full">
+                          NEW
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs font-mono text-[#141414]/40 uppercase">{med.itemCode}</p>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-lg font-black ${med.qoh < 10 ? 'text-red-500' : 'text-[#141414]'}`}>
+                      {med.qoh.toLocaleString()}
+                    </div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">In Stock</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 p-2 bg-[#141414]/[0.02] rounded-xl border border-[#141414]/5">
+                  <div className="text-center">
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 1</p>
+                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration1 || '-'}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 2</p>
+                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration2 || '-'}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 3</p>
+                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration3 || '-'}</p>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+        
+        {filteredMeds.length === 0 && !loading && (
+          <div className="p-20 text-center flex flex-col items-center gap-4">
+            <div className="w-16 h-16 bg-[#141414]/5 rounded-full flex items-center justify-center">
+              <Search className="w-8 h-8 text-[#141414]/20" />
+            </div>
+            <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-sm">No results found</p>
+          </div>
+        )}
       </div>
     </div>
   );
