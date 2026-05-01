@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Medication, PharmacyLocation } from '../types';
@@ -10,6 +10,7 @@ export function useMedications(locationId?: PharmacyLocation) {
   const [error, setError] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<Date>(new Date());
   const [isSyncing, setIsSyncing] = useState(false);
+  const hasInitialData = useRef(false);
 
   const refresh = async (showLoading = false) => {
     if (showLoading) setIsSyncing(true);
@@ -21,11 +22,18 @@ export function useMedications(locationId?: PharmacyLocation) {
         }
         items.sort((a, b) => a.itemName.localeCompare(b.itemName));
         setMedications(items);
-        setLastSynced(new Date());
+        if (hasInitialData.current) setLastSynced(new Date());
+        hasInitialData.current = true;
       } catch (err: any) {
         setError(err.message);
       } finally {
         if (showLoading) setIsSyncing(false);
+      }
+    } else {
+      // For items with DB, we just update the timestamp to show intent
+      setLastSynced(new Date());
+      if (showLoading) {
+        setTimeout(() => setIsSyncing(false), 500);
       }
     }
   };
@@ -40,7 +48,6 @@ export function useMedications(locationId?: PharmacyLocation) {
 
       loadShared();
       
-      // Poll for updates every 5 seconds for "synchronization"
       const interval = setInterval(() => refresh(), 5000);
       return () => clearInterval(interval);
     }
@@ -60,8 +67,15 @@ export function useMedications(locationId?: PharmacyLocation) {
         snapshot.forEach((doc) => {
           items.push({ id: doc.id, ...doc.data() } as Medication);
         });
+        
         setMedications(items);
-        setLastSynced(new Date());
+        
+        // Only trigger "Live" pulse (via lastSynced change) if it's not the initial state
+        if (hasInitialData.current) {
+          setLastSynced(new Date());
+        }
+        
+        hasInitialData.current = true;
         setLoading(false);
       },
       (err) => {

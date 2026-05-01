@@ -57,12 +57,10 @@ export default function OrderView() {
 
   // Visual feedback for real-time sync
   React.useEffect(() => {
-    if (medications.length > 0) {
-      setShowSyncPulse(true);
-      const timer = setTimeout(() => setShowSyncPulse(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [medications]);
+    setShowSyncPulse(true);
+    const timer = setTimeout(() => setShowSyncPulse(false), 2000);
+    return () => clearTimeout(timer);
+  }, [lastSynced]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,14 +437,14 @@ export default function OrderView() {
           <button 
             onClick={() => refresh(true)}
             disabled={isSyncing}
-            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
+            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
               showSyncPulse 
-                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
-                : 'bg-[#141414]/5 text-[#141414]/40 hover:bg-[#141414]/10'
+                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 ring-2 ring-emerald-500/20' 
+                : 'bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100'
             }`}
           >
             {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className={`w-3 h-3 ${showSyncPulse ? 'animate-spin' : ''}`} />}
-            {showSyncPulse ? 'Live' : `Synced ${format(lastSynced, 'HH:mm')}`}
+            {showSyncPulse ? 'Live Updated' : `Synced ${format(lastSynced, 'HH:mm:ss')}`}
             {showSyncPulse && (
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
             )}

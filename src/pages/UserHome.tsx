@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search, Download, MapPin, Sparkles, Filter, Loader2, X, RefreshCw, ArrowUpDown, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -24,8 +24,16 @@ export default function UserHome() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showSyncPulse, setShowSyncPulse] = useState(false);
   
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+
+  // Visual feedback for real-time sync
+  useEffect(() => {
+    setShowSyncPulse(true);
+    const timer = setTimeout(() => setShowSyncPulse(false), 2000);
+    return () => clearTimeout(timer);
+  }, [lastSynced]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -192,12 +200,17 @@ export default function UserHome() {
           <button 
             onClick={() => refresh(true)}
             disabled={isSyncing}
-            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
-              isSyncing ? 'bg-[#141414]/5 text-[#141414]/40' : 'bg-[#141414]/5 text-[#141414]/40 hover:bg-[#141414]/10'
+            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
+              showSyncPulse 
+                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 ring-2 ring-emerald-500/20' 
+                : 'bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100'
             }`}
           >
-            {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            <span className="hidden sm:inline">Synced</span> {format(lastSynced, 'HH:mm')}
+            {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className={`w-3 h-3 ${showSyncPulse ? 'animate-spin' : ''}`} />}
+            {showSyncPulse ? 'Live Updated' : `Synced ${format(lastSynced, 'HH:mm:ss')}`}
+            {showSyncPulse && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
+            )}
           </button>
 
           <button 

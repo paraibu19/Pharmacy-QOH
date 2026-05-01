@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Download, Save, RefreshCw, AlertTriangle, 
   CheckCircle2, ArrowUpRight, History, Loader2, ArrowUpDown, Filter, X
@@ -18,6 +19,14 @@ export default function AdminInventory() {
   
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>({});
+  const [showSyncPulse, setShowSyncPulse] = useState(false);
+
+  // Visual feedback for real-time sync
+  useEffect(() => {
+    setShowSyncPulse(true);
+    const timer = setTimeout(() => setShowSyncPulse(false), 2000);
+    return () => clearTimeout(timer);
+  }, [lastSynced]);
 
   const [sortField, setSortField] = useState<SortField>('itemName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -193,26 +202,42 @@ export default function AdminInventory() {
           { label: 'Variances Tracked', value: Object.keys(physicalCounts).length.toLocaleString(), icon: AlertTriangle, color: 'orange' },
           { 
             label: 'System Sync', 
-            value: isSyncing ? 'Syncing...' : format(lastSynced, 'HH:mm:ss'), 
+            value: showSyncPulse ? 'Live Updated' : format(lastSynced, 'HH:mm:ss'), 
             icon: RefreshCw, 
             color: 'emerald',
             interactive: true,
-            onClick: () => refresh(true)
+            onClick: () => refresh(true),
+            highlight: showSyncPulse
           },
         ].map((stat, i) => (
           <div 
             key={i} 
             onClick={stat.onClick}
-            className={`bg-white p-5 rounded-2xl border border-[#141414]/10 flex items-center justify-between shadow-sm ${stat.interactive ? 'cursor-pointer hover:bg-[#141414]/[0.02] active:scale-[0.98] transition-all' : ''}`}
+            className={`bg-white p-5 rounded-2xl border flex items-center justify-between shadow-sm transition-all relative overflow-hidden ${
+              stat.highlight 
+                ? 'border-emerald-500 ring-2 ring-emerald-500/10' 
+                : 'border-[#141414]/10'
+            } ${stat.interactive ? 'cursor-pointer hover:bg-[#141414]/[0.02] active:scale-[0.98]' : ''}`}
           >
+            {stat.highlight && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="absolute inset-x-0 bottom-0 h-1 bg-emerald-500"
+              />
+            )}
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1">{stat.label}</p>
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${stat.highlight ? 'text-emerald-500' : 'text-[#141414]/40'}`}>
+                {stat.label}
+              </p>
               <div className="flex items-center gap-2">
-                <p className="text-2xl font-black">{stat.value}</p>
-                {stat.interactive && isSyncing && <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />}
+                <p className={`text-2xl font-black ${stat.highlight ? 'text-emerald-500' : ''}`}>{stat.value}</p>
+                {stat.interactive && (isSyncing || showSyncPulse) && (
+                  <Loader2 className={`w-4 h-4 animate-spin ${stat.highlight ? 'text-emerald-500' : 'text-emerald-500'}`} />
+                )}
               </div>
             </div>
-            <stat.icon className={`w-8 h-8 opacity-20 ${stat.interactive && isSyncing ? 'animate-spin' : ''}`} />
+            <stat.icon className={`w-8 h-8 transition-all ${stat.highlight ? 'text-emerald-500 opacity-20' : 'opacity-20'} ${stat.interactive && (isSyncing || showSyncPulse) ? 'animate-spin' : ''}`} />
           </div>
         ))}
       </div>
