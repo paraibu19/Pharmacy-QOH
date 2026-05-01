@@ -124,7 +124,7 @@ export default function AdminInventory() {
   };
 
   const downloadCSV = () => {
-    const headers = ['Item Code', 'Item Name', 'Current QOH', 'Physical Count', 'Variance', 'Last Updated'];
+    const headers = ['Item Code', 'Item Name', 'Current QOH', 'Min', 'Max', 'Physical Count', 'Variance', 'Last Updated'];
     const rows = sortedMeds.map(m => {
       const physical = physicalCounts[m.id] ?? m.qoh;
       const variance = physical - m.qoh;
@@ -132,6 +132,8 @@ export default function AdminInventory() {
         m.itemCode,
         m.itemName,
         m.qoh,
+        m.minQty || 0,
+        m.maxQty || 0,
         physical,
         variance,
         format(new Date(m.lastUpdatedAt), 'yyyy-MM-dd HH:mm')
@@ -316,15 +318,13 @@ export default function AdminInventory() {
                     {sortField === 'itemName' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
                   </div>
                 </th>
-                <th 
-                  className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors"
-                  onClick={() => toggleSort('qoh')}
-                >
+                <th className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors" onClick={() => toggleSort('qoh')}>
                   <div className="flex items-center gap-2">
                     System QOH
                     {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
                   </div>
                 </th>
+                <th className="px-6 py-4">Min / Max</th>
                 <th className="px-6 py-4">Physical Count</th>
                 <th className="px-6 py-4">Variance</th>
                 <th className="px-6 py-4 text-right">Action</th>
@@ -357,6 +357,12 @@ export default function AdminInventory() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold bg-[#141414]/5 px-2 py-1 rounded">{med.qoh.toLocaleString()}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
+                        <span>Min: <span className="text-[#141414]">{med.minQty || 0}</span></span>
+                        <span>Max: <span className="text-[#141414]">{med.maxQty || 0}</span></span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
