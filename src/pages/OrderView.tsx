@@ -46,10 +46,22 @@ export default function OrderView() {
   const [editMin, setEditMin] = useState<string>('');
   const [editMax, setEditMax] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showSyncPulse, setShowSyncPulse] = useState(false);
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
 
   React.useEffect(() => {
     technicianAuthOps.getPassword().then(setPersistedPassword);
   }, []);
+
+  // Visual feedback for real-time sync
+  React.useEffect(() => {
+    if (medications.length > 0) {
+      setShowSyncPulse(true);
+      const timer = setTimeout(() => setShowSyncPulse(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [medications]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,19 +212,22 @@ export default function OrderView() {
   };
 
   const startEdit = (med: Medication) => {
-    setEditingId(med.id);
+    setSelectedMedForEdit(med);
     setEditMin(String(med.minQty || 0));
     setEditMax(String(med.maxQty || 0));
+    setShowCorrectionModal(true);
   };
 
-  const saveEdit = async (id: string) => {
+  const saveEdit = async () => {
+    if (!selectedMedForEdit) return;
     setIsUpdating(true);
     try {
-      await medicationOps.update(id, {
+      await medicationOps.update(selectedMedForEdit.id, {
         minQty: Number(editMin),
         maxQty: Number(editMax)
       });
-      setEditingId(null);
+      setShowCorrectionModal(false);
+      setSelectedMedForEdit(null);
     } catch (err) {
       console.error(err);
     } finally {
@@ -400,12 +415,17 @@ export default function OrderView() {
           <button 
             onClick={() => refresh(true)}
             disabled={isSyncing}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all ${
-              isSyncing ? 'bg-[#141414]/5 text-[#141414]/40' : 'bg-[#141414]/5 text-[#141414]/40 hover:bg-[#141414]/10'
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
+              showSyncPulse 
+                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
+                : 'bg-[#141414]/5 text-[#141414]/40 hover:bg-[#141414]/10'
             }`}
           >
-            {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            Synced {format(lastSynced, 'HH:mm')}
+            {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className={`w-3 h-3 ${showSyncPulse ? 'animate-spin' : ''}`} />}
+            {showSyncPulse ? 'Live Syncing...' : `Synced ${format(lastSynced, 'HH:mm')}`}
+            {showSyncPulse && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
+            )}
           </button>
 
           <div className="flex items-center gap-1 bg-[#141414]/5 p-1 rounded-full border border-[#141414]/10">
@@ -675,28 +695,10 @@ export default function OrderView() {
                         </span>
                       </td>
                       <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
-                        {isEditing ? (
-                          <input 
-                            type="number"
-                            value={editMin}
-                            onChange={(e) => setEditMin(e.target.value)}
-                            className="w-16 px-2 py-1 bg-white border border-[#F27D26]/30 rounded text-xs font-bold focus:ring-1 focus:ring-[#F27D26]"
-                          />
-                        ) : (
-                          <span className="font-medium text-[#141414]/60">{med.minQty || 0}</span>
-                        )}
+                        <span className="font-medium text-[#141414]/60">{med.minQty || 0}</span>
                       </td>
                       <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
-                        {isEditing ? (
-                          <input 
-                            type="number"
-                            value={editMax}
-                            onChange={(e) => setEditMax(e.target.value)}
-                            className="w-16 px-2 py-1 bg-white border border-[#F27D26]/30 rounded text-xs font-bold focus:ring-1 focus:ring-[#F27D26]"
-                          />
-                        ) : (
-                          <span className="font-medium text-[#141414]/60">{med.maxQty || 0}</span>
-                        )}
+                        <span className="font-medium text-[#141414]/60">{med.maxQty || 0}</span>
                       </td>
                       <td className="px-6 py-4 bg-emerald-50/30">
                         {isOrdered ? (
@@ -710,30 +712,12 @@ export default function OrderView() {
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-2">
-                            <button 
-                              onClick={() => saveEdit(med.id)}
-                              disabled={isUpdating}
-                              className="w-8 h-8 bg-[#141414] text-white rounded-lg flex items-center justify-center hover:bg-emerald-500 transition-all disabled:opacity-50"
-                            >
-                              {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            </button>
-                            <button 
-                              onClick={() => setEditingId(null)}
-                              className="w-8 h-8 bg-black/5 text-[#141414] rounded-lg flex items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={() => startEdit(med)}
-                            className="w-8 h-8 opacity-0 group-hover:opacity-100 bg-[#141414]/5 text-[#141414]/40 rounded-lg flex items-center justify-center hover:bg-[#F27D26] hover:text-white transition-all mx-auto"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                        )}
+                        <button 
+                          onClick={() => startEdit(med)}
+                          className="w-8 h-8 opacity-0 group-hover:opacity-100 bg-[#141414]/5 text-[#141414]/40 rounded-lg flex items-center justify-center hover:bg-[#F27D26] hover:text-white transition-all mx-auto"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
                       </td>
                     </motion.tr>
                   );
@@ -838,6 +822,102 @@ export default function OrderView() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Quantity Correction Window */}
+      <AnimatePresence>
+        {showCorrectionModal && selectedMedForEdit && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[#F27D26]/10 text-[#F27D26] rounded-xl flex items-center justify-center font-black">
+                    QTY
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold">Correction Window</h3>
+                    <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">{selectedMedForEdit.itemName}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowCorrectionModal(false)}
+                  className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">Min Quantity</label>
+                    <input 
+                      type="number"
+                      value={editMin}
+                      onChange={(e) => setEditMin(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold"
+                      placeholder="Min"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">Max Quantity</label>
+                    <input 
+                      type="number"
+                      value={editMax}
+                      onChange={(e) => setEditMax(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold"
+                      placeholder="Max"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-[#F27D26]/5 rounded-2xl space-y-2">
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
+                    <span>Current QOH</span>
+                    <span className="text-[#141414]">{selectedMedForEdit.qoh.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
+                    <span>New Order Qty</span>
+                    <span className="text-[#F27D26]">
+                      {(() => {
+                        const qoh = selectedMedForEdit.qoh;
+                        const min = Number(editMin) || 0;
+                        const max = Number(editMax) || 0;
+                        if (max === 0 || min === 0 || max <= qoh || (max-qoh) <= min) return 0;
+                        return Math.floor((max - qoh) / min) * min;
+                      })().toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    onClick={() => setShowCorrectionModal(false)}
+                    className="flex-1 py-3 bg-[#141414]/5 text-[#141414]/60 rounded-xl font-bold hover:bg-[#141414]/10 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={saveEdit}
+                    disabled={isUpdating}
+                    className="flex-1 py-3 bg-[#141414] text-white rounded-xl font-bold hover:bg-[#F27D26] transition-all flex items-center justify-center gap-2"
+                  >
+                    {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply Sync'}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}

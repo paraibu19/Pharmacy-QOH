@@ -34,6 +34,12 @@ export default function AdminDashboard() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetError, setResetError] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [showSyncPulse, setShowSyncPulse] = useState(false);
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
+  const [editMin, setEditMin] = useState<string>('');
+  const [editMax, setEditMax] = useState<string>('');
+  const [isUpdating, setIsUpdating] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -99,6 +105,14 @@ export default function AdminDashboard() {
     localStorage.removeItem(DRAFT_STORAGE_KEY);
     setHasDraft(false);
   };
+
+  useEffect(() => {
+    if (medications.length > 0) {
+      setShowSyncPulse(true);
+      const timer = setTimeout(() => setShowSyncPulse(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [medications]);
 
   // Expiration helper
   const parseExpDate = (dateStr: string) => {
@@ -446,6 +460,31 @@ export default function AdminDashboard() {
     }
   };
 
+  const startCorrection = (med: Medication) => {
+    setSelectedMedForEdit(med);
+    setEditMin(String(med.minQty || 0));
+    setEditMax(String(med.maxQty || 0));
+    setShowCorrectionModal(true);
+  };
+
+  const saveCorrection = async () => {
+    if (!selectedMedForEdit) return;
+    setIsUpdating(true);
+    try {
+      await medicationOps.update(selectedMedForEdit.id, {
+        minQty: Number(editMin),
+        maxQty: Number(editMax)
+      });
+      setShowCorrectionModal(false);
+      setSelectedMedForEdit(null);
+      await refresh();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="space-y-8 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -455,21 +494,26 @@ export default function AdminDashboard() {
             <button 
               onClick={() => refresh(true)}
               disabled={isSyncing}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all ${
-                db 
-                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
-                : 'bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200'
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all relative ${
+                showSyncPulse
+                ? 'bg-emerald-500 text-white border-emerald-600'
+                : db 
+                  ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+                  : 'bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200'
               } disabled:opacity-50`}
             >
               {isSyncing ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
-                db ? <Check className="w-3 h-3" /> : <RefreshCw className="w-3 h-3" />
+                db ? <Check className={`w-3 h-3 ${showSyncPulse ? 'animate-pulse' : ''}`} /> : <RefreshCw className="w-3 h-3" />
               )}
-              {db ? 'Real-time Sync' : 'Server Sync'}
+              {showSyncPulse ? 'Live Updated' : db ? 'Real-time Sync' : 'Server Sync'}
               <span className="opacity-50 font-medium ml-1">
                 {format(lastSynced, 'HH:mm:ss')}
               </span>
+              {showSyncPulse && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping" />
+              )}
             </button>
           </div>
           <p className="text-[#141414]/50">Add, update or delete pharmacy stock items</p>
@@ -976,7 +1020,7 @@ export default function AdminDashboard() {
                         )}
                       </div>
                       <button 
-                        onClick={() => startEdit(med)}
+                        onClick={() => startCorrection(med)}
                         className="text-sm font-bold text-[#141414] hover:text-[#F27D26] transition-colors text-left"
                       >
                         {med.itemName}
@@ -1056,6 +1100,94 @@ export default function AdminDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Quantity Correction Window */}
+      <AnimatePresence>
+        {showCorrectionModal && selectedMedForEdit && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[#F27D26]/10 text-[#F27D26] rounded-xl flex items-center justify-center font-black">
+                    QTY
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold">Correction Window</h3>
+                    <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">{selectedMedForEdit.itemName}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowCorrectionModal(false)}
+                  className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">Min Quantity</label>
+                    <input 
+                      type="number"
+                      value={editMin}
+                      onChange={(e) => setEditMin(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold"
+                      placeholder="Min"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">Max Quantity</label>
+                    <input 
+                      type="number"
+                      value={editMax}
+                      onChange={(e) => setEditMax(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold"
+                      placeholder="Max"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-[#F27D26]/5 rounded-2xl space-y-2">
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
+                    <span>Item Code</span>
+                    <span className="text-[#141414] font-mono">{selectedMedForEdit.itemCode}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
+                    <span>Current QOH</span>
+                    <span className="text-[#141414] font-bold">{selectedMedForEdit.qoh.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    onClick={() => setShowCorrectionModal(false)}
+                    className="flex-1 py-3 bg-[#141414]/5 text-[#141414]/60 rounded-xl font-bold hover:bg-[#141414]/10 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={saveCorrection}
+                    disabled={isUpdating}
+                    className="flex-1 py-3 bg-[#141414] text-white rounded-xl font-bold hover:bg-[#F27D26] transition-all flex items-center justify-center gap-2"
+                  >
+                    {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply Sync'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Global Reset Confirmation Modal */}
       <AnimatePresence>
