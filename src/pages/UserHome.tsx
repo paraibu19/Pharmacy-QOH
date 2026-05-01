@@ -1,24 +1,40 @@
 import { useState, useMemo } from 'react';
-import { Search, Download, MapPin, Sparkles, Filter, Loader2, X, RefreshCw } from 'lucide-react';
+import { Search, Download, MapPin, Sparkles, Filter, Loader2, X, RefreshCw, ArrowUpDown, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { PharmacyLocation, PHARMACY_NAMES } from '../types';
+import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import { format, differenceInDays } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useMedications } from '../hooks/useMedications';
 
+type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew';
+type SortOrder = 'asc' | 'desc';
+
 export default function UserHome() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [qohThreshold, setQohThreshold] = useState<number | ''>('');
+  const [lowStockOnly, setLowStockOnly] = useState(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   
+  const [sortField, setSortField] = useState<SortField>('itemName');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  
   const [showSuggestions, setShowSuggestions] = useState(false);
   
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   const suggestions = useMemo(() => {
     if (searchQuery.length < 1) return [];
@@ -72,6 +88,10 @@ export default function UserHome() {
       result = result.filter(m => m.qoh <= qohThreshold);
     }
 
+    if (lowStockOnly) {
+      result = result.filter(m => m.qoh < 10);
+    }
+
     if (expStart || expEnd) {
       const start = expStart ? new Date(expStart) : null;
       const end = expEnd ? new Date(expEnd) : null;
@@ -81,7 +101,7 @@ export default function UserHome() {
           .map(parseExpDate)
           .filter(d => d !== null) as Date[];
 
-        if (dates.length === 0) return !expStart && !expEnd; // Show if no dates but filters exist? Or hide? Let's hide if filters are set but no dates found.
+        if (dates.length === 0) return !expStart && !expEnd;
 
         return dates.some(d => {
           let matches = true;
@@ -92,11 +112,22 @@ export default function UserHome() {
       });
     }
     
-    return result.map(m => ({
+    const mapped = result.map(m => ({
       ...m,
       isNew: m.addedAt ? differenceInDays(new Date(), (m.addedAt as any).toDate?.() || new Date(m.addedAt)) < 10 : false
     }));
-  }, [medications, searchQuery, qohThreshold, expStart, expEnd]);
+
+    return mapped.sort((a, b) => {
+      const multiplier = sortOrder === 'asc' ? 1 : -1;
+      if (sortField === 'qoh') {
+        return (a.qoh - b.qoh) * multiplier;
+      }
+      if (sortField === 'isNew') {
+        return (Number(b.isNew) - Number(a.isNew)) * multiplier;
+      }
+      return a[sortField].localeCompare(b[sortField]) * multiplier;
+    });
+  }, [medications, searchQuery, qohThreshold, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
 
   // Handle PDF Export
   const downloadPDF = () => {
@@ -180,7 +211,7 @@ export default function UserHome() {
         </div>
       </div>
 
-      {(qohThreshold !== '' || expStart || expEnd) && (
+      {(qohThreshold !== '' || lowStockOnly || expStart || expEnd) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
@@ -191,13 +222,18 @@ export default function UserHome() {
               Max QOH: <span className="text-[#F27D26] text-xs leading-none">{qohThreshold.toLocaleString()}</span>
             </span>
           )}
+          {lowStockOnly && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
+              Low Stock Only ({'< 10'})
+            </span>
+          )}
           {(expStart || expEnd) && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
               Expiry: <span className="text-[#F27D26]">{expStart || 'Any'}</span> – <span className="text-[#F27D26]">{expEnd || 'Any'}</span>
             </span>
           )}
           <button 
-            onClick={() => { setQohThreshold(''); setExpStart(''); setExpEnd(''); }}
+            onClick={() => { setQohThreshold(''); setLowStockOnly(false); setExpStart(''); setExpEnd(''); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -299,24 +335,39 @@ export default function UserHome() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-[#141414]/5 p-4 rounded-2xl border border-[#141414]/10">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 bg-[#141414]/5 p-4 rounded-2xl border border-[#141414]/10">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
-                    Max QOH Threshold
+                    Threshold
                   </label>
                   <input
                     type="number"
                     step="any"
                     value={qohThreshold}
                     onChange={(e) => setQohThreshold(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="e.g. 1,000"
+                    placeholder="Max QOH"
                     className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-medium"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                    Quick filter
+                  </label>
+                  <button
+                    onClick={() => setLowStockOnly(!lowStockOnly)}
+                    className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                      lowStockOnly ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-white border border-[#141414]/10 text-[#141414]/60'
+                    }`}
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    Low Stock ({'< 10'})
+                  </button>
                 </div>
                 
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
-                    Exp. Date Range (Start)
+                    Exp. Range (Start)
                   </label>
                   <input
                     type="date"
@@ -328,7 +379,7 @@ export default function UserHome() {
 
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
-                    Exp. Date Range (End)
+                    Exp. Range (End)
                   </label>
                   <input
                     type="date"
@@ -342,6 +393,7 @@ export default function UserHome() {
                   <button
                     onClick={() => {
                       setQohThreshold('');
+                      setLowStockOnly(false);
                       setExpStart('');
                       setExpEnd('');
                       setSearchQuery('');
@@ -349,7 +401,7 @@ export default function UserHome() {
                     className="w-full h-[42px] flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all"
                   >
                     <X className="w-4 h-4" />
-                    Reset All Filters
+                    Reset
                   </button>
                 </div>
               </div>
@@ -364,10 +416,42 @@ export default function UserHome() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-[#141414]/5 border-bottom border-[#141414]/10">
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Status</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Item Code</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Item Name</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">QOH</th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  onClick={() => toggleSort('isNew')}
+                >
+                  <div className="flex items-center gap-1">
+                    Status
+                    {sortField === 'isNew' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  onClick={() => toggleSort('itemCode')}
+                >
+                  <div className="flex items-center gap-1">
+                    Item Code
+                    {sortField === 'itemCode' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  onClick={() => toggleSort('itemName')}
+                >
+                  <div className="flex items-center gap-1">
+                    Item Name
+                    {sortField === 'itemName' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                  onClick={() => toggleSort('qoh')}
+                >
+                  <div className="flex items-center gap-1">
+                    QOH
+                    {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Exp 1</th>
                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Exp 2</th>
                 <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Exp 3</th>

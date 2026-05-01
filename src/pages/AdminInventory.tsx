@@ -1,13 +1,16 @@
 import { useState, useMemo } from 'react';
 import { 
   Search, Download, Save, RefreshCw, AlertTriangle, 
-  CheckCircle2, ArrowUpRight, History, Loader2
+  CheckCircle2, ArrowUpRight, History, Loader2, ArrowUpDown, Filter, X
 } from 'lucide-react';
 import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
 import { format } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { auditOps } from '../lib/firebaseOperations';
+
+type SortField = 'itemName' | 'itemCode' | 'qoh';
+type SortOrder = 'asc' | 'desc';
 
 export default function AdminInventory() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
@@ -16,16 +19,87 @@ export default function AdminInventory() {
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>({});
 
+  const [sortField, setSortField] = useState<SortField>('itemName');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [expStart, setExpStart] = useState('');
+  const [expEnd, setExpEnd] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+
+  const parseExpDate = (dateStr: string) => {
+    if (!dateStr || dateStr === '-' || dateStr === '.') return null;
+    try {
+      const parts = dateStr.split(/[-/.]/);
+      if (parts.length === 3) {
+        const d = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        const y = parseInt(parts[2]);
+        const fullYear = y < 100 ? 2000 + y : y;
+        const date = new Date(fullYear, m - 1, d);
+        if (!isNaN(date.getTime())) return date;
+      } else if (parts.length === 2) {
+        const m = parseInt(parts[0]);
+        const y = parseInt(parts[1]);
+        const fullYear = y < 100 ? 2000 + y : y;
+        const date = new Date(fullYear, m - 1, 1);
+        if (!isNaN(date.getTime())) return date;
+      }
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) return d;
+    } catch { }
+    return null;
+  };
+
   const sortedMeds = useMemo(() => {
-    let result = medications;
+    let result = [...medications];
     
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(m => m.itemName.toLowerCase().includes(q) || m.itemCode.toLowerCase().includes(q));
     }
+
+    if (lowStockOnly) {
+      result = result.filter(m => m.qoh < 10);
+    }
+
+    if (expStart || expEnd) {
+      const start = expStart ? new Date(expStart) : null;
+      const end = expEnd ? new Date(expEnd) : null;
+
+      result = result.filter(m => {
+        const dates = [m.expiration1, m.expiration2, m.expiration3]
+          .map(parseExpDate)
+          .filter(d => d !== null) as Date[];
+
+        if (dates.length === 0) return !expStart && !expEnd;
+
+        return dates.some(d => {
+          let matches = true;
+          if (start && d < start) matches = false;
+          if (end && d > end) matches = false;
+          return matches;
+        });
+      });
+    }
     
-    return result.sort((a, b) => a.itemName.localeCompare(b.itemName));
-  }, [medications, searchQuery]);
+    return result.sort((a, b) => {
+      const multiplier = sortOrder === 'asc' ? 1 : -1;
+      if (sortField === 'qoh') {
+        return (a.qoh - b.qoh) * multiplier;
+      }
+      return a[sortField].localeCompare(b[sortField]) * multiplier;
+    });
+  }, [medications, searchQuery, sortField, sortOrder, lowStockOnly, expStart, expEnd]);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   const handlePhysicalCountChange = (id: string, value: string) => {
     setPhysicalCounts(prev => ({
@@ -126,26 +200,40 @@ export default function AdminInventory() {
 
       {/* Filters */}
       <div className="bg-white p-6 rounded-2xl border border-[#141414]/10 shadow-sm space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {LOCATIONS.map(loc => (
-            <button
-              key={loc.id}
-              onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-              className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${
-                selectedLocation === loc.id 
-                  ? loc.id === PharmacyLocation.ADULT
-                    ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
-                    : loc.id === PharmacyLocation.PEDIATRIC
-                      ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
-                      : loc.id === PharmacyLocation.MESAIEED
-                        ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
-                        : 'bg-[#141414] text-white' 
-                  : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
-              }`}
-            >
-              {loc.name.replace('Aw-', '')}
-            </button>
-          ))}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="flex flex-wrap gap-2">
+            {LOCATIONS.map(loc => (
+              <button
+                key={loc.id}
+                onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
+                className={`px-5 py-2 rounded-xl text-xs font-bold transition-all ${
+                  selectedLocation === loc.id 
+                    ? loc.id === PharmacyLocation.ADULT
+                      ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
+                      : loc.id === PharmacyLocation.PEDIATRIC
+                        ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
+                        : loc.id === PharmacyLocation.MESAIEED
+                          ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
+                          : 'bg-[#141414] text-white' 
+                    : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
+                }`}
+              >
+                {loc.name.replace('Aw-', '')}
+              </button>
+            ))}
+          </div>
+
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              showFilters || lowStockOnly || expStart || expEnd
+              ? 'bg-[#141414] text-white shadow-lg'
+              : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            {showFilters ? 'Hide Filters' : 'Advanced Filters'}
+          </button>
         </div>
 
         <div className="relative">
@@ -158,6 +246,59 @@ export default function AdminInventory() {
             className="w-full pl-11 pr-4 py-3 bg-[#141414]/[0.03] border-none rounded-xl focus:ring-2 focus:ring-[#141414]/5 transition-all text-sm"
           />
         </div>
+
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-[#141414]/5 animate-in slide-in-from-top-2">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                Stock Level
+              </label>
+              <button
+                onClick={() => setLowStockOnly(!lowStockOnly)}
+                className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                  lowStockOnly ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-[#141414]/5 text-[#141414]/60'
+                }`}
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Low Stock Only ({'< 10'})
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                Expiry (Start)
+              </label>
+              <input
+                type="date"
+                value={expStart}
+                onChange={(e) => setExpStart(e.target.value)}
+                className="w-full px-4 py-2.5 bg-[#141414]/[0.03] rounded-xl text-sm focus:ring-2 focus:ring-[#141414]/5 transition-all"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                Expiry (End)
+              </label>
+              <input
+                type="date"
+                value={expEnd}
+                onChange={(e) => setExpEnd(e.target.value)}
+                className="w-full px-4 py-2.5 bg-[#141414]/[0.03] rounded-xl text-sm focus:ring-2 focus:ring-[#141414]/5 transition-all"
+              />
+            </div>
+
+            <div className="flex items-end pb-0.5">
+              <button
+                onClick={() => { setLowStockOnly(false); setExpStart(''); setExpEnd(''); setSearchQuery(''); }}
+                className="w-full py-2.5 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl transition-all flex items-center justify-center gap-2 border border-transparent hover:border-red-100"
+              >
+                <X className="w-4 h-4" />
+                Clear Filters
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Audit Table */}
@@ -166,8 +307,24 @@ export default function AdminInventory() {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-[#141414]/[0.02] text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
-                <th className="px-6 py-4">Medication</th>
-                <th className="px-6 py-4">System QOH</th>
+                <th 
+                  className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors"
+                  onClick={() => toggleSort('itemName')}
+                >
+                  <div className="flex items-center gap-2">
+                    Medication
+                    {sortField === 'itemName' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 cursor-pointer hover:bg-[#141414]/[0.02] transition-colors"
+                  onClick={() => toggleSort('qoh')}
+                >
+                  <div className="flex items-center gap-2">
+                    System QOH
+                    {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
+                  </div>
+                </th>
                 <th className="px-6 py-4">Physical Count</th>
                 <th className="px-6 py-4">Variance</th>
                 <th className="px-6 py-4 text-right">Action</th>
