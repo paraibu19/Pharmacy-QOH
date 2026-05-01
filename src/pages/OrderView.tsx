@@ -10,8 +10,10 @@ import { LOCATIONS } from '../constants';
 import { format, differenceInDays } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
+import { formatNumber } from '../lib/formatters';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQty';
 type SortOrder = 'asc' | 'desc';
@@ -172,7 +174,7 @@ export default function OrderView() {
     }
 
     if (lowStockOnly) {
-      result = result.filter(m => m.qoh < 10);
+      result = result.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3);
     }
 
     if (expStart || expEnd) {
@@ -262,7 +264,10 @@ export default function OrderView() {
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(r => r.map(field => `"${field}"`).join(','))
+      ...rows.map(r => r.map((field, idx) => {
+        if (idx === 3 && typeof field === 'number') return `"${formatNumber(field)}"`;
+        return `"${field}"`;
+      }).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -271,6 +276,23 @@ export default function OrderView() {
     a.href = url;
     a.download = `Store_Order_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
+  };
+
+  const downloadExcel = () => {
+    const orderItems = sortedMeds.filter(m => m.orderQty > 0);
+    const data = orderItems.map((m, i) => ({
+      'Serial no.': i + 1,
+      'Item code': m.itemCode,
+      'Item name': m.itemName,
+      'Order quantity': m.orderQty,
+      'Exp1': m.expiration1 || '-'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Store_Order");
+    
+    XLSX.writeFile(wb, `Store_Order_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
 
   const downloadPDF = () => {
@@ -291,7 +313,7 @@ export default function OrderView() {
       i + 1,
       m.itemCode,
       m.itemName,
-      m.orderQty,
+      formatNumber(m.orderQty),
       m.expiration1 || '-'
     ]);
 
@@ -465,6 +487,13 @@ export default function OrderView() {
               <Download className="w-3 h-3" />
               PDF
             </button>
+            <button 
+              onClick={downloadExcel}
+              className="flex-1 md:flex-none px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all shadow-sm flex items-center justify-center gap-2 border border-[#141414]/5"
+            >
+              <FileSpreadsheet className="w-3 h-3 text-[#F27D26]" />
+              EXCEL
+            </button>
           </div>
         </div>
       </div>
@@ -482,7 +511,7 @@ export default function OrderView() {
           )}
           {qohThreshold !== '' && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Max QOH: <span className="text-[#F27D26]">{qohThreshold}</span>
+              Max QOH: <span className="text-[#F27D26]">{formatNumber(qohThreshold)}</span>
             </span>
           )}
           {lowStockOnly && (
@@ -631,7 +660,7 @@ export default function OrderView() {
                     }`}
                   >
                     <AlertTriangle className="w-4 h-4" />
-                    Low Stock
+                    Low Stock ({'< 30% Max'})
                   </button>
                 </div>
                 <div className="space-y-1.5">
@@ -765,22 +794,22 @@ export default function OrderView() {
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-black ${
-                            med.qoh < 10 ? 'bg-red-100 text-red-600' : 'bg-[#141414]/5 text-[#141414]'
+                            (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'bg-red-100 text-red-600' : 'bg-[#141414]/5 text-[#141414]'
                           }`}>
-                            {med.qoh.toLocaleString()}
+                            {formatNumber(med.qoh)}
                           </span>
                         </td>
                         <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
-                          <span className="font-medium text-[#141414]/60">{med.minQty || 0}</span>
+                          <span className="font-medium text-[#141414]/60">{formatNumber(med.minQty || 0)}</span>
                         </td>
                         <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
-                          <span className="font-medium text-[#141414]/60">{med.maxQty || 0}</span>
+                          <span className="font-medium text-[#141414]/60">{formatNumber(med.maxQty || 0)}</span>
                         </td>
                         <td className="px-6 py-4 bg-emerald-50/30">
                           {isOrdered ? (
                             <span className="flex items-center gap-2 text-emerald-600 font-black">
-                              <span className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-xs">
-                                {med.orderQty.toLocaleString()}
+                              <span className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-xs px-2 min-w-[32px]">
+                                {formatNumber(med.orderQty)}
                               </span>
                             </span>
                           ) : (
@@ -829,7 +858,7 @@ export default function OrderView() {
                         <div className={`px-3 py-1 rounded-full text-xs font-black ${
                           med.qoh < 10 ? 'bg-red-100 text-red-600' : 'bg-[#141414]/5 text-[#141414]'
                         }`}>
-                          {med.qoh.toLocaleString()}
+                          {formatNumber(med.qoh)}
                         </div>
                         <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mt-1">Stock</p>
                       </div>
@@ -838,15 +867,15 @@ export default function OrderView() {
                     <div className="grid grid-cols-3 gap-0 border border-[#141414]/5 rounded-xl overflow-hidden bg-[#141414]/[0.02]">
                       <div className="p-2 border-right border-[#141414]/5 text-center bg-[#F27D26]/[0.03]">
                         <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Min</p>
-                        <p className="text-xs font-bold text-[#F27D26]">{med.minQty || 0}</p>
+                        <p className="text-xs font-bold text-[#F27D26]">{formatNumber(med.minQty || 0)}</p>
                       </div>
                       <div className="p-2 border-right border-[#141414]/5 text-center bg-[#F27D26]/[0.03]">
                         <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Max</p>
-                        <p className="text-xs font-bold text-[#F27D26]">{med.maxQty || 0}</p>
+                        <p className="text-xs font-bold text-[#F27D26]">{formatNumber(med.maxQty || 0)}</p>
                       </div>
                       <div className="p-2 text-center bg-emerald-500/10">
                         <p className="text-[8px] font-bold uppercase tracking-wider text-emerald-600/60 mb-0.5">Order</p>
-                        <p className="text-xs font-black text-emerald-600">{med.orderQty || '-'}</p>
+                        <p className="text-xs font-black text-emerald-600">{med.orderQty ? formatNumber(med.orderQty) : '-'}</p>
                       </div>
                     </div>
                   </motion.div>
@@ -1024,7 +1053,7 @@ export default function OrderView() {
                 <div className="p-4 bg-[#F27D26]/5 rounded-2xl space-y-2">
                   <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
                     <span>Current QOH</span>
-                    <span className="text-[#141414]">{selectedMedForEdit.qoh.toLocaleString()}</span>
+                    <span className="text-[#141414]">{formatNumber(selectedMedForEdit.qoh)}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
                     <span>New Order Qty</span>
@@ -1034,8 +1063,9 @@ export default function OrderView() {
                         const min = Number(editMin) || 0;
                         const max = Number(editMax) || 0;
                         if (max === 0 || min === 0 || max <= qoh || (max-qoh) <= min) return 0;
-                        return Math.floor((max - qoh) / min) * min;
-                      })().toLocaleString()}
+                        const val = Math.floor((max - qoh) / min) * min;
+                        return formatNumber(val);
+                      })()}
                     </span>
                   </div>
                 </div>

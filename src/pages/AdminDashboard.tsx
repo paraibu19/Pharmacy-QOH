@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, systemOps } from '../lib/firebaseOperations';
+import { formatNumber } from '../lib/formatters';
 
 import { db } from '../lib/firebase';
 
@@ -265,16 +266,21 @@ export default function AdminDashboard() {
               const normalizedRK = rk.toLowerCase().replace(/[\s\-_.]/g, '');
               
               // Exact match or prefix/suffix match
-              if (normalizedRK === normalizedK || normalizedRK.startsWith(normalizedK) || normalizedK.startsWith(normalizedRK)) {
+              if (normalizedRK === normalizedK || normalizedRK.includes(normalizedK) || normalizedK.includes(normalizedRK)) {
                 return true;
               }
+
+              // Common variants for Item Code
+              if (normalizedK === 'itemcode' && (normalizedRK === 'code' || normalizedRK === 'id' || normalizedRK === 'artno' || normalizedRK === 'material')) return true;
+              // Common variants for QOH
+              if (normalizedK === 'qoh' && (normalizedRK === 'qty' || normalizedRK === 'quantity' || normalizedRK === 'stock' || normalizedRK === 'count')) return true;
 
               // Special handling for Exp 1, 2, 3
               const digitMatch = normalizedK.match(/\d/);
               if (digitMatch && (normalizedK.includes('exp') || normalizedK.includes('expiry'))) {
                 const digit = digitMatch[0];
                 const rkHasDigit = normalizedRK.includes(digit);
-                const rkIsExp = normalizedRK.includes('exp') || normalizedRK.includes('expiry');
+                const rkIsExp = normalizedRK.includes('exp') || normalizedRK.includes('expiry') || normalizedRK.includes('date');
                 if (rkHasDigit && rkIsExp) return true;
               }
               
@@ -321,12 +327,16 @@ export default function AdminDashboard() {
           else if (lowerName.match(/pediatric|peds|child|ped/i)) locationId = PharmacyLocation.PEDIATRIC;
           else if (lowerName.match(/mesaieed|mesai|msd|mes/i)) locationId = PharmacyLocation.MESAIEED;
 
-          // Single sheet fallback
+          // Single sheet fallback - if only 1 sheet, use selectedLocation regardless of name
           if (!locationId && sheetsTotal === 1) {
             locationId = selectedLocation;
+            console.log(`Single sheet detected, defaulting to location: ${locationId}`);
           }
 
-          if (!locationId) return;
+          if (!locationId) {
+            console.warn(`Skipping sheet "${wsname}" - could not identify location.`);
+            return;
+          }
           sheetsFound++;
 
           const ws = wb.Sheets[wsname];
@@ -726,12 +736,12 @@ export default function AdminDashboard() {
                         <div className="text-right min-w-[70px]">
                           <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">In</div>
                           <div className={`text-sm font-bold ${item.daysLeft <= 15 ? 'text-red-500' : item.daysLeft <= 30 ? 'text-[#F27D26]' : 'text-amber-500'}`}>
-                            {item.daysLeft}d
+                            {formatNumber(item.daysLeft)}d
                           </div>
                         </div>
                         <div className="text-right min-w-[80px]">
                           <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Qty</div>
-                          <div className="text-sm font-bold">{item.qoh.toLocaleString()}</div>
+                          <div className="text-sm font-bold">{formatNumber(item.qoh)}</div>
                         </div>
                       </div>
                     </div>
@@ -758,23 +768,23 @@ export default function AdminDashboard() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center py-3 border-b border-white/10">
                   <span className="text-sm text-white/60">Total Items</span>
-                  <span className="text-lg font-bold">{medications.length.toLocaleString()}</span>
+                  <span className="text-lg font-bold">{formatNumber(medications.length)}</span>
                 </div>
                 <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
                   <span className="text-sm text-white/60">EXP1 Current Month</span>
-                  <span className="text-lg font-bold text-red-400">{expirationStats.current.toLocaleString()}</span>
+                  <span className="text-lg font-bold text-red-400">{formatNumber(expirationStats.current)}</span>
                 </div>
                 <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
                   <span className="text-sm text-white/60">EXP1 Next Month</span>
-                  <span className="text-lg font-bold text-amber-400">{expirationStats.next.toLocaleString()}</span>
+                  <span className="text-lg font-bold text-amber-400">{formatNumber(expirationStats.next)}</span>
                 </div>
                 <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
                   <span className="text-sm text-white/60">EXP1 After Next Month</span>
-                  <span className="text-lg font-bold text-sky-400">{expirationStats.third.toLocaleString()}</span>
+                  <span className="text-lg font-bold text-sky-400">{formatNumber(expirationStats.third)}</span>
                 </div>
                 <div className="flex justify-between items-center py-3 border-b border-white/10">
-                  <span className="text-sm text-white/60">Low Stock Items (qoh &le; 10)</span>
-                  <span className="text-lg font-bold text-red-400">{(medications.filter(m => m.qoh <= 10).length).toLocaleString()}</span>
+                  <span className="text-sm text-white/60">Low Stock Items (qoh &lt; 30% Max)</span>
+                  <span className="text-lg font-bold text-red-400">{formatNumber(medications.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length)}</span>
                 </div>
               </div>
             </div>
@@ -1043,7 +1053,7 @@ export default function AdminDashboard() {
               </tr>
             )}
             {!loading && sortedMedications.map(med => {
-              const isLowStock = med.qoh <= 10;
+              const isLowStock = med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
               const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
               
               // Expiration check for highlighting
@@ -1089,7 +1099,7 @@ export default function AdminDashboard() {
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold ${isLowStock ? 'text-red-500' : ''}`}>{med.qoh.toLocaleString()}</span>
+                        <span className={`text-sm font-bold ${isLowStock ? 'text-red-500' : ''}`}>{formatNumber(med.qoh)}</span>
                         {isLowStock && (
                           <div className="flex items-center gap-1 bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
                             <AlertCircle size={8} />
@@ -1101,8 +1111,8 @@ export default function AdminDashboard() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
-                      <span>Min: <span className="text-[#141414]">{med.minQty || 0}</span></span>
-                      <span>Max: <span className="text-[#141414]">{med.maxQty || 0}</span></span>
+                      <span>Min: <span className="text-[#141414]">{formatNumber(med.minQty)}</span></span>
+                      <span>Max: <span className="text-[#141414]">{formatNumber(med.maxQty)}</span></span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -1202,7 +1212,7 @@ export default function AdminDashboard() {
         )}
 
         {!loading && sortedMedications.map(med => {
-          const isLowStock = med.qoh <= 10;
+          const isLowStock = med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
           const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
           
           return (
@@ -1233,7 +1243,7 @@ export default function AdminDashboard() {
                 <div className="space-y-1">
                   <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40">Current Stock</p>
                   <div className="flex items-center gap-2">
-                    <span className={`text-xl font-black ${isLowStock ? 'text-red-500' : ''}`}>{med.qoh.toLocaleString()}</span>
+                    <span className={`text-xl font-black ${isLowStock ? 'text-red-500' : ''}`}>{formatNumber(med.qoh)}</span>
                     {isLowStock && (
                       <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[8px] font-bold uppercase">Low</span>
                     )}
@@ -1243,11 +1253,11 @@ export default function AdminDashboard() {
                    <div className="flex items-center gap-4 text-[10px] font-bold">
                      <div className="flex flex-col">
                        <span className="text-[#141414]/40 text-[8px] uppercase">Min</span>
-                       <span>{med.minQty || 0}</span>
+                       <span>{formatNumber(med.minQty)}</span>
                      </div>
                      <div className="flex flex-col">
                        <span className="text-[#141414]/40 text-[8px] uppercase">Max</span>
-                       <span>{med.maxQty || 0}</span>
+                       <span>{formatNumber(med.maxQty)}</span>
                      </div>
                    </div>
                 </div>
@@ -1352,7 +1362,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
                     <span>Current QOH</span>
-                    <span className="text-[#141414] font-bold">{selectedMedForEdit.qoh.toLocaleString()}</span>
+                    <span className="text-[#141414] font-bold">{formatNumber(selectedMedForEdit.qoh)}</span>
                   </div>
                 </div>
 

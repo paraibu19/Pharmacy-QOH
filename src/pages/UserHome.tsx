@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Download, MapPin, Sparkles, Filter, Loader2, X, RefreshCw, ArrowUpDown, AlertTriangle } from 'lucide-react';
+import { Search, Download, MapPin, Sparkles, Filter, Loader2, X, RefreshCw, ArrowUpDown, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import { format, differenceInDays } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
+import { formatNumber } from '../lib/formatters';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3';
 type SortOrder = 'asc' | 'desc';
@@ -97,7 +99,7 @@ export default function UserHome() {
     }
 
     if (lowStockOnly) {
-      result = result.filter(m => m.qoh < 10);
+      result = result.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3);
     }
 
     if (expStart || expEnd) {
@@ -152,6 +154,55 @@ export default function UserHome() {
   }, [medications, searchQuery, qohThreshold, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
 
   // Handle PDF Export
+  const downloadCSV = () => {
+    const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3', 'Status'];
+    const rows = filteredMeds.map(m => [
+      m.itemCode,
+      m.itemName,
+      formatNumber(m.qoh),
+      m.expiration1 || '-',
+      m.expiration2 || '-',
+      m.expiration3 || '-',
+      (m.maxQty > 0 && m.qoh < m.maxQty * 0.3) ? 'Low Stock' : 'Available'
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(r => r.map(field => `"${String(field).replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    const locationName = LOCATIONS.find(l => l.id === selectedLocation)?.name || selectedLocation;
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${locationName}_Inventory_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const downloadExcel = () => {
+    const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3', 'Status'];
+    const data = filteredMeds.map(m => ({
+      'Item Code': m.itemCode,
+      'Item Name': m.itemName,
+      'QOH': m.qoh,
+      'Exp 1': m.expiration1 || '-',
+      'Exp 2': m.expiration2 || '-',
+      'Exp 3': m.expiration3 || '-',
+      'Status': (m.maxQty > 0 && m.qoh < m.maxQty * 0.3) ? 'Low Stock' : 'Available'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+    
+    const locationName = LOCATIONS.find(l => l.id === selectedLocation)?.name || selectedLocation;
+    XLSX.writeFile(wb, `${locationName}_Inventory_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+  };
+
   const downloadPDF = () => {
     const doc = new jsPDF();
     const locationName = PHARMACY_NAMES[selectedLocation];
@@ -167,7 +218,7 @@ export default function UserHome() {
     const tableData = filteredMeds.map(m => [
       m.itemCode,
       m.itemName,
-      m.qoh,
+      formatNumber(m.qoh),
       m.expiration1 || '-',
       m.expiration2 || '-',
       m.expiration3 || '-',
@@ -229,13 +280,29 @@ export default function UserHome() {
             )}
           </button>
           
-          <button 
-            onClick={downloadPDF}
-            className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-[#141414] text-white rounded-full text-sm font-bold shadow-lg shadow-black/10 hover:translate-y-[-2px] transition-all active:translate-y-0"
-          >
-            <Download className="w-4 h-4" />
-            Download PDF
-          </button>
+          <div className="flex bg-white border border-[#141414]/10 rounded-full p-1 shadow-sm">
+            <button 
+              onClick={downloadPDF}
+              title="Download PDF"
+              className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors text-[#141414]/60"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={downloadCSV}
+              title="Download CSV"
+              className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors text-[#141414]/60 border-l border-[#141414]/5"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={downloadExcel}
+              title="Download Excel"
+              className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors text-[#141414]/60 border-l border-[#141414]/5"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -247,12 +314,12 @@ export default function UserHome() {
           </span>
           {qohThreshold !== '' && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
-              Max QOH: <span className="text-[#F27D26] text-xs leading-none">{qohThreshold.toLocaleString()}</span>
+              Max QOH: <span className="text-[#F27D26] text-xs leading-none">{formatNumber(qohThreshold)}</span>
             </span>
           )}
           {lowStockOnly && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
-              Low Stock Only ({'< 10'})
+              Low Stock Only ({'< 30% Max'})
             </span>
           )}
           {(expStart || expEnd) && (
@@ -318,7 +385,7 @@ export default function UserHome() {
               {searchQuery && (
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-[#141414]/5 rounded text-[10px] font-bold text-[#141414]/40">
                   <Filter className="w-3 h-3" />
-                  {filteredMeds.length} Match
+                  {formatNumber(filteredMeds.length)} Match
                 </div>
               )}
 
@@ -344,7 +411,7 @@ export default function UserHome() {
                           <span className="text-[10px] font-mono text-[#141414]/40">{s.itemCode}</span>
                         </div>
                         <div className="text-[10px] font-bold text-[#F27D26] bg-[#F27D26]/10 px-2 py-0.5 rounded-full">
-                          {s.qoh.toLocaleString()} in stock
+                          {formatNumber(s.qoh)} in stock
                         </div>
                       </button>
                     ))}
@@ -389,7 +456,7 @@ export default function UserHome() {
                     }`}
                   >
                     <AlertTriangle className="w-4 h-4" />
-                    Low Stock ({'< 10'})
+                    Low Stock ({'< 30% Max'})
                   </button>
                 </div>
                 
@@ -544,8 +611,8 @@ export default function UserHome() {
                     <td className="px-6 py-4 text-sm font-mono font-medium text-[#141414]/80">{med.itemCode}</td>
                     <td className="px-6 py-4 text-sm font-bold text-[#141414]">{med.itemName}</td>
                     <td className="px-6 py-4">
-                      <span className={`text-sm font-bold ${med.qoh < 10 ? 'text-red-500' : 'text-[#141414]'}`}>
-                        {med.qoh.toLocaleString()}
+                      <span className={`text-sm font-bold ${(med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'text-red-500' : 'text-[#141414]'}`}>
+                        {formatNumber(med.qoh)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration1 || '-'}</td>
@@ -590,8 +657,8 @@ export default function UserHome() {
                     <p className="text-xs font-mono text-[#141414]/40 uppercase">{med.itemCode}</p>
                   </div>
                   <div className="text-right">
-                    <div className={`text-lg font-black ${med.qoh < 10 ? 'text-red-500' : 'text-[#141414]'}`}>
-                      {med.qoh.toLocaleString()}
+                    <div className={`text-lg font-black ${(med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'text-red-500' : 'text-[#141414]'}`}>
+                      {formatNumber(med.qoh)}
                     </div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">In Stock</p>
                   </div>

@@ -2,13 +2,15 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Download, Save, RefreshCw, AlertTriangle, 
-  CheckCircle2, ArrowUpRight, History, Loader2, ArrowUpDown, Filter, X
+  CheckCircle2, ArrowUpRight, History, Loader2, ArrowUpDown, Filter, X, FileSpreadsheet
 } from 'lucide-react';
 import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
 import { format } from 'date-fns';
+import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { auditOps } from '../lib/firebaseOperations';
+import { formatNumber } from '../lib/formatters';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'minQty' | 'physical' | 'variance';
 type SortOrder = 'asc' | 'desc';
@@ -69,7 +71,7 @@ export default function AdminInventory() {
     }
 
     if (lowStockOnly) {
-      result = result.filter(m => m.qoh < 10);
+      result = result.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3);
     }
 
     if (expStart || expEnd) {
@@ -134,12 +136,35 @@ export default function AdminInventory() {
     }));
   };
 
+  const downloadExcel = () => {
+    const data = sortedMeds.map(m => {
+      const physical = physicalCounts[m.id] ?? m.qoh;
+      const variance = physical - m.qoh;
+      return {
+        'Item Code': m.itemCode,
+        'Item Name': m.itemName,
+        'Current QOH': m.qoh,
+        'Min': m.minQty || 0,
+        'Max': m.maxQty || 0,
+        'Physical Count': physical,
+        'Variance': variance,
+        'Last Updated': format(new Date(m.lastUpdatedAt), 'yyyy-MM-dd HH:mm')
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory_Audit");
+    
+    XLSX.writeFile(wb, `Inventory_Audit_${selectedLocation}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+  };
+
   const handleAdjust = async (med: Medication) => {
     const physical = physicalCounts[med.id];
     if (physical === undefined) return;
     
     const variance = physical - med.qoh;
-    if (confirm(`Adjust QOH for ${med.itemName}? Variance: ${variance > 0 ? '+' : ''}${variance.toLocaleString()}`)) {
+    if (confirm(`Adjust QOH for ${med.itemName}? Variance: ${variance > 0 ? '+' : ''}${formatNumber(variance)}`)) {
       await auditOps.reconcille(med.id, physical, selectedLocation, med.itemCode, med.itemName, med.qoh);
       setPhysicalCounts(prev => {
         const next = { ...prev };
@@ -157,16 +182,19 @@ export default function AdminInventory() {
       return [
         m.itemCode,
         m.itemName,
-        m.qoh,
-        m.minQty || 0,
-        m.maxQty || 0,
-        physical,
-        variance,
+        formatNumber(m.qoh),
+        formatNumber(m.minQty || 0),
+        formatNumber(m.maxQty || 0),
+        formatNumber(physical),
+        formatNumber(variance),
         format(new Date(m.lastUpdatedAt), 'yyyy-MM-dd HH:mm')
       ];
     });
 
-    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(r => r.map(field => `"${String(field).replace(/"/g, '""')}"`).join(","))
+    ].join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
@@ -186,20 +214,31 @@ export default function AdminInventory() {
           <p className="text-[#141414]/50">Perform physical stock verification and reconcile variances.</p>
         </div>
         
-        <button 
-          onClick={downloadCSV}
-          className="flex items-center gap-2 px-6 py-2.5 bg-[#141414] text-white rounded-xl text-sm font-bold shadow-lg hover:shadow-black/20 hover:scale-[1.02] transition-all"
-        >
-          <Download className="w-4 h-4" />
-          Export Audit data (CSV)
-        </button>
+        <div className="flex bg-[#141414] rounded-xl p-1 shadow-lg shadow-black/20 overflow-hidden">
+          <button 
+            onClick={downloadCSV}
+            className="flex items-center gap-2 px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold border-r border-white/5"
+            title="Download CSV"
+          >
+            <Download className="w-4 h-4" />
+            CSV
+          </button>
+          <button 
+            onClick={downloadExcel}
+            className="flex items-center gap-2 px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold"
+            title="Download Excel"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-[#F27D26]" />
+            Excel
+          </button>
+        </div>
       </div>
 
       {/* Stats Bar */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { label: 'Total Items', value: sortedMeds.length.toLocaleString(), icon: History, color: 'blue' },
-          { label: 'Variances Tracked', value: Object.keys(physicalCounts).length.toLocaleString(), icon: AlertTriangle, color: 'orange' },
+          { label: 'Total Items', value: formatNumber(sortedMeds.length), icon: History, color: 'blue' },
+          { label: 'Variances Tracked', value: formatNumber(Object.keys(physicalCounts).length), icon: AlertTriangle, color: 'orange' },
           { 
             label: 'System Sync', 
             value: showSyncPulse ? 'Live Updated' : format(lastSynced, 'HH:mm:ss'), 
@@ -304,7 +343,7 @@ export default function AdminInventory() {
                 }`}
               >
                 <AlertTriangle className="w-4 h-4" />
-                Low Stock Only ({'< 10'})
+                Low Stock Only ({'< 30% Max'})
               </button>
             </div>
 
@@ -425,13 +464,13 @@ export default function AdminInventory() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold bg-[#141414]/5 px-2 py-1 rounded">{med.qoh.toLocaleString()}</span>
+                        <span className="text-sm font-bold bg-[#141414]/5 px-2 py-1 rounded">{formatNumber(med.qoh)}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
-                        <span>Min: <span className="text-[#141414]">{med.minQty || 0}</span></span>
-                        <span>Max: <span className="text-[#141414]">{med.maxQty || 0}</span></span>
+                        <span>Min: <span className="text-[#141414]">{formatNumber(med.minQty)}</span></span>
+                        <span>Max: <span className="text-[#141414]">{formatNumber(med.maxQty)}</span></span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -440,7 +479,7 @@ export default function AdminInventory() {
                         step="any"
                         min="0"
                         value={physicalCounts[med.id] ?? ''}
-                        placeholder={med.qoh.toLocaleString()}
+                        placeholder={formatNumber(med.qoh)}
                         onChange={(e) => handlePhysicalCountChange(med.id, e.target.value)}
                         className={`w-24 px-3 py-2 bg-transparent border rounded-lg text-sm font-bold transition-all ${
                           hasVariance ? 'border-orange-200 bg-orange-50' : 'border-[#141414]/10 focus:border-[#141414]'
@@ -453,7 +492,7 @@ export default function AdminInventory() {
                           variance > 0 ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
                         }`}>
                           <ArrowUpRight className={`w-3 h-3 ${variance < 0 ? 'rotate-180' : ''}`} />
-                          {variance > 0 ? '+' : ''}{variance.toLocaleString()}
+                          {variance > 0 ? '+' : ''}{formatNumber(variance)}
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold w-fit">
