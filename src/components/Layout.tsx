@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench } from 'lucide-react';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
 
@@ -40,6 +40,16 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             </div>
             
             <div className="flex gap-4 items-center">
+              <NavLink 
+                to="/technician" 
+                className={({ isActive }) => 
+                  `flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-[#141414] text-white' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+                }
+              >
+                <Wrench className="w-4 h-4" />
+                Technician
+              </NavLink>
+
               {isAdmin ? (
                 <>
                   <NavLink 
