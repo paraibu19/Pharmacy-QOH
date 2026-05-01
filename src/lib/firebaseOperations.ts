@@ -209,3 +209,44 @@ export const systemOps = {
   }
 };
 
+export const technicianAuthOps = {
+  async getPassword(): Promise<string> {
+    if (!db) return 'tech123';
+    try {
+      const colRef = collection(db, 'settings');
+      const q = query(colRef);
+      const snapshot = await getDocs(q);
+      const techDoc = snapshot.docs.find(d => d.id === 'technician');
+      
+      if (!techDoc) {
+        // Initialize with default if not exists
+        try {
+          const batch = writeBatch(db);
+          batch.set(doc(db, 'settings', 'technician'), { password: 'tech123' });
+          await batch.commit();
+        } catch (e) {
+          console.warn('Could not initialize technician password in Firestore, using default.');
+        }
+        return 'tech123';
+      }
+      return techDoc.data().password;
+    } catch (error) {
+      console.error('Error getting technician password:', error);
+      return 'tech123';
+    }
+  },
+
+  async updatePassword(newPassword: string): Promise<void> {
+    if (!db) return;
+    const path = 'settings/technician';
+    try {
+      await updateDoc(doc(db, 'settings', 'technician'), {
+        password: newPassword,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  }
+};
+

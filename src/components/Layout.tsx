@@ -41,13 +41,13 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             
             <div className="flex gap-4 items-center">
               <NavLink 
-                to="/technician" 
+                to="/order" 
                 className={({ isActive }) => 
                   `flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-[#141414] text-white' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
                 }
               >
                 <Wrench className="w-4 h-4" />
-                Technician
+                Order View
               </NavLink>
 
               {isAdmin ? (

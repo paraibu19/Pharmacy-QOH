@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Layout from './components/Layout';
 import UserHome from './pages/UserHome';
-import TechnicianView from './pages/TechnicianView';
+import OrderView from './pages/OrderView';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminInventory from './pages/AdminInventory';
@@ -41,9 +41,9 @@ export default function App() {
           </Layout>
         } />
         
-        <Route path="/technician" element={
+        <Route path="/order" element={
           <Layout>
-            <TechnicianView />
+            <OrderView />
           </Layout>
         } />
         
