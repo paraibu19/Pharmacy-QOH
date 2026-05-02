@@ -282,7 +282,7 @@ export default function AdminInventory() {
             onClick={stat.onClick}
             className={`bg-white p-5 rounded-2xl border flex items-center justify-between shadow-sm transition-all relative overflow-hidden ${
               stat.highlight 
-                ? 'border-emerald-500 ring-2 ring-emerald-500/10' 
+                ? 'border-[#141414] ring-2 ring-[#141414]/5' 
                 : 'border-[#141414]/10'
             } ${stat.interactive ? 'cursor-pointer hover:bg-[#141414]/[0.02] active:scale-[0.98]' : ''}`}
           >
@@ -290,21 +290,21 @@ export default function AdminInventory() {
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="absolute inset-x-0 bottom-0 h-1 bg-emerald-500"
+                className="absolute inset-x-0 bottom-0 h-1 bg-[#141414]"
               />
             )}
             <div>
-              <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${stat.highlight ? 'text-emerald-500' : 'text-[#141414]/40'}`}>
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${stat.highlight ? 'text-[#141414]' : 'text-[#141414]/40'}`}>
                 {stat.label}
               </p>
               <div className="flex items-center gap-2">
-                <p className={`text-2xl font-black ${stat.highlight ? 'text-emerald-500' : ''}`}>{stat.value}</p>
-                {stat.interactive && (isSyncing || showSyncPulse) && (
-                  <Loader2 className={`w-4 h-4 animate-spin ${stat.highlight ? 'text-emerald-500' : 'text-emerald-500'}`} />
+                <p className={`text-2xl font-black ${stat.highlight ? 'text-[#141414]' : ''}`}>{stat.value}</p>
+                {stat.interactive && isSyncing && (
+                  <Loader2 className="w-4 h-4 animate-spin text-[#141414]/40" />
                 )}
               </div>
             </div>
-            <stat.icon className={`w-8 h-8 transition-all ${stat.highlight ? 'text-emerald-500 opacity-20' : 'opacity-20'} ${stat.interactive && isSyncing ? 'animate-spin' : ''}`} />
+            <stat.icon className={`w-8 h-8 transition-all ${stat.highlight ? 'text-[#141414] opacity-20' : 'opacity-20'} ${stat.interactive && isSyncing ? 'animate-spin' : ''}`} />
           </div>
         ))}
       </div>
