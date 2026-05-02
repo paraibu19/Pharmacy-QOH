@@ -41,10 +41,13 @@ export default function UserHome() {
   
   // Password change states
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isAdminVerified, setIsAdminVerified] = useState(false);
+  const [adminPasswordAttempt, setAdminPasswordAttempt] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changeError, setChangeError] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
   
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
 
@@ -274,6 +277,18 @@ export default function UserHome() {
     doc.save(`${locationName}_Inventory_${format(new Date(), 'yyyyMMdd')}.pdf`);
   };
 
+  const handleVerifyAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const currentAdminPassword = localStorage.getItem('adminPassword') || 'admin123';
+    if (adminPasswordAttempt.trim() === currentAdminPassword) {
+      setIsAdminVerified(true);
+      setChangeError('');
+      setAdminPasswordAttempt('');
+    } else {
+      setChangeError('Invalid Admin Password');
+    }
+  };
+
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword.length < 4) {
@@ -289,6 +304,7 @@ export default function UserHome() {
     try {
       await technicianAuthOps.updatePassword('pharmacist', newPassword);
       setIsChangingPassword(false);
+      setIsAdminVerified(false);
       setNewPassword('');
       setConfirmPassword('');
       setChangeError('');
@@ -410,7 +426,12 @@ export default function UserHome() {
           
           <div className="flex bg-white border border-[#141414]/10 rounded-full p-1 shadow-sm">
             <button 
-              onClick={() => setIsChangingPassword(true)}
+              onClick={() => {
+                setIsChangingPassword(true);
+                setIsAdminVerified(false);
+                setAdminPasswordAttempt('');
+                setChangeError('');
+              }}
               title="Security Settings"
               className="p-2 hover:bg-[#F27D26]/10 hover:text-[#F27D26] rounded-full transition-colors text-[#141414]/60 mr-1"
             >
@@ -661,7 +682,7 @@ export default function UserHome() {
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-[#F27D26]/10 text-[#F27D26] rounded-xl flex items-center justify-center">
-                    <Key className="w-5 h-5" />
+                    {isAdminVerified ? <KeyRound className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
                   </div>
                   <h3 className="text-xl font-bold">Portal Security</h3>
                 </div>
@@ -673,60 +694,104 @@ export default function UserHome() {
                 </button>
               </div>
 
-              <form onSubmit={handleChangePassword} className="space-y-4">
-                <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest leading-relaxed">
-                  Changing this will update access for the Pharmacist view only.
-                </p>
+              {!isAdminVerified ? (
+                <form onSubmit={handleVerifyAdmin} className="space-y-4">
+                  <div className="p-4 bg-[#F27D26]/5 rounded-2xl border border-[#F27D26]/10 mb-4">
+                    <p className="text-[10px] font-bold text-[#F27D26] uppercase tracking-widest leading-relaxed">
+                      Admin authorization required to modify portal access.
+                    </p>
+                  </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">New Password</label>
-                  <div className="relative">
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Admin Password</label>
+                    <div className="relative">
+                      <input 
+                        type={showAdminPassword ? "text" : "password"}
+                        value={adminPasswordAttempt}
+                        onChange={(e) => setAdminPasswordAttempt(e.target.value)}
+                        className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold tracking-widest text-sm"
+                        placeholder="••••••••"
+                        required
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminPassword(!showAdminPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/20 hover:text-[#141414]/40"
+                      >
+                        {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {changeError && (
+                    <p className="text-red-500 text-[10px] font-bold uppercase tracking-tight">{changeError}</p>
+                  )}
+
+                  <button 
+                    type="submit"
+                    className="w-full py-4 bg-[#141414] text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#F27D26] transition-all flex items-center justify-center gap-2"
+                  >
+                    Verify Admin
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                  <p className="text-[10px] font-extrabold text-[#F27D26] uppercase tracking-[0.2em] mb-4">
+                    CHANGING PORTAL ACCESS
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">New Password</label>
+                    <div className="relative">
+                      <input 
+                        type={showPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold tracking-widest text-sm"
+                        placeholder="••••"
+                        required
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/20 hover:text-[#141414]/40"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Confirm Password</label>
                     <input 
                       type={showPassword ? "text" : "password"}
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
                       className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold tracking-widest text-sm"
                       placeholder="••••"
                       required
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/20 hover:text-[#141414]/40"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
                   </div>
-                </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Confirm Password</label>
-                  <input 
-                    type={showPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold tracking-widest text-sm"
-                    placeholder="••••"
-                    required
-                  />
-                </div>
-
-                {changeError && (
-                  <p className="text-red-500 text-[10px] font-bold uppercase tracking-tight">{changeError}</p>
-                )}
-
-                <button 
-                  type="submit"
-                  disabled={isSavingPassword}
-                  className="w-full py-4 bg-[#141414] text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#F27D26] transition-all disabled:opacity-20 flex items-center justify-center gap-2"
-                >
-                  {isSavingPassword ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>Update Access Code</>
+                  {changeError && (
+                    <p className="text-red-500 text-[10px] font-bold uppercase tracking-tight">{changeError}</p>
                   )}
-                </button>
-              </form>
+
+                  <button 
+                    type="submit"
+                    disabled={isSavingPassword}
+                    className="w-full py-4 bg-[#141414] text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#F27D26] transition-all disabled:opacity-20 flex items-center justify-center gap-2"
+                  >
+                    {isSavingPassword ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>Update Access Code</>
+                    )}
+                  </button>
+                </form>
+              )}
             </motion.div>
           </motion.div>
         )}

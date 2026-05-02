@@ -1,8 +1,8 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
-  ClipboardPaste, ClipboardList, Save, AlertCircle, Info, ArrowLeftRight, Loader2,
-  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw, KeyRound, Lock
+  ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
+  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -11,7 +11,7 @@ import { LOCATIONS } from '../constants';
 import * as XLSX from 'xlsx';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
-import { medicationOps, systemOps, technicianAuthOps } from '../lib/firebaseOperations';
+import { medicationOps, systemOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
 
 import { db } from '../lib/firebase';
@@ -45,47 +45,14 @@ export default function AdminDashboard() {
   const [sortField, setSortField] = useState<string>('itemName');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-  const [pharmacistPortalPass, setPharmacistPortalPass] = useState('');
-  const [orderPortalPass, setOrderPortalPass] = useState('');
-  const [newPharmacistPass, setNewPharmacistPass] = useState('');
-  const [newOrderPass, setNewOrderPass] = useState('');
-  const [isUpdatingPortalPass, setIsUpdatingPortalPass] = useState<'pharmacist' | 'order' | null>(null);
-  const [securityError, setSecurityError] = useState('');
-  const [securitySuccess, setSecuritySuccess] = useState('');
-  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    Promise.all([
-      technicianAuthOps.getPassword('pharmacist').then(setPharmacistPortalPass),
-      technicianAuthOps.getPassword('order').then(setOrderPortalPass)
-    ]);
+    // Mini stats refresh or other side effects if needed
   }, []);
 
   const handleUpdatePortalPass = async (portal: 'pharmacist' | 'order') => {
-    const newPass = portal === 'pharmacist' ? newPharmacistPass : newOrderPass;
-    if (!newPass || newPass.length < 4) {
-      setSecurityError('Password must be at least 4 characters.');
-      return;
-    }
-    setIsUpdatingPortalPass(portal);
-    setSecurityError('');
-    setSecuritySuccess('');
-    try {
-      await technicianAuthOps.updatePassword(portal, newPass);
-      if (portal === 'pharmacist') {
-        setPharmacistPortalPass(newPass);
-        setNewPharmacistPass('');
-      } else {
-        setOrderPortalPass(newPass);
-        setNewOrderPass('');
-      }
-      setSecuritySuccess(`${portal === 'pharmacist' ? 'Pharmacist' : 'Order'} access code updated.`);
-    } catch (err: any) {
-      setSecurityError(err.message || 'Failed to update password.');
-    } finally {
-      setIsUpdatingPortalPass(null);
-    }
+    // Function removed
   };
 
   // Auto-dismiss alerts
@@ -670,8 +637,8 @@ export default function AdminDashboard() {
 
       {/* Expiration Alerts Widget */}
       <div className="flex flex-col gap-6 md:gap-8">
-        {/* Top Horizontal Stats & Security Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Top Horizontal Stats Row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Inventory Stats Mini Card */}
           <div className="bg-[#141414] text-white p-5 rounded-3xl shadow-xl flex flex-col justify-between border border-white/5">
             <div className="flex justify-between items-start mb-4">
@@ -697,64 +664,6 @@ export default function AdminDashboard() {
                   {formatNumber(medications.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length)}
                 </p>
               </div>
-            </div>
-          </div>
-
-          {/* Portal Security Mini Card */}
-          <div className="bg-white p-5 rounded-3xl border border-[#141414]/10 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
-                <KeyRound size={18} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[#141414]">Technician Security</h3>
-                <p className="text-[9px] text-[#141414]/40 font-bold uppercase tracking-tight">Portal Access Codes</p>
-              </div>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Pharmacist View Code</label>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    placeholder="New code"
-                    value={newPharmacistPass}
-                    onChange={(e) => setNewPharmacistPass(e.target.value)}
-                    className="w-full bg-[#141414]/5 border-none rounded-xl pl-4 pr-10 py-2 text-[10px] focus:ring-1 focus:ring-[#F27D26] outline-none transition-all font-bold tracking-widest"
-                  />
-                  <button 
-                    onClick={() => handleUpdatePortalPass('pharmacist')}
-                    disabled={isUpdatingPortalPass !== null || !newPharmacistPass}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 bg-[#141414] text-white rounded-lg hover:bg-[#F27D26] transition-all disabled:opacity-20"
-                  >
-                    {isUpdatingPortalPass === 'pharmacist' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Order View Code</label>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    placeholder="New code"
-                    value={newOrderPass}
-                    onChange={(e) => setNewOrderPass(e.target.value)}
-                    className="w-full bg-[#141414]/5 border-none rounded-xl pl-4 pr-10 py-2 text-[10px] focus:ring-1 focus:ring-[#F27D26] outline-none transition-all font-bold tracking-widest"
-                  />
-                  <button 
-                    onClick={() => handleUpdatePortalPass('order')}
-                    disabled={isUpdatingPortalPass !== null || !newOrderPass}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 bg-[#141414] text-white rounded-lg hover:bg-[#F27D26] transition-all disabled:opacity-20"
-                  >
-                    {isUpdatingPortalPass === 'order' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                  </button>
-                </div>
-              </div>
-
-              {securitySuccess && <p className="text-[8px] text-emerald-600 font-bold text-center animate-bounce uppercase">Updated!</p>}
-              {securityError && <p className="text-[8px] text-red-500 font-bold text-center uppercase">{securityError}</p>}
             </div>
           </div>
 
