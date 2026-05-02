@@ -304,7 +304,7 @@ export default function AdminInventory() {
                 )}
               </div>
             </div>
-            <stat.icon className={`w-8 h-8 transition-all ${stat.highlight ? 'text-emerald-500 opacity-20' : 'opacity-20'} ${stat.interactive && (isSyncing || showSyncPulse) ? 'animate-spin' : ''}`} />
+            <stat.icon className={`w-8 h-8 transition-all ${stat.highlight ? 'text-emerald-500 opacity-20' : 'opacity-20'} ${stat.interactive && isSyncing ? 'animate-spin' : ''}`} />
           </div>
         ))}
       </div>

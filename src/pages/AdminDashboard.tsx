@@ -552,12 +552,9 @@ export default function AdminDashboard() {
               {isSyncing ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
-                <RefreshCw className={`w-3 h-3 ${showSyncPulse ? 'animate-spin' : ''}`} />
+                <RefreshCw className="w-3 h-3" />
               )}
               {showSyncPulse ? 'Live Updated' : `Synced ${format(lastSynced, 'HH:mm:ss')}`}
-              {showSyncPulse && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping" />
-              )}
             </button>
           </div>
           <p className="text-[#141414]/50 text-sm md:text-base">Stock inventory control panel</p>

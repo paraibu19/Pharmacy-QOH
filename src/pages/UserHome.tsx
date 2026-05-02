@@ -264,11 +264,8 @@ export default function UserHome() {
                 : 'bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100'
             }`}
           >
-            {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className={`w-3 h-3 ${showSyncPulse ? 'animate-spin' : ''}`} />}
+            {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
             {showSyncPulse ? 'Live Updated' : `Synced ${format(lastSynced, 'HH:mm:ss')}`}
-            {showSyncPulse && (
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
-            )}
           </button>
 
           <button 
