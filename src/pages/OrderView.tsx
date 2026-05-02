@@ -543,7 +543,13 @@ export default function OrderView() {
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
                   className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all ${
                     selectedLocation === loc.id 
-                      ? 'bg-[#141414] text-white shadow-lg' 
+                      ? loc.id === PharmacyLocation.ADULT
+                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-md shadow-emerald-700/10'
+                        : loc.id === PharmacyLocation.PEDIATRIC
+                          ? 'bg-sky-100 text-sky-700 border border-sky-200 shadow-md shadow-sky-700/10'
+                          : loc.id === PharmacyLocation.MESAIEED
+                            ? 'bg-orange-100 text-orange-700 border border-orange-200 shadow-md shadow-orange-700/10'
+                            : 'bg-[#141414] text-white shadow-lg'
                       : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
                   }`}
                 >
@@ -554,8 +560,8 @@ export default function OrderView() {
                 onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
                 className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
                   availableGenericsOnly 
-                    ? 'bg-sky-500 text-white shadow-lg ring-2 ring-sky-500/20' 
-                    : 'bg-sky-50 text-sky-600 border border-sky-100 hover:bg-sky-100 shadow-sm'
+                    ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
+                    : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100 shadow-sm'
                 }`}
               >
                 <Sparkles className="w-3 h-3" />

@@ -442,7 +442,9 @@ export default function UserHome() {
                   <button
                     onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
                     className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                      availableGenericsOnly ? 'bg-sky-50 text-sky-600 border border-sky-100' : 'bg-white border border-[#141414]/10 text-[#141414]/60'
+                      availableGenericsOnly 
+                        ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
+                        : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100'
                     }`}
                   >
                     <Sparkles className="w-4 h-4" />

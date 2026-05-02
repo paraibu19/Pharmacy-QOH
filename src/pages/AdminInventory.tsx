@@ -234,8 +234,8 @@ export default function AdminInventory() {
             onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
               availableGenericsOnly 
-                ? 'bg-sky-500 text-white shadow-lg ring-2 ring-sky-500/20' 
-                : 'bg-white border border-[#141414]/10 text-sky-600 hover:bg-sky-50 shadow-sm'
+                ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
+                : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100 shadow-sm'
             }`}
           >
             <Sparkles className="w-4 h-4" />
