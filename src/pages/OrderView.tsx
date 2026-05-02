@@ -33,7 +33,7 @@ export default function OrderView() {
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
-  const [qohThreshold, setQohThreshold] = useState<number | ''>('');
+  const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
@@ -154,7 +154,8 @@ export default function OrderView() {
     const lowerQuery = searchQuery.toLowerCase();
     return medications.filter(m => 
       m.itemCode.toLowerCase().startsWith(lowerQuery) || 
-      m.itemName.toLowerCase().startsWith(lowerQuery)
+      m.itemName.toLowerCase().startsWith(lowerQuery) ||
+      (m.generic && m.generic.toLowerCase().startsWith(lowerQuery))
     ).slice(0, 5);
   }, [medications, searchQuery]);
 
@@ -165,12 +166,13 @@ export default function OrderView() {
       const q = searchQuery.toLowerCase();
       result = result.filter(m => 
         m.itemName.toLowerCase().includes(q) || 
-        m.itemCode.toLowerCase().includes(q)
+        m.itemCode.toLowerCase().includes(q) ||
+        (m.generic && m.generic.toLowerCase().includes(q))
       );
     }
 
-    if (qohThreshold !== '') {
-      result = result.filter(m => m.qoh <= qohThreshold);
+    if (availableGenericsOnly) {
+      result = result.filter(m => m.generic && m.qoh > 0);
     }
 
     if (lowStockOnly) {
@@ -216,7 +218,7 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, qohThreshold, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
+  }, [medications, searchQuery, availableGenericsOnly, lowStockOnly, expStart, expEnd, sortField, sortOrder, orderTarget]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -503,7 +505,7 @@ export default function OrderView() {
         </div>
       </div>
 
-      {(qohThreshold !== '' || lowStockOnly || expStart || expEnd || orderTarget !== 1) && (
+      {(availableGenericsOnly || lowStockOnly || expStart || expEnd || orderTarget !== 1) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
@@ -514,9 +516,9 @@ export default function OrderView() {
               Target: <span className="text-[#F27D26]">{orderTarget * 100}%</span>
             </span>
           )}
-          {qohThreshold !== '' && (
+          {availableGenericsOnly && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Max QOH: <span className="text-[#F27D26]">{formatNumber(qohThreshold)}</span>
+              In-Stock Generics
             </span>
           )}
           {lowStockOnly && (
@@ -525,7 +527,7 @@ export default function OrderView() {
             </span>
           )}
           <button 
-            onClick={() => { setQohThreshold(''); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+            onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -551,6 +553,17 @@ export default function OrderView() {
                   {loc.name.replace('Aw-', '')}
                 </button>
               ))}
+              <button
+                onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  availableGenericsOnly 
+                    ? 'bg-sky-500 text-white shadow-lg ring-2 ring-sky-500/20' 
+                    : 'bg-sky-50 text-sky-600 border border-sky-100 hover:bg-sky-100 shadow-sm'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                Available Generics (QOH &gt; 0)
+              </button>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
@@ -586,7 +599,7 @@ export default function OrderView() {
             <button 
               onClick={() => setShowFilters(!showFilters)}
               className={`w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                showFilters || lowStockOnly || qohThreshold !== '' || expStart || expEnd || orderTarget !== 1
+                showFilters || availableGenericsOnly || lowStockOnly || expStart || expEnd || orderTarget !== 1
                 ? 'bg-[#F27D26] text-white shadow-lg'
                 : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
               }`}
@@ -645,17 +658,7 @@ export default function OrderView() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 p-4 bg-[#141414]/5 rounded-2xl border border-[#141414]/10">
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Threshold</label>
-                  <input
-                    type="number"
-                    value={qohThreshold}
-                    onChange={(e) => setQohThreshold(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="Max QOH"
-                    className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm"
-                  />
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-[#141414]/5 rounded-2xl border border-[#141414]/10">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Quick filter</label>
                   <button
@@ -688,7 +691,7 @@ export default function OrderView() {
                 </div>
                 <div className="flex items-end">
                   <button
-                    onClick={() => { setQohThreshold(''); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+                    onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
                     className="w-full h-10 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center gap-2"
                   >
                     <X className="w-4 h-4" />
@@ -786,15 +789,20 @@ export default function OrderView() {
                         <td className="px-6 py-4">
                           <button 
                             onClick={() => startEdit(med)}
-                            className="flex items-center gap-2 group/name text-left"
+                            className="flex flex-col group/name text-left"
                           >
-                            <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
-                            {med.isNew && (
-                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
-                                NEW
-                              </span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                              {med.isNew && (
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
+                                  NEW
+                                </span>
+                              )}
+                              <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
+                            </div>
+                            {med.generic && (
+                              <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
                             )}
-                            <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
                           </button>
                         </td>
                         <td className="px-6 py-4">

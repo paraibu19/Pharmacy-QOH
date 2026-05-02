@@ -16,7 +16,7 @@ type SortOrder = 'asc' | 'desc';
 export default function UserHome() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
-  const [qohThreshold, setQohThreshold] = useState<number | ''>('');
+  const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
@@ -51,7 +51,8 @@ export default function UserHome() {
     const lowerQuery = searchQuery.toLowerCase();
     return medications.filter(m => 
       m.itemCode.toLowerCase().startsWith(lowerQuery) || 
-      m.itemName.toLowerCase().startsWith(lowerQuery)
+      m.itemName.toLowerCase().startsWith(lowerQuery) ||
+      (m.generic && m.generic.toLowerCase().startsWith(lowerQuery))
     ).slice(0, 5); // Limit suggestions
   }, [medications, searchQuery]);
 
@@ -90,12 +91,13 @@ export default function UserHome() {
       const lowerQuery = searchQuery.toLowerCase();
       result = result.filter(m => 
         m.itemCode.toLowerCase().includes(lowerQuery) || 
-        m.itemName.toLowerCase().includes(lowerQuery)
+        m.itemName.toLowerCase().includes(lowerQuery) ||
+        (m.generic && m.generic.toLowerCase().includes(lowerQuery))
       );
     }
 
-    if (qohThreshold !== '') {
-      result = result.filter(m => m.qoh <= qohThreshold);
+    if (availableGenericsOnly) {
+      result = result.filter(m => m.generic && m.qoh > 0);
     }
 
     if (lowStockOnly) {
@@ -151,7 +153,7 @@ export default function UserHome() {
 
       return a[sortField as keyof typeof a].localeCompare(b[sortField as keyof typeof b]) * multiplier;
     });
-  }, [medications, searchQuery, qohThreshold, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
+  }, [medications, searchQuery, availableGenericsOnly, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
 
   // Handle PDF Export
   const downloadCSV = () => {
@@ -272,7 +274,7 @@ export default function UserHome() {
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold transition-all ${
-              showFilters || qohThreshold !== '' || expStart || expEnd
+              showFilters || availableGenericsOnly || lowStockOnly || expStart || expEnd
               ? 'bg-[#F27D26] text-white shadow-lg shadow-[#F27D26]/20'
               : 'bg-white border border-[#141414]/10 text-[#141414]/60 hover:bg-[#141414]/5'
             }`}
@@ -280,7 +282,7 @@ export default function UserHome() {
             <Filter className="w-4 h-4" />
             <span className="hidden sm:inline">{showFilters ? 'Hide' : 'Show'} Filters</span>
             <span className="sm:hidden">Filters</span>
-            {(qohThreshold !== '' || expStart || expEnd) && (
+            {(availableGenericsOnly || lowStockOnly || expStart || expEnd) && (
               <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse" />
             )}
           </button>
@@ -311,15 +313,15 @@ export default function UserHome() {
         </div>
       </div>
 
-      {(qohThreshold !== '' || lowStockOnly || expStart || expEnd) && (
+      {(availableGenericsOnly || lowStockOnly || expStart || expEnd) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
             Active Filters:
           </span>
-          {qohThreshold !== '' && (
+          {availableGenericsOnly && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
-              Max QOH: <span className="text-[#F27D26] text-xs leading-none">{formatNumber(qohThreshold)}</span>
+              In-Stock Generics
             </span>
           )}
           {lowStockOnly && (
@@ -333,7 +335,7 @@ export default function UserHome() {
             </span>
           )}
           <button 
-            onClick={() => { setQohThreshold(''); setLowStockOnly(false); setExpStart(''); setExpEnd(''); }}
+            onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -438,16 +440,17 @@ export default function UserHome() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 bg-[#141414]/5 p-4 rounded-2xl border border-[#141414]/10">
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
-                    Threshold
+                    Pharmacy filters
                   </label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={qohThreshold}
-                    onChange={(e) => setQohThreshold(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="Max QOH"
-                    className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-medium"
-                  />
+                  <button
+                    onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
+                    className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                      availableGenericsOnly ? 'bg-sky-50 text-sky-600 border border-sky-100' : 'bg-white border border-[#141414]/10 text-[#141414]/60'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Available Generics
+                  </button>
                 </div>
 
                 <div className="space-y-1.5">
@@ -492,7 +495,7 @@ export default function UserHome() {
                 <div className="flex items-end">
                   <button
                     onClick={() => {
-                      setQohThreshold('');
+                      setAvailableGenericsOnly(false);
                       setLowStockOnly(false);
                       setExpStart('');
                       setExpEnd('');
@@ -614,7 +617,14 @@ export default function UserHome() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm font-mono font-medium text-[#141414]/80">{med.itemCode}</td>
-                    <td className="px-6 py-4 text-sm font-bold text-[#141414]">{med.itemName}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
+                        {med.generic && (
+                          <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`text-sm font-bold ${(med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'text-red-500' : 'text-[#141414]'}`}>
                         {formatNumber(med.qoh)}
@@ -651,10 +661,13 @@ export default function UserHome() {
               >
                 <div className="flex justify-between items-start">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col">
                       <h3 className="font-bold text-[#141414]">{med.itemName}</h3>
+                      {med.generic && (
+                        <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>
+                      )}
                       {med.isNew && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-bold rounded-full">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-bold rounded-full w-fit">
                           NEW
                         </span>
                       )}

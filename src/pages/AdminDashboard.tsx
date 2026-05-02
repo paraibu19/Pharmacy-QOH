@@ -64,6 +64,7 @@ export default function AdminDashboard() {
     qoh: 0,
     minQty: 0,
     maxQty: 0,
+    generic: '',
     expiration1: '',
     expiration2: '',
     expiration3: ''
@@ -346,12 +347,14 @@ export default function AdminDashboard() {
             // Very permissive field mapping
             const itemCode = String(getRowValue(row, ['itemCode', 'Code', 'ItemNo', 'Item No', 'Product Code', 'Reference']) || '');
             const itemName = String(getRowValue(row, ['itemName', 'Name', 'Description', 'ItemName', 'Item Name', 'Product']) || '');
+            const generic = String(getRowValue(row, ['generic', 'Generic Name', 'GenericName', 'Generic', 'GenericName']) || '');
             
             if (!itemName) return null;
 
             return {
               itemCode: itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`,
               itemName,
+              generic,
               qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total', 'Available']) || 0),
               minQty: Number(getRowValue(row, ['minQty', 'Min', 'Order Min', 'Minimum']) || 0),
               maxQty: Number(getRowValue(row, ['maxQty', 'Max', 'Order Max', 'Maximum']) || 0),
@@ -448,7 +451,7 @@ export default function AdminDashboard() {
       await refresh();
       setEditingId(null);
       setIsAdding(false);
-      setForm({ itemCode: '', itemName: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '' });
+      setForm({ itemCode: '', itemName: '', generic: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '' });
       clearDraft();
     } catch (error: any) {
       setError(error.message);
@@ -473,6 +476,7 @@ export default function AdminDashboard() {
     setForm({
       itemCode: med.itemCode,
       itemName: med.itemName,
+      generic: med.generic || '',
       qoh: med.qoh,
       minQty: med.minQty ?? 0,
       maxQty: med.maxQty ?? 0,
@@ -999,6 +1003,13 @@ export default function AdminDashboard() {
                       value={form.itemName}
                       onChange={e => setForm({...form, itemName: e.target.value})}
                     />
+                    <input 
+                      type="text" 
+                      placeholder="Generic Name" 
+                      className="w-full text-[10px] p-1 border rounded italic text-[#141414]/60"
+                      value={form.generic}
+                      onChange={e => setForm({...form, generic: e.target.value})}
+                    />
                   </div>
                 </td>
                 <td className="px-6 py-4">
@@ -1094,6 +1105,9 @@ export default function AdminDashboard() {
                       >
                         {med.itemName}
                       </button>
+                      {med.generic && (
+                        <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -1179,6 +1193,13 @@ export default function AdminDashboard() {
               value={form.itemName}
               onChange={e => setForm({...form, itemName: e.target.value})}
             />
+            <input 
+              type="text" 
+              placeholder="Generic Name (Optional)" 
+              className="w-full text-xs italic p-3 bg-white border rounded-xl"
+              value={form.generic}
+              onChange={e => setForm({...form, generic: e.target.value})}
+            />
             <div className="grid grid-cols-2 gap-3">
               <div className="flex items-center gap-2 bg-white p-2 rounded-xl border">
                 <span className="text-[10px] font-bold text-[#141414]/40">Min:</span>
@@ -1223,12 +1244,17 @@ export default function AdminDashboard() {
             >
               <div className="flex justify-between items-start">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-[#141414] leading-tight truncate max-w-[200px]">{med.itemName}</h3>
-                    {isNew && (
-                      <span className="px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] rounded text-[8px] font-black uppercase tracking-widest whitespace-nowrap">
-                        NEW
-                      </span>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-[#141414] leading-tight truncate max-w-[200px]">{med.itemName}</h3>
+                      {isNew && (
+                        <span className="px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] rounded text-[8px] font-black uppercase tracking-widest whitespace-nowrap">
+                          NEW
+                        </span>
+                      )}
+                    </div>
+                    {med.generic && (
+                      <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>
                     )}
                   </div>
                   <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</p>

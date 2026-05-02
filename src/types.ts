@@ -24,6 +24,7 @@ export interface Medication {
   updatedBy?: string;
   minQty?: number;
   maxQty?: number;
+  generic?: string;
   isNew?: boolean; // UI helper
 }
 
