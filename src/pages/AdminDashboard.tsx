@@ -545,7 +545,7 @@ export default function AdminDashboard() {
               disabled={isSyncing}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all relative ${
                 showSyncPulse
-                ? 'bg-[#141414] text-white shadow-lg'
+                ? 'bg-[#141414]/10 text-[#141414] border border-[#141414]/20 shadow-sm'
                 : 'bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10'
               } disabled:opacity-50 shadow-sm`}
             >

@@ -260,7 +260,7 @@ export default function UserHome() {
             disabled={isSyncing}
             className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
               showSyncPulse 
-                ? 'bg-[#141414] text-white shadow-lg' 
+                ? 'bg-[#141414]/10 text-[#141414] border border-[#141414]/20 shadow-sm' 
                 : 'bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10'
             }`}
           >

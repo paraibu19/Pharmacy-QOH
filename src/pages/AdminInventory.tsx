@@ -282,7 +282,7 @@ export default function AdminInventory() {
             onClick={stat.onClick}
             className={`bg-white p-5 rounded-2xl border flex items-center justify-between shadow-sm transition-all relative overflow-hidden ${
               stat.highlight 
-                ? 'border-[#141414] ring-2 ring-[#141414]/5' 
+                ? 'border-[#141414]/30 bg-[#141414]/[0.01]' 
                 : 'border-[#141414]/10'
             } ${stat.interactive ? 'cursor-pointer hover:bg-[#141414]/[0.02] active:scale-[0.98]' : ''}`}
           >
@@ -290,7 +290,7 @@ export default function AdminInventory() {
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="absolute inset-x-0 bottom-0 h-1 bg-[#141414]"
+                className="absolute inset-x-0 bottom-0 h-1 bg-[#141414]/10"
               />
             )}
             <div>
