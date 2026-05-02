@@ -237,9 +237,17 @@ export default function GeneralView() {
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                      med.qoh > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                      med.qoh <= 0 
+                        ? 'bg-red-100 text-red-700' 
+                        : (med.maxQty && med.qoh < med.maxQty * 0.3)
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-emerald-100 text-emerald-700'
                     }`}>
-                      {med.qoh > 0 ? 'In Stock' : 'Out of Stock'}
+                      {med.qoh <= 0 
+                        ? 'Out of Stock' 
+                        : (med.maxQty && med.qoh < med.maxQty * 0.3)
+                        ? 'Low Stock' 
+                        : 'In Stock'}
                     </span>
                   </td>
                 </tr>

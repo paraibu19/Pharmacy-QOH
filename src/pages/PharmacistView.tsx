@@ -207,7 +207,7 @@ export default function UserHome() {
       m.expiration1 || '-',
       m.expiration2 || '-',
       m.expiration3 || '-',
-      (m.maxQty > 0 && m.qoh < m.maxQty * 0.3) ? 'Low Stock' : 'Available'
+      (m.qoh <= 0) ? 'Out of Stock' : (m.maxQty > 0 && m.qoh < m.maxQty * 0.3) ? 'Low Stock' : 'In Stock'
     ]);
 
     const csvContent = [
@@ -236,7 +236,7 @@ export default function UserHome() {
       'Exp 1': m.expiration1 || '-',
       'Exp 2': m.expiration2 || '-',
       'Exp 3': m.expiration3 || '-',
-      'Status': (m.maxQty > 0 && m.qoh < m.maxQty * 0.3) ? 'Low Stock' : 'Available'
+      'Status': (m.qoh <= 0) ? 'Out of Stock' : (m.maxQty > 0 && m.qoh < m.maxQty * 0.3) ? 'Low Stock' : 'In Stock'
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -921,7 +921,13 @@ export default function UserHome() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`text-sm font-bold ${(med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'text-red-500' : 'text-[#141414]'}`}>
+                      <span className={`text-sm font-bold ${
+                        med.qoh <= 0 
+                          ? 'text-red-600' 
+                          : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
+                          ? 'text-amber-600'
+                          : 'text-emerald-600'
+                      }`}>
                         {formatNumber(med.qoh)}
                       </span>
                     </td>
@@ -980,7 +986,13 @@ export default function UserHome() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className={`text-lg font-black ${(med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'text-red-500' : 'text-[#141414]'}`}>
+                    <div className={`text-lg font-black ${
+                      med.qoh <= 0 
+                        ? 'text-red-600' 
+                        : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
+                        ? 'text-amber-600'
+                        : 'text-[#141414]'
+                    }`}>
                       {formatNumber(med.qoh)}
                     </div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">In Stock</p>

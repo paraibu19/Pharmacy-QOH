@@ -813,9 +813,13 @@ export default function OrderView() {
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-black ${
-                            (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'bg-red-100 text-red-600' : 'bg-[#141414]/5 text-[#141414]'
+                            med.qoh <= 0 
+                              ? 'bg-red-100 text-red-600' 
+                              : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
+                              ? 'bg-amber-100 text-amber-600'
+                              : 'bg-emerald-100 text-emerald-600'
                           }`}>
-                            {formatNumber(med.qoh)}
+                            {med.qoh <= 0 ? 'OUT' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'LOW' : 'STOCK')}
                           </span>
                         </td>
                         <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
@@ -888,11 +892,17 @@ export default function OrderView() {
                       </div>
                       <div className="text-right">
                         <div className={`px-3 py-1 rounded-full text-xs font-black ${
-                          med.qoh < 10 ? 'bg-red-100 text-red-600' : 'bg-[#141414]/5 text-[#141414]'
+                          med.qoh <= 0 
+                            ? 'bg-red-100 text-red-600' 
+                            : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
+                            ? 'bg-amber-100 text-amber-600'
+                            : 'bg-emerald-100 text-emerald-600'
                         }`}>
                           {formatNumber(med.qoh)}
                         </div>
-                        <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mt-1">Stock</p>
+                        <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mt-1">
+                          {med.qoh <= 0 ? 'OUT' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'LOW' : 'STOCK')}
+                        </p>
                       </div>
                     </div>
 

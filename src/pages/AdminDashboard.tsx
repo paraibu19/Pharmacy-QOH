@@ -1180,7 +1180,8 @@ export default function AdminDashboard() {
               </tr>
             )}
             {!loading && sortedMedications.map(med => {
-              const isLowStock = med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+              const isOutOfStock = med.qoh <= 0;
+              const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
               const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
               
               // Expiration check for highlighting
@@ -1201,7 +1202,7 @@ export default function AdminDashboard() {
               }
               
               return (
-                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${editingId === med.id ? 'hidden' : ''} ${expirationAlertClass || (isLowStock ? 'bg-red-50/50' : '')}`}>
+                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${editingId === med.id ? 'hidden' : ''} ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : '')}`}>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
@@ -1229,9 +1230,14 @@ export default function AdminDashboard() {
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold ${isLowStock ? 'text-red-500' : ''}`}>{formatNumber(med.qoh)}</span>
-                        {isLowStock && (
+                        <span className={`text-sm font-bold ${isOutOfStock ? 'text-red-600' : isLowStock ? 'text-amber-600' : 'text-emerald-600'}`}>{formatNumber(med.qoh)}</span>
+                        {isOutOfStock ? (
                           <div className="flex items-center gap-1 bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
+                            <AlertCircle size={8} />
+                            Out
+                          </div>
+                        ) : isLowStock && (
+                          <div className="flex items-center gap-1 bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
                             <AlertCircle size={8} />
                             Low
                           </div>
@@ -1382,14 +1388,15 @@ export default function AdminDashboard() {
         )}
 
         {!loading && sortedMedications.map(med => {
-          const isLowStock = med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+          const isOutOfStock = med.qoh <= 0;
+          const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
           const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
           
           return (
             <motion.div 
               layout
               key={med.id} 
-              className={`p-4 space-y-4 ${editingId === med.id ? 'hidden' : ''} ${isLowStock ? 'bg-red-50/20' : ''}`}
+              className={`p-4 space-y-4 ${editingId === med.id ? 'hidden' : ''} ${isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : ''}`}
             >
               <div className="flex justify-between items-start">
                 <div className="space-y-1">
@@ -1418,9 +1425,17 @@ export default function AdminDashboard() {
                 <div className="space-y-1">
                   <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40">Current Stock</p>
                   <div className="flex items-center gap-2">
-                    <span className={`text-xl font-black ${isLowStock ? 'text-red-500' : ''}`}>{formatNumber(med.qoh)}</span>
-                    {isLowStock && (
-                      <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[8px] font-bold uppercase">Low</span>
+                    <span className={`text-xl font-black ${
+                      isOutOfStock 
+                        ? 'text-red-600' 
+                        : isLowStock 
+                        ? 'text-amber-600' 
+                        : 'text-[#141414]'
+                    }`}>{formatNumber(med.qoh)}</span>
+                    {isOutOfStock ? (
+                      <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[8px] font-bold uppercase">Out</span>
+                    ) : isLowStock && (
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded text-[8px] font-bold uppercase">Low</span>
                     )}
                   </div>
                 </div>
