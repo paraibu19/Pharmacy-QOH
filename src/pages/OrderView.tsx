@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
-  Eye, EyeOff, Settings, Key, LogOut
+  Eye, EyeOff, Settings, Key, LogOut, KeyRound
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
