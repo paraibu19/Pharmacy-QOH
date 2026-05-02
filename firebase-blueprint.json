@@ -14,7 +14,8 @@
         "locationId": { "type": "string", "enum": ["adult-emergency", "pediatric", "mesaieed-opd"] },
         "addedAt": { "type": "string", "format": "date-time", "description": "When the item was first added" },
         "lastUpdatedAt": { "type": "string", "format": "date-time", "description": "When the item was last modified" },
-        "updatedBy": { "type": "string", "description": "UID of the admin who updated" }
+        "updatedBy": { "type": "string", "description": "UID of the admin who updated" },
+        "imageUrl": { "type": "string", "description": "Base64 or URL of the medication photo" }
       },
       "required": ["itemCode", "itemName", "qoh", "locationId"]
     },

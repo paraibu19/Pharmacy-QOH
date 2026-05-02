@@ -2,7 +2,8 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
-  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw
+  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
+  Camera, Image as ImageIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -39,6 +40,83 @@ export default function AdminDashboard() {
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
+  
+  const [isCapturing, setIsCapturing] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 400;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        setForm(prev => ({ ...prev, imageUrl: dataUrl }));
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const startCamera = async () => {
+    try {
+      setIsCapturing(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera error:", err);
+      setError("Could not access camera.");
+      setIsCapturing(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current?.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCapturing(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Resize
+      const resizeCanvas = document.createElement('canvas');
+      const MAX_WIDTH = 400;
+      const scaleSize = MAX_WIDTH / canvas.width;
+      resizeCanvas.width = MAX_WIDTH;
+      resizeCanvas.height = canvas.height * scaleSize;
+      const resizeCtx = resizeCanvas.getContext('2d');
+      resizeCtx?.drawImage(canvas, 0, 0, resizeCanvas.width, resizeCanvas.height);
+
+      const dataUrl = resizeCanvas.toDataURL('image/jpeg', 0.7);
+      setForm(prev => ({ ...prev, imageUrl: dataUrl }));
+      stopCamera();
+    }
+  };
+
   const [editMin, setEditMin] = useState<string>('');
   const [editMax, setEditMax] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -460,7 +538,7 @@ export default function AdminDashboard() {
       await refresh();
       setEditingId(null);
       setIsAdding(false);
-      setForm({ itemCode: '', itemName: '', generic: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '' });
+      setForm({ itemCode: '', itemName: '', generic: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '', imageUrl: '' });
       clearDraft();
     } catch (error: any) {
       setError(error.message);
@@ -491,7 +569,8 @@ export default function AdminDashboard() {
       maxQty: med.maxQty ?? 0,
       expiration1: med.expiration1,
       expiration2: med.expiration2,
-      expiration3: med.expiration3
+      expiration3: med.expiration3,
+      imageUrl: med.imageUrl || ''
     });
   };
 
@@ -992,29 +1071,61 @@ export default function AdminDashboard() {
             {(isAdding || editingId) && (
               <tr className="bg-[#F27D26]/5 animate-in fade-in duration-300">
                 <td className="px-6 py-4">
-                  <div className="space-y-2">
-                    <input 
-                      type="text" 
-                      placeholder="Code" 
-                      autoFocus
-                      className="w-full text-xs font-mono p-1 border rounded"
-                      value={form.itemCode}
-                      onChange={e => setForm({...form, itemCode: e.target.value})}
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Item Name" 
-                      className="w-full text-sm font-bold p-1 border rounded"
-                      value={form.itemName}
-                      onChange={e => setForm({...form, itemName: e.target.value})}
-                    />
-                    <input 
-                      type="text" 
-                      placeholder="Generic Name" 
-                      className="w-full text-[10px] p-1 border rounded italic text-[#141414]/60"
-                      value={form.generic}
-                      onChange={e => setForm({...form, generic: e.target.value})}
-                    />
+                  <div className="flex gap-4">
+                    <div className="flex flex-col items-center gap-2">
+                       <div className="w-16 h-16 bg-[#141414]/5 rounded-xl border border-[#141414]/10 flex items-center justify-center overflow-hidden relative group">
+                         {form.imageUrl ? (
+                           <>
+                             <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                             <button 
+                               onClick={() => setForm(prev => ({ ...prev, imageUrl: '' }))}
+                               className="absolute inset-0 bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[8px] font-bold"
+                             >
+                               REMOVE
+                             </button>
+                           </>
+                         ) : (
+                           <ImageIcon size={20} className="text-[#141414]/20" />
+                         )}
+                       </div>
+                       <div className="flex gap-1">
+                         <button 
+                           onClick={() => startCamera()}
+                           className="p-1.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-lg text-[#141414]/40 hover:text-[#F27D26] transition-all"
+                           title="Take Photo"
+                         >
+                           <Camera size={14} />
+                         </button>
+                         <label className="p-1.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-lg text-[#141414]/40 hover:text-[#F27D26] transition-all cursor-pointer">
+                           <ImageIcon size={14} />
+                           <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                         </label>
+                       </div>
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <input 
+                        type="text" 
+                        placeholder="Code" 
+                        autoFocus
+                        className="w-full text-xs font-mono p-1 border rounded"
+                        value={form.itemCode}
+                        onChange={e => setForm({...form, itemCode: e.target.value})}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Item Name" 
+                        className="w-full text-sm font-bold p-1 border rounded"
+                        value={form.itemName}
+                        onChange={e => setForm({...form, itemName: e.target.value})}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Generic Name" 
+                        className="w-full text-[10px] p-1 border rounded italic text-[#141414]/60"
+                        value={form.generic}
+                        onChange={e => setForm({...form, generic: e.target.value})}
+                      />
+                    </div>
                   </div>
                 </td>
                 <td className="px-6 py-4">
@@ -1174,6 +1285,39 @@ export default function AdminDashboard() {
         {/* Inline Add/Edit Form for Mobile */}
         {(isAdding || editingId) && (
           <div className="p-4 bg-[#F27D26]/5 space-y-4">
+            <div className="flex justify-center mb-2">
+               <div className="flex flex-col items-center gap-2">
+                  <div className="w-24 h-24 bg-white rounded-3xl border border-[#141414]/10 flex items-center justify-center overflow-hidden relative group shadow-sm">
+                    {form.imageUrl ? (
+                      <>
+                        <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                        <button 
+                          onClick={() => setForm(prev => ({ ...prev, imageUrl: '' }))}
+                          className="absolute inset-0 bg-black/60 text-white flex items-center justify-center text-[10px] font-bold"
+                        >
+                          REMOVE
+                        </button>
+                      </>
+                    ) : (
+                      <ImageIcon size={32} className="text-[#141414]/10" />
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => startCamera()}
+                      className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl text-[10px] font-bold text-[#141414] shadow-sm border border-[#141414]/5"
+                    >
+                      <Camera size={14} className="text-[#F27D26]" />
+                      CAMERA
+                    </button>
+                    <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl text-[10px] font-bold text-[#141414] shadow-sm border border-[#141414]/5 cursor-pointer">
+                      <ImageIcon size={14} className="text-[#F27D26]" />
+                      UPLOAD
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                    </label>
+                  </div>
+               </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <input 
                 type="text" 
@@ -1415,6 +1559,60 @@ export default function AdminDashboard() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Camera Capture Modal */}
+      <AnimatePresence>
+        {isCapturing && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm shadow-2xl">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-lg bg-[#141414] rounded-3xl overflow-hidden flex flex-col"
+            >
+              <div className="p-4 flex justify-between items-center bg-[#141414]/50 border-b border-white/10">
+                 <div className="flex items-center gap-3">
+                   <div className="p-2 bg-[#F27D26]/20 rounded-xl text-[#F27D26]">
+                     <Camera size={20} />
+                   </div>
+                   <h3 className="text-white font-bold">Capture Item Photo</h3>
+                 </div>
+                 <button 
+                   onClick={stopCamera}
+                   className="p-2 hover:bg-white/10 rounded-full text-white/40 transition-colors"
+                 >
+                   <XIcon size={20} />
+                 </button>
+              </div>
+              
+              <div className="relative aspect-square bg-black overflow-hidden flex items-center justify-center">
+                 <video 
+                   ref={videoRef}
+                   autoPlay 
+                   playsInline 
+                   className="w-full h-full object-cover"
+                 />
+                 <canvas ref={canvasRef} className="hidden" />
+                 
+                 {/* Safe zone overlay */}
+                 <div className="absolute inset-8 border-2 border-[#F27D26]/50 rounded-2xl pointer-events-none after:content-[''] after:absolute after:inset-0 after:border after:border-[#F27D26]/20 after:rounded-2xl after:scale-95" />
+              </div>
+
+              <div className="p-8 flex flex-col items-center gap-6 bg-[#141414]">
+                <button 
+                  onClick={capturePhoto}
+                  className="w-20 h-20 bg-white rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10 group"
+                >
+                  <div className="w-16 h-16 border-4 border-[#141414] rounded-full flex items-center justify-center bg-white group-hover:bg-[#F27D26]/5 group-active:bg-[#F27D26]/10 transition-colors">
+                    <Camera className="w-8 h-8 text-[#141414]" />
+                   </div>
+                </button>
+                <p className="text-[10px] text-white/40 font-bold uppercase tracking-[0.2em]">Click to capture</p>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

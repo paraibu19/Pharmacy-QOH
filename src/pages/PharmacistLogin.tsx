@@ -16,7 +16,7 @@ export default function PharmacistLogin({ onLogin }: PharmacistLoginProps) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    technicianAuthOps.getPassword()
+    technicianAuthOps.getPassword('pharmacist')
       .then(setPersistedPassword)
       .catch(() => setPersistedPassword('pharmacist123'));
   }, []);

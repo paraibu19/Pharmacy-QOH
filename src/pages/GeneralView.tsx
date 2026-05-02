@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw } from 'lucide-react';
+import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
@@ -12,6 +12,7 @@ export default function GeneralView() {
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
 
@@ -212,11 +213,26 @@ export default function GeneralView() {
                   </td>
                 </tr>
               ) : filteredMeds.map((med) => (
-                <tr key={med.id} className="hover:bg-[#141414]/[0.02] transition-colors">
+                <tr key={med.id} className="hover:bg-[#141414]/[0.02] transition-colors group">
                   <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
-                      {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
+                    <div className="flex items-center gap-4">
+                      {med.imageUrl && (
+                        <button 
+                          onClick={() => setSelectedImage(med.imageUrl!)}
+                          className="w-10 h-10 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden hover:scale-105 transition-transform"
+                        >
+                          <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                        </button>
+                      )}
+                      {!med.imageUrl && (
+                        <div className="w-10 h-10 bg-[#141414]/5 rounded-xl border border-[#141414]/10 flex items-center justify-center">
+                          <ImageIcon size={18} className="text-[#141414]/10" />
+                        </div>
+                      )}
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
+                        {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
+                      </div>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -232,11 +248,23 @@ export default function GeneralView() {
           </table>
         </div>
 
-        {/* Mobile View */}
         <div className="md:hidden divide-y divide-[#141414]/5">
           {!loading && filteredMeds.map((med) => (
-            <div key={med.id} className="p-4 flex justify-between items-center">
-              <div>
+            <div key={med.id} className="p-4 flex gap-4 items-center">
+              {med.imageUrl && (
+                <button 
+                  onClick={() => setSelectedImage(med.imageUrl!)}
+                  className="w-12 h-12 flex-shrink-0 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden"
+                >
+                  <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                </button>
+              )}
+              {!med.imageUrl && (
+                <div className="w-12 h-12 flex-shrink-0 bg-[#141414]/5 rounded-xl border border-[#141414]/10 flex items-center justify-center">
+                  <ImageIcon size={20} className="text-[#141414]/10" />
+                </div>
+              )}
+              <div className="flex-1">
                 <h3 className="font-bold text-[#141414] text-sm">{med.itemName}</h3>
                 {med.generic && <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>}
               </div>
@@ -256,6 +284,33 @@ export default function GeneralView() {
           </div>
         )}
       </div>
+      {/* Image Preview Modal */}
+      <AnimatePresence>
+        {selectedImage && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm shadow-2xl">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-2xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <button 
+                onClick={() => setSelectedImage(null)}
+                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full z-10 transition-colors"
+              >
+                <XIcon size={24} />
+              </button>
+              <div className="aspect-square md:aspect-video w-full bg-[#141414] flex items-center justify-center">
+                <img 
+                  src={selectedImage} 
+                  alt="Medication Preview" 
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

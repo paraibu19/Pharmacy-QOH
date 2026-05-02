@@ -47,6 +47,7 @@ export default function OrderView() {
   const [orderTarget, setOrderTarget] = useState<number>(1);
   
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -782,23 +783,33 @@ export default function OrderView() {
                       >
                         <td className="px-6 py-4 font-mono text-xs text-[#141414]/50">{med.itemCode}</td>
                         <td className="px-6 py-4">
-                          <button 
-                            onClick={() => startEdit(med)}
-                            className="flex flex-col group/name text-left"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
-                              {med.isNew && (
-                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
-                                  NEW
-                                </span>
-                              )}
-                              <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
-                            </div>
-                            {med.generic && (
-                              <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
+                          <div className="flex items-center gap-4">
+                            {med.imageUrl && (
+                              <button 
+                                onClick={() => setSelectedImage(med.imageUrl!)}
+                                className="w-10 h-10 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden hover:scale-105 transition-transform"
+                              >
+                                <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                              </button>
                             )}
-                          </button>
+                            <button 
+                              onClick={() => startEdit(med)}
+                              className="flex flex-col group/name text-left"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                                {med.isNew && (
+                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
+                                    NEW
+                                  </span>
+                                )}
+                                <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
+                              </div>
+                              {med.generic && (
+                                <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
+                              )}
+                            </button>
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-black ${
@@ -851,16 +862,29 @@ export default function OrderView() {
                     onClick={() => startEdit(med)}
                   >
                     <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-[#141414]">{med.itemName}</h3>
-                          {med.isNew && (
-                            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[8px] font-black uppercase tracking-widest">
-                              NEW
-                            </span>
-                          )}
+                      <div className="flex gap-4 items-start">
+                        {med.imageUrl && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedImage(med.imageUrl!);
+                            }}
+                            className="w-12 h-12 flex-shrink-0 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden"
+                          >
+                            <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                          </button>
+                        )}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-[#141414] leading-tight">{med.itemName}</h3>
+                            {med.isNew && (
+                              <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[8px] font-black uppercase tracking-widest">
+                                NEW
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest leading-none">{med.itemCode}</p>
                         </div>
-                        <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</p>
                       </div>
                       <div className="text-right">
                         <div className={`px-3 py-1 rounded-full text-xs font-black ${
@@ -1140,6 +1164,33 @@ export default function OrderView() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Image Preview Modal */}
+      <AnimatePresence>
+        {selectedImage && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm shadow-2xl">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-2xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <button 
+                onClick={() => setSelectedImage(null)}
+                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full z-10 transition-colors"
+              >
+                <XIcon size={24} />
+              </button>
+              <div className="aspect-square md:aspect-video w-full bg-[#141414] flex items-center justify-center">
+                <img 
+                  src={selectedImage} 
+                  alt="Medication Preview" 
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

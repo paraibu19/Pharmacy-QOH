@@ -26,6 +26,7 @@ export interface Medication {
   maxQty?: number;
   generic?: string;
   isNew?: boolean; // UI helper
+  imageUrl?: string;
 }
 
 export interface InventoryAudit {

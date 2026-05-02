@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, FileSpreadsheet, KeyRound, 
@@ -38,6 +38,7 @@ export default function UserHome() {
   
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showSyncPulse, setShowSyncPulse] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   // Password change states
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -902,11 +903,21 @@ export default function UserHome() {
                     </td>
                     <td className="px-6 py-4 text-sm font-mono font-medium text-[#141414]/80">{med.itemCode}</td>
                     <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
-                        {med.generic && (
-                          <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
+                      <div className="flex items-center gap-4">
+                        {med.imageUrl && (
+                          <button 
+                            onClick={() => setSelectedImage(med.imageUrl!)}
+                            className="w-10 h-10 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden hover:scale-105 transition-transform"
+                          >
+                            <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                          </button>
                         )}
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
+                          {med.generic && (
+                            <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -944,19 +955,29 @@ export default function UserHome() {
                 className="p-4 space-y-3"
               >
                 <div className="flex justify-between items-start">
-                  <div className="space-y-1">
-                    <div className="flex flex-col">
-                      <h3 className="font-bold text-[#141414]">{med.itemName}</h3>
-                      {med.generic && (
-                        <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>
-                      )}
-                      {med.isNew && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-bold rounded-full w-fit">
-                          NEW
-                        </span>
-                      )}
+                  <div className="flex gap-4 items-start">
+                    {med.imageUrl && (
+                      <button 
+                        onClick={() => setSelectedImage(med.imageUrl!)}
+                        className="w-12 h-12 flex-shrink-0 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden"
+                      >
+                        <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                      </button>
+                    )}
+                    <div className="space-y-1">
+                      <div className="flex flex-col">
+                        <h3 className="font-bold text-[#141414] leading-tight">{med.itemName}</h3>
+                        {med.generic && (
+                          <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>
+                        )}
+                        {med.isNew && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-bold rounded-full w-fit">
+                            NEW
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-mono text-[#141414]/40 uppercase">{med.itemCode}</p>
                     </div>
-                    <p className="text-xs font-mono text-[#141414]/40 uppercase">{med.itemCode}</p>
                   </div>
                   <div className="text-right">
                     <div className={`text-lg font-black ${(med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'text-red-500' : 'text-[#141414]'}`}>
@@ -994,6 +1015,33 @@ export default function UserHome() {
           </div>
         )}
       </div>
+      {/* Image Preview Modal */}
+      <AnimatePresence>
+        {selectedImage && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm shadow-2xl">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-2xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <button 
+                onClick={() => setSelectedImage(null)}
+                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full z-10 transition-colors"
+              >
+                <XIcon size={24} />
+              </button>
+              <div className="aspect-square md:aspect-video w-full bg-[#141414] flex items-center justify-center">
+                <img 
+                  src={selectedImage} 
+                  alt="Medication Preview" 
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
