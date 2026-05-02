@@ -130,6 +130,10 @@ export default function AdminInventory() {
     });
   }, [medications, searchQuery, sortField, sortOrder, lowStockOnly, expStart, expEnd, physicalCounts, availableGenericsOnly]);
 
+  const availableGenericsCount = useMemo(() => {
+    return medications.filter(m => m.generic && m.qoh > 0).length;
+  }, [medications]);
+
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -230,17 +234,17 @@ export default function AdminInventory() {
         </div>
         
         <div className="flex gap-2">
-          <button
-            onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              availableGenericsOnly 
-                ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
-                : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100 shadow-sm'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            Available Generics
-          </button>
+            <button
+              onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                availableGenericsOnly 
+                  ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
+                  : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100 shadow-sm'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              Available Generics ({availableGenericsCount})
+            </button>
           <div className="flex bg-[#141414] rounded-xl p-1 shadow-lg shadow-black/20 overflow-hidden shrink-0">
             <button 
               onClick={downloadCSV}

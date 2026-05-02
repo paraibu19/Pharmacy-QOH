@@ -155,6 +155,10 @@ export default function UserHome() {
     });
   }, [medications, searchQuery, availableGenericsOnly, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
 
+  const availableGenericsCount = useMemo(() => {
+    return medications.filter(m => m.generic && m.qoh > 0).length;
+  }, [medications]);
+
   // Handle PDF Export
   const downloadCSV = () => {
     const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3', 'Status'];
@@ -448,7 +452,7 @@ export default function UserHome() {
                     }`}
                   >
                     <Sparkles className="w-4 h-4" />
-                    Available Generics
+                    Available Generics ({availableGenericsCount})
                   </button>
                 </div>
 

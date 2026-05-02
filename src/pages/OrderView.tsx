@@ -220,6 +220,10 @@ export default function OrderView() {
     });
   }, [medications, searchQuery, availableGenericsOnly, lowStockOnly, expStart, expEnd, sortField, sortOrder, orderTarget]);
 
+  const availableGenericsCount = useMemo(() => {
+    return medications.filter(m => m.generic && m.qoh > 0).length;
+  }, [medications]);
+
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -565,7 +569,7 @@ export default function OrderView() {
                 }`}
               >
                 <Sparkles className="w-3 h-3" />
-                Available Generics (QOH &gt; 0)
+                Available Generics ({availableGenericsCount})
               </button>
             </div>
 
