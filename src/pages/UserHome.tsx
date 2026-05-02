@@ -241,7 +241,12 @@ export default function UserHome() {
       {/* Hero / Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
         <div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">User View</h1>
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">User View</h1>
+            <div className="px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5">
+              {format(new Date(), 'eeee, dd-MM-yyyy')}
+            </div>
+          </div>
           <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">
             Real-time medication availability at Alwakra emergency pharmacies and Mesaieed OPD pharmacy.
           </p>

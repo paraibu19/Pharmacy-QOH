@@ -792,7 +792,7 @@ export default function AdminDashboard() {
             <div className="mt-8 pt-6 border-t border-white/10">
               <div className="flex items-center gap-2 text-xs font-bold text-[#F27D26]">
                 <CalendarClock size={14} />
-                Last Update: {format(new Date(), 'HH:mm')}
+                Last Update: {format(new Date(), 'eeee, dd-MM-yyyy HH:mm')}
               </div>
             </div>
           </div>

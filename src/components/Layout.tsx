@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays } from 'lucide-react';
+import { format } from 'date-fns';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
 
@@ -36,6 +37,11 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                     Server Sync Active
                   </>
                 )}
+              </div>
+
+              <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest border border-[#141414]/5">
+                <CalendarDays className="w-3 h-3 text-[#F27D26]" />
+                {format(new Date(), 'eeee, dd-MM-yyyy')}
               </div>
             </div>
             

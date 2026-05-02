@@ -428,11 +428,16 @@ export default function OrderView() {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
         <div>
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-3 mb-1">
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Order View</h1>
-            <span className="px-2.5 py-1 bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/20 rounded-full text-[10px] font-bold uppercase tracking-widest">
-              Advanced
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/20 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                Advanced
+              </span>
+              <div className="px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5">
+                {format(new Date(), 'eeee, dd-MM-yyyy')}
+              </div>
+            </div>
           </div>
           <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">
             Manage min/max stock quantities and generate automated store orders.

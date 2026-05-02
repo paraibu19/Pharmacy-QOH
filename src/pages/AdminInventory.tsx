@@ -210,7 +210,12 @@ export default function AdminInventory() {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Inventory Audit & Cycle Counting</h1>
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-3xl font-bold tracking-tight">Inventory Audit</h1>
+            <div className="px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5">
+              {format(new Date(), 'eeee, dd-MM-yyyy')}
+            </div>
+          </div>
           <p className="text-[#141414]/50">Perform physical stock verification and reconcile variances.</p>
         </div>
         
