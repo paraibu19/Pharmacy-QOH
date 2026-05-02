@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Search, Download, MapPin, Sparkles, Filter, Loader2, X, 
+  Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
   Eye, EyeOff, Settings, Key, LogOut
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import { format, differenceInDays } from 'date-fns';
@@ -21,15 +21,16 @@ type SortOrder = 'asc' | 'desc';
 export default function OrderView() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
-  const [persistedPassword, setPersistedPassword] = useState('tech123');
+  const [persistedPassword, setPersistedPassword] = useState('pharmacist123');
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
+
+  // Password change states
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changeError, setChangeError] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
-  const [showForgotMsg, setShowForgotMsg] = useState(false);
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,7 +55,7 @@ export default function OrderView() {
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
 
   React.useEffect(() => {
-    technicianAuthOps.getPassword().then(setPersistedPassword);
+    technicianAuthOps.getPassword('order').then(setPersistedPassword);
   }, []);
 
   // Visual feedback for real-time sync
@@ -71,33 +72,6 @@ export default function OrderView() {
       setAuthError('');
     } else {
       setAuthError('Invalid password. Access denied.');
-    }
-  };
-
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword.length < 4) {
-      setChangeError('Password must be at least 4 characters long.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setChangeError('Passwords do not match.');
-      return;
-    }
-
-    setIsSavingPassword(true);
-    try {
-      await technicianAuthOps.updatePassword(newPassword);
-      setPersistedPassword(newPassword);
-      setIsChangingPassword(false);
-      setNewPassword('');
-      setConfirmPassword('');
-      setChangeError('');
-      alert('Password updated successfully!');
-    } catch (err) {
-      setChangeError('Failed to update password. Please try again.');
-    } finally {
-      setIsSavingPassword(false);
     }
   };
 
@@ -341,6 +315,32 @@ export default function OrderView() {
     doc.save(`Store_Order_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 4) {
+      setChangeError('Minimum 4 characters required.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangeError('Passwords do not match.');
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      await technicianAuthOps.updatePassword('order', newPassword);
+      setPersistedPassword(newPassword);
+      setIsChangingPassword(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      setChangeError('');
+    } catch (err) {
+      setChangeError('Failed to update password.');
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center p-6">
@@ -378,16 +378,11 @@ export default function OrderView() {
                   <LogIn className="w-5 h-5 text-[#141414]/20" />
                 </div>
               </div>
-              <div className="flex justify-between items-center mt-2 px-1">
-                {authError ? <p className="text-red-500 text-xs font-bold">{authError}</p> : <div></div>}
-                <button 
-                  type="button"
-                  onClick={() => setShowForgotMsg(true)}
-                  className="text-[10px] font-bold text-[#F27D26] hover:underline"
-                >
-                  Forgot Password?
-                </button>
-              </div>
+              {authError && (
+                <div className="mt-2 px-1">
+                  <p className="text-red-500 text-xs font-bold">{authError}</p>
+                </div>
+              )}
             </div>
             
             <button 
@@ -397,33 +392,6 @@ export default function OrderView() {
               Access View
             </button>
           </form>
-
-          <AnimatePresence>
-            {showForgotMsg && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
-              >
-                <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center">
-                  <div className="w-12 h-12 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Key className="w-6 h-6" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">Forgot Password</h3>
-                  <p className="text-sm text-[#141414]/60 mb-6">
-                    Please contact the Pharmacy IT Administrator to request a password reset for the order view.
-                  </p>
-                  <button 
-                    onClick={() => setShowForgotMsg(false)}
-                    className="w-full py-3 bg-[#141414] text-white rounded-xl font-bold hover:bg-[#F27D26] transition-all"
-                  >
-                    Close
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </motion.div>
       </div>
     );
@@ -458,14 +426,6 @@ export default function OrderView() {
             <LogOut className="w-3 h-3" />
             Logout
           </button>
-
-          <button 
-            onClick={() => setIsChangingPassword(true)}
-            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-[#141414]/10 rounded-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 hover:bg-[#141414]/5 transition-all shadow-sm"
-          >
-            <Settings className="w-3 h-3" />
-            Security
-          </button>
           
           <button 
             onClick={() => refresh(true)}
@@ -481,6 +441,13 @@ export default function OrderView() {
           </button>
 
           <div className="flex w-full md:w-auto items-center gap-1 bg-[#141414]/5 p-1 rounded-full border border-[#141414]/10">
+            <button 
+              onClick={() => setIsChangingPassword(true)}
+              title="Security Settings"
+              className="flex-1 md:flex-none p-2 hover:bg-[#F27D26]/10 hover:text-[#F27D26] rounded-full transition-colors text-[#141414]/40"
+            >
+              <KeyRound className="w-4 h-4" />
+            </button>
             <button 
               onClick={downloadCSV}
               className="flex-1 md:flex-none px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all shadow-sm flex items-center justify-center gap-2 border border-[#141414]/5"
@@ -697,13 +664,13 @@ export default function OrderView() {
                   />
                 </div>
                 <div className="flex items-end">
-                  <button
-                    onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
-                    className="w-full h-10 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center gap-2"
-                  >
-                    <X className="w-4 h-4" />
-                    Reset
-                  </button>
+                    <button
+                      onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+                      className="w-full h-10 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center gap-2"
+                    >
+                      <XIcon className="w-4 h-4" />
+                      Reset
+                    </button>
                 </div>
               </div>
             </motion.div>
@@ -925,89 +892,89 @@ export default function OrderView() {
         </div>
       )}
 
-      {/* Change Password Modal */}
+      {/* Security Modal */}
       <AnimatePresence>
         {isChangingPassword && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="bg-white p-8 rounded-3xl shadow-2xl max-w-md w-full"
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full"
             >
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-[#F27D26]/10 text-[#F27D26] rounded-xl flex items-center justify-center">
                     <Key className="w-5 h-5" />
                   </div>
-                  <h3 className="text-xl font-bold">Change Password</h3>
+                  <h3 className="text-xl font-bold">Portal Security</h3>
                 </div>
                 <button 
                   onClick={() => setIsChangingPassword(false)}
                   className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors"
                 >
-                  <X className="w-5 h-5" />
+                  <XIcon className="w-5 h-5 text-[#141414]/20" />
                 </button>
               </div>
 
               <form onSubmit={handleChangePassword} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">New Password</label>
+                <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest leading-relaxed">
+                  Changing this will update access for the Order view only.
+                </p>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">New Password</label>
                   <div className="relative">
                     <input 
                       type={showPassword ? "text" : "password"}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-medium"
-                      placeholder="New password"
+                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold tracking-widest text-sm"
+                      placeholder="••••"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-[#141414]/20 hover:text-[#141414]/40 transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/20 hover:text-[#141414]/40"
                     >
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">Confirm Password</label>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Confirm Password</label>
                   <input 
                     type={showPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-medium"
-                    placeholder="Confirm new password"
+                    className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold tracking-widest text-sm"
+                    placeholder="••••"
                     required
                   />
                 </div>
 
                 {changeError && (
-                  <p className="text-red-500 text-xs font-bold ml-1">{changeError}</p>
+                  <p className="text-red-500 text-[10px] font-bold uppercase tracking-tight">{changeError}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <button 
-                    type="button"
-                    onClick={() => setIsChangingPassword(false)}
-                    className="flex-1 py-3 bg-[#141414]/5 text-[#141414]/60 rounded-xl font-bold hover:bg-[#141414]/10 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit"
-                    disabled={isSavingPassword}
-                    className="flex-1 py-3 bg-[#141414] text-white rounded-xl font-bold hover:bg-[#F27D26] transition-all flex items-center justify-center gap-2"
-                  >
-                    {isSavingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Password'}
-                  </button>
-                </div>
+                <button 
+                  type="submit"
+                  disabled={isSavingPassword}
+                  className="w-full py-4 bg-[#141414] text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#F27D26] transition-all disabled:opacity-20 flex items-center justify-center gap-2"
+                >
+                  {isSavingPassword ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>Update Access Code</>
+                  )}
+                </button>
               </form>
             </motion.div>
           </motion.div>
@@ -1042,7 +1009,7 @@ export default function OrderView() {
                   onClick={() => setShowCorrectionModal(false)}
                   className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors"
                 >
-                  <X className="w-5 h-5" />
+                  <XIcon className="w-5 h-5" />
                 </button>
               </div>
 

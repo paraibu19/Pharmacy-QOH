@@ -110,16 +110,10 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
           )}
 
           {mode === 'forgot' && (
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-widest text-[#141414]/40 mb-1.5 ml-1">
-                Admin Email
-              </label>
-              <input
-                type="email"
-                className="w-full px-4 py-3 rounded-xl border border-[#141414]/10 focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all"
-                placeholder="admin@example.com"
-                required
-              />
+            <div className="text-center p-4 bg-[#141414]/5 rounded-xl border border-[#141414]/10">
+              <p className="text-sm text-[#141414]/60">
+                Administrative password resets must be performed by the system owner. Please contact technical support.
+              </p>
             </div>
           )}
 

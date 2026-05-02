@@ -210,37 +210,35 @@ export const systemOps = {
 };
 
 export const technicianAuthOps = {
-  async getPassword(): Promise<string> {
-    if (!db) return 'tech123';
+  async getPassword(portal: 'pharmacist' | 'order'): Promise<string> {
+    const defaultPass = portal === 'pharmacist' ? 'pharmacist123' : 'order123';
+    if (!db) return defaultPass;
+    
     try {
-      const colRef = collection(db, 'settings');
-      const q = query(colRef);
-      const snapshot = await getDocs(q);
-      const techDoc = snapshot.docs.find(d => d.id === 'technician');
+      const docRef = doc(db, 'settings', `${portal}_portal`);
+      const snapshot = await getDocs(query(collection(db, 'settings'), where('__name__', '==', `${portal}_portal`)));
       
-      if (!techDoc) {
+      if (snapshot.empty) {
         // Initialize with default if not exists
         try {
-          const batch = writeBatch(db);
-          batch.set(doc(db, 'settings', 'technician'), { password: 'tech123' });
-          await batch.commit();
+          await writeBatch(db).set(docRef, { password: defaultPass }).commit();
         } catch (e) {
-          console.warn('Could not initialize technician password in Firestore, using default.');
+          console.warn(`Could not initialize ${portal} password in Firestore, using default.`);
         }
-        return 'tech123';
+        return defaultPass;
       }
-      return techDoc.data().password;
+      return snapshot.docs[0].data().password;
     } catch (error) {
-      console.error('Error getting technician password:', error);
-      return 'tech123';
+      console.error(`Error getting ${portal} password:`, error);
+      return defaultPass;
     }
   },
 
-  async updatePassword(newPassword: string): Promise<void> {
+  async updatePassword(portal: 'pharmacist' | 'order', newPassword: string): Promise<void> {
     if (!db) return;
-    const path = 'settings/technician';
+    const path = `settings/${portal}_portal`;
     try {
-      await updateDoc(doc(db, 'settings', 'technician'), {
+      await updateDoc(doc(db, 'settings', `${portal}_portal`), {
         password: newPassword,
         updatedAt: serverTimestamp()
       });

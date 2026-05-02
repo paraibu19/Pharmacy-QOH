@@ -1,43 +1,52 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Layout from './components/Layout';
-import UserHome from './pages/UserHome';
+import PharmacistView from './pages/PharmacistView';
+import GeneralView from './pages/GeneralView';
 import OrderView from './pages/OrderView';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminInventory from './pages/AdminInventory';
 
-// Simple admin auth simulation until Firebase is ready
-const useAuth = () => {
-  const [isAdmin, setIsAdmin] = useState(false);
+// Simple auth simulation until Firebase is ready
+const useAuth = (key: string) => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   useEffect(() => {
-    const loggedIn = localStorage.getItem('admin_session') === 'true';
-    setIsAdmin(loggedIn);
-  }, []);
+    const loggedIn = localStorage.getItem(key) === 'true';
+    setIsAuthenticated(loggedIn);
+  }, [key]);
 
   const login = () => {
-    localStorage.setItem('admin_session', 'true');
-    setIsAdmin(true);
+    localStorage.setItem(key, 'true');
+    setIsAuthenticated(true);
   };
 
   const logout = () => {
-    localStorage.removeItem('admin_session');
-    setIsAdmin(false);
+    localStorage.removeItem(key);
+    setIsAuthenticated(false);
   };
 
-  return { isAdmin, login, logout };
+  return { isAuthenticated, login, logout };
 };
 
 export default function App() {
-  const { isAdmin, login, logout } = useAuth();
+  const { isAuthenticated: isAdmin, login: adminLogin, logout: adminLogout } = useAuth('admin_session');
 
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public General View */}
         <Route path="/" element={
           <Layout>
-            <UserHome />
+            <GeneralView />
+          </Layout>
+        } />
+        
+        {/* Pharmacist View -> Self Protected */}
+        <Route path="/pharmacist" element={
+          <Layout>
+            <PharmacistView />
           </Layout>
         } />
         
@@ -49,7 +58,7 @@ export default function App() {
         
         <Route path="/admin/login" element={
           <Layout>
-            <AdminLogin onLogin={login} />
+            <AdminLogin onLogin={adminLogin} />
           </Layout>
         } />
 
@@ -57,7 +66,7 @@ export default function App() {
           path="/admin/dashboard" 
           element={
             isAdmin 
-              ? <Layout isAdmin onLogout={logout}><AdminDashboard /></Layout> 
+              ? <Layout isAdmin onLogout={adminLogout}><AdminDashboard /></Layout> 
               : <Navigate to="/admin/login" />
           } 
         />
@@ -66,7 +75,7 @@ export default function App() {
           path="/admin/inventory" 
           element={
             isAdmin 
-              ? <Layout isAdmin onLogout={logout}><AdminInventory /></Layout> 
+              ? <Layout isAdmin onLogout={adminLogout}><AdminInventory /></Layout> 
               : <Navigate to="/admin/login" />
           } 
         />

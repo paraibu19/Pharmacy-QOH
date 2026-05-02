@@ -1,6 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Download, MapPin, Sparkles, Filter, Loader2, X, RefreshCw, ArrowUpDown, AlertTriangle, FileSpreadsheet } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
+  RefreshCw, ArrowUpDown, AlertTriangle, FileSpreadsheet, KeyRound, 
+  Key, Eye, EyeOff, Lock, LogOut 
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import { format, differenceInDays } from 'date-fns';
@@ -9,11 +13,18 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { formatNumber } from '../lib/formatters';
+import { technicianAuthOps } from '../lib/firebaseOperations';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3';
 type SortOrder = 'asc' | 'desc';
 
 export default function UserHome() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [persistedPassword, setPersistedPassword] = useState('pharmacist123');
+  const [authError, setAuthError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
@@ -28,6 +39,13 @@ export default function UserHome() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   
+  // Password change states
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changeError, setChangeError] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
 
   // Visual feedback for real-time sync
@@ -36,6 +54,22 @@ export default function UserHome() {
     const timer = setTimeout(() => setShowSyncPulse(false), 2000);
     return () => clearTimeout(timer);
   }, [lastSynced]);
+
+  useEffect(() => {
+    technicianAuthOps.getPassword('pharmacist')
+      .then(setPersistedPassword)
+      .catch(() => setPersistedPassword('pharmacist123'));
+  }, []);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === persistedPassword) {
+      setIsAuthenticated(true);
+      setAuthError('');
+    } else {
+      setAuthError('Invalid password. Access denied.');
+    }
+  };
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -212,8 +246,6 @@ export default function UserHome() {
   const downloadPDF = () => {
     const doc = new jsPDF();
     const locationName = PHARMACY_NAMES[selectedLocation];
-    const now = format(new Date(), "eeee, dd-MM-yyyy, hh:mm a");
-    // User requested format: DayName, dd-mm-yyyy, HH:MM AM/PM
     const displayDate = format(new Date(), "eeee, dd-MM-yyyy, hh:mm a");
 
     doc.setFontSize(18);
@@ -242,25 +274,113 @@ export default function UserHome() {
     doc.save(`${locationName}_Inventory_${format(new Date(), 'yyyyMMdd')}.pdf`);
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 4) {
+      setChangeError('Minimum 4 characters required.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangeError('Passwords do not match.');
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      await technicianAuthOps.updatePassword('pharmacist', newPassword);
+      setIsChangingPassword(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      setChangeError('');
+      setPersistedPassword(newPassword);
+    } catch (err) {
+      setChangeError('Failed to update password.');
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-[80vh] flex items-center justify-center p-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md bg-white p-8 rounded-3xl border border-[#141414]/10 shadow-xl"
+        >
+          <div className="w-16 h-16 bg-[#F27D26]/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Lock className="w-8 h-8 text-[#F27D26]" />
+          </div>
+          <h1 className="text-2xl font-bold text-center mb-2">Pharmacist Access</h1>
+          <p className="text-[#141414]/50 text-center text-sm mb-8">Please enter the security password</p>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">Password</label>
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-4 pr-12 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-medium"
+                  placeholder="••••••••"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-[#141414]/20 hover:text-[#141414]/40 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {authError && (
+                <div className="mt-2 px-1">
+                  <p className="text-red-500 text-xs font-bold">{authError}</p>
+                </div>
+              )}
+            </div>
+            
+            <button 
+              type="submit"
+              className="w-full py-4 bg-[#141414] text-white rounded-xl font-bold hover:bg-[#F27D26] transition-all flex items-center justify-center gap-2"
+            >
+              Sign In
+            </button>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 md:space-y-8">
       {/* Hero / Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">User View</h1>
-            <div className="px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5">
-              {format(new Date(), 'eeee, dd-MM-yyyy')}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
+          <div className="flex items-center gap-3">
+            <div className="flex flex-col">
+              <div className="flex items-center gap-3 mb-1">
+                <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Pharmacist View</h1>
+                <div className="px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5">
+                  {format(new Date(), 'eeee, dd-MM-yyyy')}
+                </div>
+              </div>
+              <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">
+                Real-time medication availability at Alwakra emergency pharmacies and Mesaieed OPD pharmacy.
+              </p>
             </div>
           </div>
-          <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">
-            Real-time medication availability at Alwakra emergency pharmacies and Mesaieed OPD pharmacy.
-          </p>
-        </div>
-        
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          <button 
-            onClick={() => refresh(true)}
+          
+          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+            <button 
+              onClick={() => setIsAuthenticated(false)}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-red-100 rounded-full text-[10px] font-bold uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all shadow-sm"
+            >
+              <LogOut className="w-3 h-3" />
+              Logout
+            </button>
+            <button 
+              onClick={() => refresh(true)}
             disabled={isSyncing}
             className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
               showSyncPulse 
@@ -289,6 +409,13 @@ export default function UserHome() {
           </button>
           
           <div className="flex bg-white border border-[#141414]/10 rounded-full p-1 shadow-sm">
+            <button 
+              onClick={() => setIsChangingPassword(true)}
+              title="Security Settings"
+              className="p-2 hover:bg-[#F27D26]/10 hover:text-[#F27D26] rounded-full transition-colors text-[#141414]/60 mr-1"
+            >
+              <KeyRound className="w-4 h-4" />
+            </button>
             <button 
               onClick={downloadPDF}
               title="Download PDF"
@@ -506,7 +633,7 @@ export default function UserHome() {
                     }}
                     className="w-full h-10 flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all"
                   >
-                    <X className="w-4 h-4" />
+                    <XIcon className="w-4 h-4" />
                     Reset
                   </button>
                 </div>
@@ -515,6 +642,95 @@ export default function UserHome() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Security Modal */}
+      <AnimatePresence>
+        {isChangingPassword && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[#F27D26]/10 text-[#F27D26] rounded-xl flex items-center justify-center">
+                    <Key className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-xl font-bold">Portal Security</h3>
+                </div>
+                <button 
+                  onClick={() => setIsChangingPassword(false)}
+                  className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors"
+                >
+                  <XIcon className="w-5 h-5 text-[#141414]/20" />
+                </button>
+              </div>
+
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest leading-relaxed">
+                  Changing this will update access for the Pharmacist view only.
+                </p>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">New Password</label>
+                  <div className="relative">
+                    <input 
+                      type={showPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold tracking-widest text-sm"
+                      placeholder="••••"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#141414]/20 hover:text-[#141414]/40"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Confirm Password</label>
+                  <input 
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold tracking-widest text-sm"
+                    placeholder="••••"
+                    required
+                  />
+                </div>
+
+                {changeError && (
+                  <p className="text-red-500 text-[10px] font-bold uppercase tracking-tight">{changeError}</p>
+                )}
+
+                <button 
+                  type="submit"
+                  disabled={isSavingPassword}
+                  className="w-full py-4 bg-[#141414] text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#F27D26] transition-all disabled:opacity-20 flex items-center justify-center gap-2"
+                >
+                  {isSavingPassword ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>Update Access Code</>
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Content View - Table on desktop, Cards on mobile */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">

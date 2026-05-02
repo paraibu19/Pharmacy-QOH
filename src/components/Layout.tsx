@@ -1,9 +1,10 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut } from 'lucide-react';
 import { format } from 'date-fns';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface LayoutProps {
   children: ReactNode;
@@ -13,100 +14,194 @@ interface LayoutProps {
 
 export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
   const isCloudConnected = !!db;
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const NavLinks = () => (
+    <>
+      <NavLink 
+        to="/" 
+        onClick={() => setIsMobileMenuOpen(false)}
+        className={({ isActive }) => 
+          `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+        }
+      >
+        General View
+      </NavLink>
+
+      <NavLink 
+        to="/pharmacist" 
+        onClick={() => setIsMobileMenuOpen(false)}
+        className={({ isActive }) => 
+          `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+        }
+      >
+        <Pill className="w-4 h-4" />
+        Pharmacist
+      </NavLink>
+
+      <NavLink 
+        to="/order" 
+        onClick={() => setIsMobileMenuOpen(false)}
+        className={({ isActive }) => 
+          `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+        }
+      >
+        <Wrench className="w-4 h-4" />
+        Order
+      </NavLink>
+
+      {isAdmin && (
+        <>
+          <NavLink 
+            to="/admin/dashboard" 
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={({ isActive }) => 
+              `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+            }
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            Dashboard
+          </NavLink>
+          <NavLink 
+            to="/admin/inventory" 
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={({ isActive }) => 
+              `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+            }
+          >
+            <ClipboardList className="w-4 h-4" />
+            Inventory
+          </NavLink>
+        </>
+      )}
+    </>
+  );
 
   return (
-    <div className="min-h-screen bg-[#FDFCFB] text-[#141414] font-sans">
-      <nav className="border-b border-[#141414]/10 bg-white sticky top-0 z-50">
+    <div className="min-h-screen bg-[#FDFCFB] text-[#141414] font-sans flex flex-col">
+      <nav className="border-b border-[#141414]/10 bg-white sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
+          <div className="flex justify-between h-20 items-center">
             <div className="flex items-center gap-4">
               <Link to="/" className="flex items-center gap-2 group">
-                <Pill className="w-6 h-6 text-[#F27D26] group-hover:rotate-12 transition-transform" />
-                <span className="font-bold text-lg tracking-tight">Aw-Pharmacy</span>
+                <div className="p-2 bg-[#F27D26]/10 rounded-xl">
+                  <Pill className="w-6 h-6 text-[#F27D26] group-hover:rotate-12 transition-transform" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-bold text-lg tracking-tight leading-none">Aw-Pharmacy</span>
+                  <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-[#141414]/30">Inventory System</span>
+                </div>
               </Link>
               
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${isCloudConnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                {isCloudConnected ? (
-                  <>
-                    <Cloud className="w-3 h-3" />
-                    Cloud Sync Active
-                  </>
-                ) : (
-                  <>
-                    <Cloud className="w-3 h-3" />
-                    Server Sync Active
-                  </>
-                )}
+              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#141414]/10 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm">
+                <div className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-emerald-500' : 'bg-blue-500'} animate-pulse`} />
+                <span className={isCloudConnected ? 'text-emerald-600' : 'text-blue-600'}>
+                  {isCloudConnected ? 'Cloud Active' : 'Server Active'}
+                </span>
               </div>
 
-              <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest border border-[#141414]/5">
+              <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest border border-[#141414]/5">
                 <CalendarDays className="w-3 h-3 text-[#F27D26]" />
                 {format(new Date(), 'eeee, dd-MM-yyyy')}
               </div>
             </div>
             
-            <div className="flex gap-4 items-center">
-              <NavLink 
-                to="/order" 
-                className={({ isActive }) => 
-                  `flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-[#141414] text-white' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
-                }
-              >
-                <Wrench className="w-4 h-4" />
-                Order View
-              </NavLink>
+            {/* Desktop Nav */}
+            <div className="hidden lg:flex gap-4 items-center">
+              <NavLinks />
 
-              {isAdmin ? (
-                <>
-                  <NavLink 
-                    to="/admin/dashboard" 
-                    className={({ isActive }) => 
-                      `flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-[#141414] text-white' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
-                    }
-                  >
-                    <LayoutDashboard className="w-4 h-4" />
-                    Management
-                  </NavLink>
-                  <NavLink 
-                    to="/admin/inventory" 
-                    className={({ isActive }) => 
-                      `flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${isActive ? 'bg-[#141414] text-white' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
-                    }
-                  >
-                    <ClipboardList className="w-4 h-4" />
-                    Inventory Audit
-                  </NavLink>
-                  {onLogout && (
-                    <button 
-                      onClick={onLogout}
-                      className="ml-2 flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium text-red-500 hover:bg-red-50 transition-colors"
-                    >
-                      Logout
-                    </button>
-                  )}
-                </>
-              ) : (
+              <div className="w-px h-6 bg-[#141414]/10 mx-2" />
+
+              {onLogout ? (
+                <button 
+                  onClick={onLogout}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 transition-all active:scale-95"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
+              ) : !isAdmin && (
                 <Link 
                   to="/admin/login" 
-                  className="flex items-center gap-1 px-4 py-1.5 border border-[#141414]/20 rounded-full text-sm font-medium hover:bg-[#141414] hover:text-white hover:border-[#141414] transition-all"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[#141414] text-white border border-[#141414] rounded-xl text-sm font-bold hover:shadow-lg hover:shadow-black/20 transition-all active:scale-95"
                 >
                   <ShieldCheck className="w-4 h-4" />
                   Admin Login
                 </Link>
               )}
             </div>
+
+            {/* Mobile Menu Toggle */}
+            <button 
+              className="lg:hidden p-2.5 bg-[#141414]/5 rounded-xl text-[#141414] hover:bg-[#141414]/10 transition-colors"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            >
+              {isMobileMenuOpen ? <XIcon className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
           </div>
         </div>
+
+        {/* Mobile Nav Overlay */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="lg:hidden border-t border-[#141414]/10 bg-white overflow-hidden shadow-xl"
+            >
+              <div className="px-4 pt-4 pb-8 space-y-3">
+                <div className="flex lg:hidden items-center gap-2 px-4 py-2 mb-4 bg-[#141414]/5 rounded-xl text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest border border-[#141414]/5">
+                  <CalendarDays className="w-3 h-3 text-[#F27D26]" />
+                  {format(new Date(), 'eeee, dd-MM-yyyy')}
+                </div>
+                
+                <NavLinks />
+
+                <div className="pt-4 border-t border-[#141414]/10">
+                  {onLogout ? (
+                    <button 
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        onLogout();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-sm font-bold text-red-500 bg-red-50 hover:bg-red-100 transition-all"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Logout
+                    </button>
+                  ) : !isAdmin && (
+                    <Link 
+                      to="/admin/login" 
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#141414] text-white rounded-xl text-sm font-bold hover:shadow-lg transition-all"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      Admin Login
+                    </Link>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
         {children}
       </main>
 
-      <footer className="border-t border-[#141414]/10 py-8 mt-auto">
+      <footer className="border-t border-[#141414]/10 py-10 bg-white mt-auto">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          <p className="text-xs text-[#141414]/40 uppercase tracking-widest font-mono">
-            &copy; 2026 Aw-Pharmacy Inventory Management System
+          <Link to="/" className="inline-flex items-center gap-2 group mb-6">
+            <Pill className="w-5 h-5 text-[#F27D26]/40" />
+            <span className="font-bold text-sm tracking-tight text-[#141414]/40">Aw-Pharmacy</span>
+          </Link>
+          <p className="text-[10px] text-[#141414]/30 uppercase tracking-[0.3em] font-bold mb-2">
+            Inventory Management System
+          </p>
+          <p className="text-[10px] text-[#141414]/20 font-mono">
+            &copy; 2026 Al Wakra & Mesaieed Pharmacy Portals. Protected by IT Security.
           </p>
         </div>
       </footer>

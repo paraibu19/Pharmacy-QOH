@@ -1,16 +1,17 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
-  Plus, Upload, Trash2, Edit2, Check, X, FileSpreadsheet, 
-  ClipboardPaste, Save, AlertCircle, Info, ArrowLeftRight, Loader2,
-  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw
+  Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
+  ClipboardPaste, ClipboardList, Save, AlertCircle, Info, ArrowLeftRight, Loader2,
+  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw, KeyRound, Lock
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import * as XLSX from 'xlsx';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
-import { medicationOps, systemOps } from '../lib/firebaseOperations';
+import { medicationOps, systemOps, technicianAuthOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
 
 import { db } from '../lib/firebase';
@@ -43,8 +44,49 @@ export default function AdminDashboard() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [sortField, setSortField] = useState<string>('itemName');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const [pharmacistPortalPass, setPharmacistPortalPass] = useState('');
+  const [orderPortalPass, setOrderPortalPass] = useState('');
+  const [newPharmacistPass, setNewPharmacistPass] = useState('');
+  const [newOrderPass, setNewOrderPass] = useState('');
+  const [isUpdatingPortalPass, setIsUpdatingPortalPass] = useState<'pharmacist' | 'order' | null>(null);
+  const [securityError, setSecurityError] = useState('');
+  const [securitySuccess, setSecuritySuccess] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    Promise.all([
+      technicianAuthOps.getPassword('pharmacist').then(setPharmacistPortalPass),
+      technicianAuthOps.getPassword('order').then(setOrderPortalPass)
+    ]);
+  }, []);
+
+  const handleUpdatePortalPass = async (portal: 'pharmacist' | 'order') => {
+    const newPass = portal === 'pharmacist' ? newPharmacistPass : newOrderPass;
+    if (!newPass || newPass.length < 4) {
+      setSecurityError('Password must be at least 4 characters.');
+      return;
+    }
+    setIsUpdatingPortalPass(portal);
+    setSecurityError('');
+    setSecuritySuccess('');
+    try {
+      await technicianAuthOps.updatePassword(portal, newPass);
+      if (portal === 'pharmacist') {
+        setPharmacistPortalPass(newPass);
+        setNewPharmacistPass('');
+      } else {
+        setOrderPortalPass(newPass);
+        setNewOrderPass('');
+      }
+      setSecuritySuccess(`${portal === 'pharmacist' ? 'Pharmacist' : 'Order'} access code updated.`);
+    } catch (err: any) {
+      setSecurityError(err.message || 'Failed to update password.');
+    } finally {
+      setIsUpdatingPortalPass(null);
+    }
+  };
 
   // Auto-dismiss alerts
   useEffect(() => {
@@ -561,33 +603,13 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          {hasDraft && (
-            <motion.div 
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex-1 md:flex-none flex items-center justify-between md:justify-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-[10px] font-bold text-amber-700"
-            >
-              <div className="flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Unsaved changes</span>
-              </div>
-              <div className="flex gap-1">
-                <button 
-                  onClick={restoreDraft}
-                  className="px-2 py-1 bg-amber-200 hover:bg-amber-300 rounded-md transition-colors flex items-center gap-1"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  Restore
-                </button>
-                <button 
-                  onClick={clearDraft}
-                  className="px-2 py-1 bg-white hover:bg-red-50 rounded-md transition-colors text-red-500"
-                >
-                  Discard
-                </button>
-              </div>
-            </motion.div>
-          )}
+          <Link 
+            to="/admin/inventory"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-[#141414] text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-[#F27D26] transition-colors shadow-lg shadow-black/10"
+          >
+            <History className="w-4 h-4" />
+            Stock Take
+          </Link>
           <button 
             onClick={() => setIsBulkMode(true)}
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 border border-[#141414]/10 rounded-xl text-xs sm:text-sm font-bold hover:bg-[#141414]/5 transition-colors"
@@ -621,7 +643,7 @@ export default function AdminDashboard() {
               onClick={() => setError(null)}
               className="p-1 hover:bg-red-100 rounded-lg transition-colors text-red-500"
             >
-              <X size={16} />
+              <XIcon size={16} />
             </button>
           </motion.div>
         )}
@@ -640,16 +662,124 @@ export default function AdminDashboard() {
               onClick={() => setSuccess(null)}
               className="p-1 hover:bg-emerald-100 rounded-lg transition-colors text-emerald-500"
             >
-              <X size={16} />
+              <XIcon size={16} />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Expiration Alerts Widget */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-3 space-y-4">
-          <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden">
+      <div className="flex flex-col gap-6 md:gap-8">
+        {/* Top Horizontal Stats & Security Row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Inventory Stats Mini Card */}
+          <div className="bg-[#141414] text-white p-5 rounded-3xl shadow-xl flex flex-col justify-between border border-white/5">
+            <div className="flex justify-between items-start mb-4">
+              <div className="p-2 bg-[#F27D26]/20 rounded-xl text-[#F27D26]">
+                <Settings2 size={18} />
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-white/40">Total Items</p>
+                <p className="text-xl font-bold">{formatNumber(medications.length)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-white/40">Expiring Items</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-red-400">{formatNumber(expirationStats.current)}</span>
+                  <span className="text-[9px] text-white/30 truncate">this month</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-white/40">Low Stock</p>
+                <p className="text-sm font-bold text-amber-400">
+                  {formatNumber(medications.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Portal Security Mini Card */}
+          <div className="bg-white p-5 rounded-3xl border border-[#141414]/10 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+                <KeyRound size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#141414]">Technician Security</h3>
+                <p className="text-[9px] text-[#141414]/40 font-bold uppercase tracking-tight">Portal Access Codes</p>
+              </div>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Pharmacist View Code</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    placeholder="New code"
+                    value={newPharmacistPass}
+                    onChange={(e) => setNewPharmacistPass(e.target.value)}
+                    className="w-full bg-[#141414]/5 border-none rounded-xl pl-4 pr-10 py-2 text-[10px] focus:ring-1 focus:ring-[#F27D26] outline-none transition-all font-bold tracking-widest"
+                  />
+                  <button 
+                    onClick={() => handleUpdatePortalPass('pharmacist')}
+                    disabled={isUpdatingPortalPass !== null || !newPharmacistPass}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 bg-[#141414] text-white rounded-lg hover:bg-[#F27D26] transition-all disabled:opacity-20"
+                  >
+                    {isUpdatingPortalPass === 'pharmacist' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Order View Code</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    placeholder="New code"
+                    value={newOrderPass}
+                    onChange={(e) => setNewOrderPass(e.target.value)}
+                    className="w-full bg-[#141414]/5 border-none rounded-xl pl-4 pr-10 py-2 text-[10px] focus:ring-1 focus:ring-[#F27D26] outline-none transition-all font-bold tracking-widest"
+                  />
+                  <button 
+                    onClick={() => handleUpdatePortalPass('order')}
+                    disabled={isUpdatingPortalPass !== null || !newOrderPass}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 bg-[#141414] text-white rounded-lg hover:bg-[#F27D26] transition-all disabled:opacity-20"
+                  >
+                    {isUpdatingPortalPass === 'order' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+
+              {securitySuccess && <p className="text-[8px] text-emerald-600 font-bold text-center animate-bounce uppercase">Updated!</p>}
+              {securityError && <p className="text-[8px] text-red-500 font-bold text-center uppercase">{securityError}</p>}
+            </div>
+          </div>
+
+          {/* System Status Mini Card */}
+          <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col justify-between">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600">
+                <RefreshCw size={18} className="animate-spin-slow" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-emerald-800">Cloud Link</h3>
+                <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-tight">Real-time Connected</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="text-[9px] text-emerald-700/60 font-bold uppercase">Last Sync</div>
+              <div className="text-xs font-bold text-emerald-700">{format(lastSynced, 'HH:mm:ss')}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-4 space-y-6">
+            <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden">
             <div className="p-4 bg-[#F27D26]/5 border-b border-[#141414]/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-[#F27D26]/10 rounded-lg text-[#F27D26]">
@@ -675,7 +805,7 @@ export default function AdminDashboard() {
                       onClick={() => setExpSearchMonth('')}
                       className="absolute right-8 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#141414]/5 rounded text-[#141414]/40"
                     >
-                      <X size={12} />
+                      <XIcon size={12} />
                     </button>
                   )}
                 </div>
@@ -694,7 +824,7 @@ export default function AdminDashboard() {
                       onClick={() => setExpSearchQuery('')}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#141414]/5 rounded text-[#141414]/40"
                     >
-                      <X size={12} />
+                      <XIcon size={12} />
                     </button>
                   )}
                 </div>
@@ -757,50 +887,10 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="space-y-4">
-          <div className="bg-[#141414] text-white p-6 rounded-2xl shadow-xl h-full flex flex-col justify-between">
-            <div>
-              <div className="p-3 bg-white/10 rounded-xl w-fit mb-4 text-[#F27D26]">
-                <Settings2 size={24} />
-              </div>
-              <h3 className="text-xl font-bold mb-2">Inventory Stats</h3>
-              <p className="text-white/50 text-sm mb-6">Real-time overview of your current pharmacy stock levels.</p>
-              
-              <div className="space-y-4">
-                <div className="flex justify-between items-center py-3 border-b border-white/10">
-                  <span className="text-sm text-white/60">Total Items</span>
-                  <span className="text-lg font-bold">{formatNumber(medications.length)}</span>
-                </div>
-                <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
-                  <span className="text-sm text-white/60">EXP1 Current Month</span>
-                  <span className="text-lg font-bold text-red-400">{formatNumber(expirationStats.current)}</span>
-                </div>
-                <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
-                  <span className="text-sm text-white/60">EXP1 Next Month</span>
-                  <span className="text-lg font-bold text-amber-400">{formatNumber(expirationStats.next)}</span>
-                </div>
-                <div className="flex justify-between items-start py-3 border-b border-white/10 gap-4">
-                  <span className="text-sm text-white/60">EXP1 After Next Month</span>
-                  <span className="text-lg font-bold text-sky-400">{formatNumber(expirationStats.third)}</span>
-                </div>
-                <div className="flex justify-between items-center py-3 border-b border-white/10">
-                  <span className="text-sm text-white/60">Low Stock Items (qoh &lt; 30% Max)</span>
-                  <span className="text-lg font-bold text-red-400">{formatNumber(medications.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length)}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-8 pt-6 border-t border-white/10">
-              <div className="flex items-center gap-2 text-xs font-bold text-[#F27D26]">
-                <CalendarClock size={14} />
-                Last Update: {format(new Date(), 'eeee, dd-MM-yyyy HH:mm')}
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
-
-      <AnimatePresence>
+    </div>
+    
+    <AnimatePresence>
         {isBulkMode && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
@@ -830,7 +920,7 @@ export default function AdminDashboard() {
                   onClick={() => setIsBulkMode(false)}
                   className="p-2 hover:bg-white/10 rounded-xl transition-colors"
                 >
-                  <X className="w-6 h-6 opacity-50" />
+                  <XIcon className="w-6 h-6 opacity-50" />
                 </button>
               </div>
               
@@ -895,27 +985,36 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Location Filter */}
-      <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-fit overflow-x-auto no-scrollbar">
-        {LOCATIONS.map(loc => (
-          <button
-            key={loc.id}
-            onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-            className={`flex-1 md:flex-none whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-              selectedLocation === loc.id 
-                ? loc.id === PharmacyLocation.ADULT
-                  ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
-                  : loc.id === PharmacyLocation.PEDIATRIC
-                    ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
-                    : loc.id === PharmacyLocation.MESAIEED
-                      ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
-                      : 'bg-white shadow-sm text-[#141414]'
-                : 'text-[#141414]/40 hover:text-[#141414]'
-            }`}
-          >
-            {loc.name.replace('Aw-', '')}
-          </button>
-        ))}
+      {/* Location Filter & Table Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-4 md:px-0">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+            <ClipboardList size={20} />
+          </div>
+          <h2 className="text-xl font-bold tracking-tight">Inventory Management</h2>
+        </div>
+        
+        <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-fit overflow-x-auto no-scrollbar">
+          {LOCATIONS.map(loc => (
+            <button
+              key={loc.id}
+              onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
+              className={`flex-1 md:flex-none whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                selectedLocation === loc.id 
+                  ? loc.id === PharmacyLocation.ADULT
+                    ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
+                    : loc.id === PharmacyLocation.PEDIATRIC
+                      ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
+                      : loc.id === PharmacyLocation.MESAIEED
+                        ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
+                        : 'bg-white shadow-sm text-[#141414]'
+                  : 'text-[#141414]/40 hover:text-[#141414]'
+              }`}
+            >
+              {loc.name.replace('Aw-', '')}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Table Container */}
@@ -1054,7 +1153,7 @@ export default function AdminDashboard() {
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex justify-end gap-2">
-                    <button onClick={() => { setIsAdding(false); setEditingId(null); clearDraft(); }} className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+                    <button onClick={() => { setIsAdding(false); setEditingId(null); clearDraft(); }} className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><XIcon className="w-4 h-4" /></button>
                     <button onClick={() => handleSave()} className="p-1.5 bg-green-50 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-colors"><Check className="w-4 h-4" /></button>
                   </div>
                 </td>
@@ -1350,7 +1449,7 @@ export default function AdminDashboard() {
                   onClick={() => setShowCorrectionModal(false)}
                   className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors"
                 >
-                  <X className="w-5 h-5" />
+                  <XIcon className="w-5 h-5" />
                 </button>
               </div>
 
