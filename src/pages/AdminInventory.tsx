@@ -498,8 +498,21 @@ export default function AdminInventory() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold bg-[#141414]/5 px-2 py-1 rounded">{formatNumber(med.qoh)}</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold bg-[#141414]/5 px-2 py-1 rounded">{formatNumber(med.qoh)}</span>
+                        </div>
+                        {(() => {
+                          const isOutOfStock = med.qoh <= 0;
+                          const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+                          return (
+                            <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded w-fit ${
+                              isOutOfStock ? 'bg-red-100 text-red-600' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                            }`}>
+                              {isOutOfStock ? 'Out of Stock' : isLowStock ? 'Low Stock' : 'In Stock'}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="px-6 py-4">

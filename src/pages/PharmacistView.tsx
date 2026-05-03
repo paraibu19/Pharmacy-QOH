@@ -943,15 +943,22 @@ export default function UserHome() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`text-sm font-bold ${
-                        med.qoh <= 0 
-                          ? 'text-red-600' 
-                          : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
-                          ? 'text-amber-600'
-                          : 'text-emerald-600'
-                      }`}>
-                        {formatNumber(med.qoh)}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`text-sm font-bold ${
+                          med.qoh <= 0 
+                            ? 'text-red-600' 
+                            : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
+                            ? 'text-amber-600'
+                            : 'text-emerald-600'
+                        }`}>
+                          {formatNumber(med.qoh)}
+                        </span>
+                        <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded w-fit ${
+                          med.qoh <= 0 ? 'bg-red-100 text-red-600' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                        }`}>
+                          {med.qoh <= 0 ? 'Out of Stock' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'Low Stock' : 'In Stock')}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration1 || '-'}</td>
                     <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration2 || '-'}</td>
@@ -1017,7 +1024,11 @@ export default function UserHome() {
                     }`}>
                       {formatNumber(med.qoh)}
                     </div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">In Stock</p>
+                    <p className={`text-[10px] font-bold uppercase tracking-widest ${
+                      med.qoh <= 0 ? 'text-red-500' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'text-amber-500' : 'text-emerald-500'
+                    }`}>
+                      {med.qoh <= 0 ? 'Out of Stock' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'Low Stock' : 'In Stock')}
+                    </p>
                   </div>
                 </div>
 

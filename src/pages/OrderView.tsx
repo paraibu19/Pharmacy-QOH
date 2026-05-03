@@ -842,14 +842,14 @@ export default function OrderView() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-black ${
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${
                             med.qoh <= 0 
                               ? 'bg-red-100 text-red-600' 
                               : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
                               ? 'bg-amber-100 text-amber-600'
                               : 'bg-emerald-100 text-emerald-600'
                           }`}>
-                            {med.qoh <= 0 ? 'OUT' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'LOW' : 'STOCK')}
+                            {med.qoh <= 0 ? 'Out of Stock' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'Low Stock' : 'In Stock')}
                           </span>
                         </td>
                         <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
@@ -930,8 +930,8 @@ export default function OrderView() {
                         }`}>
                           {formatNumber(med.qoh)}
                         </div>
-                        <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mt-1">
-                          {med.qoh <= 0 ? 'OUT' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'LOW' : 'STOCK')}
+                        <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mt-1 whitespace-nowrap">
+                          {med.qoh <= 0 ? 'Out of Stock' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'Low Stock' : 'In Stock')}
                         </p>
                       </div>
                     </div>

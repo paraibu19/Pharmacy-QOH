@@ -1272,17 +1272,26 @@ export default function AdminDashboard() {
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
                         <span className={`text-sm font-bold ${isOutOfStock ? 'text-red-600' : isLowStock ? 'text-amber-600' : 'text-emerald-600'}`}>{formatNumber(med.qoh)}</span>
-                        {isOutOfStock ? (
-                          <div className="flex items-center gap-1 bg-red-100 text-red-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
-                            <AlertCircle size={8} />
-                            Out
-                          </div>
-                        ) : isLowStock && (
-                          <div className="flex items-center gap-1 bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">
-                            <AlertCircle size={8} />
-                            Low
-                          </div>
-                        )}
+                        <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                          isOutOfStock ? 'bg-red-100 text-red-600' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                        }`}>
+                          {isOutOfStock ? (
+                            <>
+                              <AlertCircle size={8} />
+                              Out of Stock
+                            </>
+                          ) : isLowStock ? (
+                            <>
+                              <AlertCircle size={8} />
+                              Low Stock
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 size={8} className="text-emerald-500" />
+                              In Stock
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -1464,20 +1473,20 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40">Current Stock</p>
+                  <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40">Stock Status</p>
                   <div className="flex items-center gap-2">
                     <span className={`text-xl font-black ${
                       isOutOfStock 
                         ? 'text-red-600' 
                         : isLowStock 
                         ? 'text-amber-600' 
-                        : 'text-[#141414]'
+                        : 'text-emerald-600'
                     }`}>{formatNumber(med.qoh)}</span>
-                    {isOutOfStock ? (
-                      <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[8px] font-bold uppercase">Out</span>
-                    ) : isLowStock && (
-                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded text-[8px] font-bold uppercase">Low</span>
-                    )}
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase whitespace-nowrap ${
+                      isOutOfStock ? 'bg-red-100 text-red-600' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                    }`}>
+                      {isOutOfStock ? 'Out of Stock' : isLowStock ? 'Low Stock' : 'In Stock'}
+                    </span>
                   </div>
                 </div>
                 <div className="flex flex-col justify-center border-l border-[#141414]/10 pl-4">
