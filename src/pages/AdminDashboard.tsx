@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
-  AlertTriangle, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
+  AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
   Camera, Image as ImageIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
