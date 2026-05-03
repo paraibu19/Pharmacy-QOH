@@ -39,7 +39,6 @@ export default function OrderView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
-  const [lowStockOnly, setLowStockOnly] = useState(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -154,10 +153,6 @@ export default function OrderView() {
       result = result.filter(m => m.generic && m.qoh > 0);
     }
 
-    if (lowStockOnly) {
-      result = result.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3);
-    }
-
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
@@ -210,7 +205,7 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, availableGenericsOnly, stockFilter, lowStockOnly, expStart, expEnd, sortField, sortOrder, orderTarget]);
+  }, [medications, searchQuery, availableGenericsOnly, stockFilter, expStart, expEnd, sortField, sortOrder, orderTarget]);
 
   const availableGenericsCount = useMemo(() => {
     return medications.filter(m => m.generic && m.qoh > 0).length;
@@ -509,7 +504,7 @@ export default function OrderView() {
         </div>
       </div>
 
-      {(availableGenericsOnly || lowStockOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1) && (
+      {(availableGenericsOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
@@ -530,13 +525,8 @@ export default function OrderView() {
               In-Stock Generics
             </span>
           )}
-          {lowStockOnly && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Low Stock
-            </span>
-          )}
           <button 
-            onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+            onClick={() => { setAvailableGenericsOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -614,7 +604,7 @@ export default function OrderView() {
             <button 
               onClick={() => setShowFilters(!showFilters)}
               className={`w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                showFilters || availableGenericsOnly || lowStockOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1
+                showFilters || availableGenericsOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1
                 ? 'bg-[#F27D26] text-white shadow-lg'
                 : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
               }`}
@@ -699,19 +689,7 @@ export default function OrderView() {
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[#141414]/5">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Quick filter</label>
-                    <button
-                      onClick={() => setLowStockOnly(!lowStockOnly)}
-                      className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                        lowStockOnly ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-white border border-[#141414]/10 text-[#141414]/60'
-                      }`}
-                    >
-                      <AlertTriangle className="w-4 h-4" />
-                      Low Stock ({'< 30% Max'})
-                    </button>
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-[#141414]/5">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Exp. Start</label>
                     <input
@@ -735,7 +713,6 @@ export default function OrderView() {
                         onClick={() => { 
                           setAvailableGenericsOnly(false); 
                           setStockFilter('all');
-                          setLowStockOnly(false); 
                           setExpStart(''); 
                           setExpEnd(''); 
                           setOrderTarget(1); 

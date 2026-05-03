@@ -29,7 +29,6 @@ export default function UserHome() {
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
-  const [lowStockOnly, setLowStockOnly] = useState(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -139,10 +138,6 @@ export default function UserHome() {
       result = result.filter(m => m.generic && m.qoh > 0);
     }
 
-    if (lowStockOnly) {
-      result = result.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3);
-    }
-
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
@@ -205,7 +200,7 @@ export default function UserHome() {
 
       return a[sortField as keyof typeof a].localeCompare(b[sortField as keyof typeof b]) * multiplier;
     });
-  }, [medications, searchQuery, availableGenericsOnly, stockFilter, lowStockOnly, expStart, expEnd, sortField, sortOrder]);
+  }, [medications, searchQuery, availableGenericsOnly, stockFilter, expStart, expEnd, sortField, sortOrder]);
 
   const availableGenericsCount = useMemo(() => {
     return medications.filter(m => m.generic && m.qoh > 0).length;
@@ -426,7 +421,7 @@ export default function UserHome() {
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold transition-all ${
-              showFilters || availableGenericsOnly || lowStockOnly || stockFilter !== 'all' || expStart || expEnd
+              showFilters || availableGenericsOnly || stockFilter !== 'all' || expStart || expEnd
               ? 'bg-[#F27D26] text-white shadow-lg shadow-[#F27D26]/20'
               : 'bg-white border border-[#141414]/10 text-[#141414]/60 hover:bg-[#141414]/5'
             }`}
@@ -434,7 +429,7 @@ export default function UserHome() {
             <Filter className="w-4 h-4" />
             <span className="hidden sm:inline">{showFilters ? 'Hide' : 'Show'} Filters</span>
             <span className="sm:hidden">Filters</span>
-            {(availableGenericsOnly || lowStockOnly || stockFilter !== 'all' || expStart || expEnd) && (
+            {(availableGenericsOnly || stockFilter !== 'all' || expStart || expEnd) && (
               <span className="ml-1 w-2 h-2 bg-white rounded-full animate-pulse" />
             )}
           </button>
@@ -478,7 +473,7 @@ export default function UserHome() {
       </div>
 
       {/* Active Filters Bar */}
-      {(availableGenericsOnly || lowStockOnly || stockFilter !== 'all' || expStart || expEnd) && (
+      {(availableGenericsOnly || stockFilter !== 'all' || expStart || expEnd) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
@@ -494,18 +489,13 @@ export default function UserHome() {
               In-Stock Generics
             </span>
           )}
-          {lowStockOnly && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
-              Low Stock Only ({'< 30% Max'})
-            </span>
-          )}
           {(expStart || expEnd) && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
               Expiry: <span className="text-[#F27D26]">{expStart || 'Any'}</span> – <span className="text-[#F27D26]">{expEnd || 'Any'}</span>
             </span>
           )}
           <button 
-            onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); }}
+            onClick={() => { setAvailableGenericsOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -680,7 +670,6 @@ export default function UserHome() {
                       onClick={() => {
                         setAvailableGenericsOnly(false);
                         setStockFilter('all');
-                        setLowStockOnly(false);
                         setExpStart('');
                         setExpEnd('');
                         setSearchQuery('');
