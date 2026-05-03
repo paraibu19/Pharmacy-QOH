@@ -8,6 +8,7 @@ const PORT = 3000;
 const DATA_DIR = path.join(process.cwd(), 'data');
 const MEDS_FILE = path.join(DATA_DIR, 'medications.json');
 const AUDITS_FILE = path.join(DATA_DIR, 'audits.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -17,9 +18,40 @@ if (!fs.existsSync(DATA_DIR)) {
 // Ensure files exist
 if (!fs.existsSync(MEDS_FILE)) fs.writeFileSync(MEDS_FILE, '[]');
 if (!fs.existsSync(AUDITS_FILE)) fs.writeFileSync(AUDITS_FILE, '[]');
+if (!fs.existsSync(SETTINGS_FILE)) {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
+    adminPassword: 'admin123',
+    pharmacistPassword: 'pharmacist123',
+    orderPassword: 'order123'
+  }, null, 2));
+}
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Auth & Settings Routes
+app.post('/api/auth/admin', (req, res) => {
+  const { password } = req.body;
+  const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  if (password === settings.adminPassword) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, error: 'Invalid password' });
+  }
+});
+
+app.post('/api/auth/change-password', (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  
+  if (currentPassword !== settings.adminPassword) {
+    return res.status(401).json({ success: false, error: 'Current password incorrect' });
+  }
+
+  settings.adminPassword = newPassword;
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  res.json({ success: true });
+});
 
 // API Routes
 app.get('/api/medications', (req, res) => {

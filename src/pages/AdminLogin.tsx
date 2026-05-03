@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Key, Eye, EyeOff } from 'lucide-react';
+import { Key, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface AdminLoginProps {
@@ -14,50 +14,70 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
   const [mode, setMode] = useState<'login' | 'forgot' | 'change'>('login');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Simple local persistence for prototype
-  const getStoredPassword = () => localStorage.getItem('adminPassword') || 'admin123';
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const currentAdminPassword = getStoredPassword();
+    setError('');
+    setLoading(true);
 
-    if (mode === 'login') {
-      if (password.trim() === currentAdminPassword) {
-        onLogin();
-        navigate('/admin/dashboard');
-      } else {
-        setError('Invalid password');
+    try {
+      if (mode === 'login') {
+        const res = await fetch('/api/auth/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: password.trim() })
+        });
+
+        if (res.ok) {
+          onLogin();
+          navigate('/admin/dashboard');
+        } else {
+          const data = await res.json();
+          setError(data.error || 'Invalid password');
+        }
+      } else if (mode === 'change') {
+        if (newPassword !== confirmPassword) {
+          setError('Passwords do not match');
+          setLoading(false);
+          return;
+        }
+        if (newPassword.length < 6) {
+          setError('Password must be at least 6 characters');
+          setLoading(false);
+          return;
+        }
+
+        const res = await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            currentPassword: password.trim(), 
+            newPassword: newPassword.trim() 
+          })
+        });
+
+        if (res.ok) {
+          alert('Password changed successfully! You can now login with your new password.');
+          setMode('login');
+          setPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+        } else {
+          const data = await res.json();
+          setError(data.error || 'Failed to change password');
+        }
+      } else if (mode === 'forgot') {
+        alert('Password reset link sent to your email (Prototype)');
+        setMode('login');
+        setPassword('');
       }
-    } else if (mode === 'change') {
-      // Check current password
-      if (password.trim() !== currentAdminPassword) {
-        setError('Current password is incorrect');
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        setError('Passwords do not match');
-        return;
-      }
-      if (newPassword.length < 6) {
-        setError('Password must be at least 6 characters');
-        return;
-      }
-      
-      // Update persistent password
-      localStorage.setItem('adminPassword', newPassword);
-      
-      alert('Password changed successfully! You can now login with your new password.');
-      setMode('login');
-      setPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setError('');
-    } else if (mode === 'forgot') {
-      alert('Password reset link sent to your email (Prototype)');
-      setMode('login');
-      setPassword('');
+    } catch (err) {
+      console.error('Auth error:', err);
+      setError('Connection error. Please check if the server is running.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -165,8 +185,10 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
 
           <button
             type="submit"
-            className="w-full py-3 bg-[#141414] text-white rounded-xl font-bold hover:bg-[#141414]/90 transition-colors"
+            disabled={loading}
+            className="w-full py-3 bg-[#141414] text-white rounded-xl font-bold hover:bg-[#141414]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
             {mode === 'login' ? 'Access Dashboard' : mode === 'forgot' ? 'Send Reset Link' : 'Update Password'}
           </button>
 
