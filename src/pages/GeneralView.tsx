@@ -10,6 +10,7 @@ export default function GeneralView() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
+  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -38,6 +39,19 @@ export default function GeneralView() {
 
     if (availableGenericsOnly) {
       result = result.filter(m => m.generic && m.qoh > 0);
+    }
+
+    if (stockFilter !== 'all') {
+      result = result.filter(m => {
+        const isOut = m.qoh <= 0;
+        const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+        const isIn = !isOut && !isLow;
+        
+        if (stockFilter === 'in') return isIn;
+        if (stockFilter === 'low') return isLow;
+        if (stockFilter === 'out') return isOut;
+        return true;
+      });
     }
     
     return result.sort((a, b) => a.itemName.localeCompare(b.itemName));
@@ -165,28 +179,56 @@ export default function GeneralView() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="flex gap-4 bg-[#141414]/5 p-4 rounded-2xl border border-[#141414]/10">
-                <button
-                  onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
-                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                    availableGenericsOnly 
-                      ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
-                      : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Available Generics
-                </button>
-                <button
-                  onClick={() => {
-                    setAvailableGenericsOnly(false);
-                    setSearchQuery('');
-                  }}
-                  className="px-4 py-2.5 flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all font-bold"
-                >
-                  <XIcon className="w-4 h-4" />
-                  Reset
-                </button>
+              <div className="flex flex-col gap-4 bg-[#141414]/5 p-4 rounded-2xl border border-[#141414]/10">
+                <div className="flex flex-wrap gap-2">
+                  <span className="w-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ml-1">Stock Status</span>
+                  {[
+                    { id: 'all', label: 'All', color: 'gray' },
+                    { id: 'in', label: 'In Stock', color: 'emerald' },
+                    { id: 'low', label: 'Low Stock', color: 'amber' },
+                    { id: 'out', label: 'Out of Stock', color: 'red' }
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => setStockFilter(f.id as any)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                        stockFilter === f.id
+                          ? f.id === 'in' ? 'bg-emerald-500 text-white border-emerald-500' :
+                            f.id === 'low' ? 'bg-amber-500 text-white border-amber-500' :
+                            f.id === 'out' ? 'bg-red-500 text-white border-red-500' :
+                            'bg-[#141414] text-white border-[#141414]'
+                          : 'bg-white text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/5'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-[#141414]/5">
+                  <button
+                    onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                      availableGenericsOnly 
+                        ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
+                        : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Available Generics
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAvailableGenericsOnly(false);
+                      setStockFilter('all');
+                      setSearchQuery('');
+                    }}
+                    className="px-4 py-2 flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all font-bold"
+                  >
+                    <XIcon className="w-4 h-4" />
+                    Reset
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
@@ -277,9 +319,17 @@ export default function GeneralView() {
                 {med.generic && <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>}
               </div>
               <span className={`inline-flex items-center px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest ${
-                med.qoh > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                med.qoh <= 0 
+                  ? 'bg-red-100 text-red-700' 
+                  : (med.maxQty && med.qoh < med.maxQty * 0.3)
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-emerald-100 text-emerald-700'
               }`}>
-                {med.qoh > 0 ? 'In Stock' : 'Out of Stock'}
+                {med.qoh <= 0 
+                  ? 'Out of Stock' 
+                  : (med.maxQty && med.qoh < med.maxQty * 0.3)
+                  ? 'Low Stock' 
+                  : 'In Stock'}
               </span>
             </div>
           ))}
