@@ -38,6 +38,7 @@ export default function OrderView() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
+  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
@@ -157,6 +158,19 @@ export default function OrderView() {
       result = result.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3);
     }
 
+    if (stockFilter !== 'all') {
+      result = result.filter(m => {
+        const isOut = m.qoh <= 0;
+        const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+        const isIn = !isOut && !isLow;
+        
+        if (stockFilter === 'in') return isIn;
+        if (stockFilter === 'low') return isLow;
+        if (stockFilter === 'out') return isOut;
+        return true;
+      });
+    }
+
     if (expStart || expEnd) {
       const start = expStart ? new Date(expStart) : null;
       const end = expEnd ? new Date(expEnd) : null;
@@ -196,7 +210,7 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, availableGenericsOnly, lowStockOnly, expStart, expEnd, sortField, sortOrder, orderTarget]);
+  }, [medications, searchQuery, availableGenericsOnly, stockFilter, lowStockOnly, expStart, expEnd, sortField, sortOrder, orderTarget]);
 
   const availableGenericsCount = useMemo(() => {
     return medications.filter(m => m.generic && m.qoh > 0).length;
@@ -495,12 +509,17 @@ export default function OrderView() {
         </div>
       </div>
 
-      {(availableGenericsOnly || lowStockOnly || expStart || expEnd || orderTarget !== 1) && (
+      {(availableGenericsOnly || lowStockOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
             Active Filters:
           </span>
+          {stockFilter !== 'all' && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
+              Stock: <span className="text-[#F27D26] uppercase">{stockFilter}</span>
+            </span>
+          )}
           {orderTarget !== 1 && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
               Target: <span className="text-[#F27D26]">{orderTarget * 100}%</span>
@@ -517,7 +536,7 @@ export default function OrderView() {
             </span>
           )}
           <button 
-            onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+            onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -595,7 +614,7 @@ export default function OrderView() {
             <button 
               onClick={() => setShowFilters(!showFilters)}
               className={`w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                showFilters || availableGenericsOnly || lowStockOnly || expStart || expEnd || orderTarget !== 1
+                showFilters || availableGenericsOnly || lowStockOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1
                 ? 'bg-[#F27D26] text-white shadow-lg'
                 : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
               }`}
@@ -654,45 +673,79 @@ export default function OrderView() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-[#141414]/5 rounded-2xl border border-[#141414]/10">
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Quick filter</label>
-                  <button
-                    onClick={() => setLowStockOnly(!lowStockOnly)}
-                    className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                      lowStockOnly ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-white border border-[#141414]/10 text-[#141414]/60'
-                    }`}
-                  >
-                    <AlertTriangle className="w-4 h-4" />
-                    Low Stock ({'< 30% Max'})
-                  </button>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Exp. Start</label>
-                  <input
-                    type="date"
-                    value={expStart}
-                    onChange={(e) => setExpStart(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Exp. End</label>
-                  <input
-                    type="date"
-                    value={expEnd}
-                    onChange={(e) => setExpEnd(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm"
-                  />
-                </div>
-                <div className="flex items-end">
+              <div className="flex flex-col gap-4 bg-[#141414]/5 p-4 rounded-3xl border border-[#141414]/10">
+                <div className="flex flex-wrap gap-2">
+                  <span className="w-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ml-1">Stock Status</span>
+                  {[
+                    { id: 'all', label: 'All', color: 'gray' },
+                    { id: 'in', label: 'In Stock', color: 'emerald' },
+                    { id: 'low', label: 'Low Stock', color: 'amber' },
+                    { id: 'out', label: 'Out of Stock', color: 'red' }
+                  ].map((f) => (
                     <button
-                      onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
-                      className="w-full h-10 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center gap-2"
+                      key={f.id}
+                      onClick={() => setStockFilter(f.id as any)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                        stockFilter === f.id
+                          ? f.id === 'in' ? 'bg-emerald-500 text-white border-emerald-500' :
+                            f.id === 'low' ? 'bg-amber-500 text-white border-amber-500' :
+                            f.id === 'out' ? 'bg-red-500 text-white border-red-500' :
+                            'bg-[#141414] text-white border-[#141414]'
+                          : 'bg-white text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/5'
+                      }`}
                     >
-                      <XIcon className="w-4 h-4" />
-                      Reset
+                      {f.label}
                     </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[#141414]/5">
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Quick filter</label>
+                    <button
+                      onClick={() => setLowStockOnly(!lowStockOnly)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                        lowStockOnly ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-white border border-[#141414]/10 text-[#141414]/60'
+                      }`}
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                      Low Stock ({'< 30% Max'})
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Exp. Start</label>
+                    <input
+                      type="date"
+                      value={expStart}
+                      onChange={(e) => setExpStart(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm shadow-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Exp. End</label>
+                    <input
+                      type="date"
+                      value={expEnd}
+                      onChange={(e) => setExpEnd(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm shadow-sm"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                      <button
+                        onClick={() => { 
+                          setAvailableGenericsOnly(false); 
+                          setStockFilter('all');
+                          setLowStockOnly(false); 
+                          setExpStart(''); 
+                          setExpEnd(''); 
+                          setOrderTarget(1); 
+                        }}
+                        className="w-full h-10 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center gap-2"
+                      >
+                        <XIcon className="w-4 h-4" />
+                        Reset
+                      </button>
+                  </div>
                 </div>
               </div>
             </motion.div>

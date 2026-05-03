@@ -22,6 +22,7 @@ const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 export default function AdminDashboard() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
@@ -302,7 +303,22 @@ export default function AdminDashboard() {
   };
 
   const sortedMedications = useMemo(() => {
-    return [...medications].sort((a, b) => {
+    let result = [...medications];
+
+    if (stockFilter !== 'all') {
+      result = result.filter(m => {
+        const isOut = m.qoh <= 0;
+        const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+        const isIn = !isOut && !isLow;
+        
+        if (stockFilter === 'in') return isIn;
+        if (stockFilter === 'low') return isLow;
+        if (stockFilter === 'out') return isOut;
+        return true;
+      });
+    }
+
+    return result.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       
       if (['qoh', 'minQty', 'maxQty'].includes(sortField)) {
@@ -329,7 +345,7 @@ export default function AdminDashboard() {
       if (valA > valB) return 1 * multiplier;
       return 0;
     });
-  }, [medications, sortField, sortOrder]);
+  }, [medications, sortField, sortOrder, stockFilter]);
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -625,8 +641,33 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6 md:space-y-8 pb-20 px-4 md:px-0">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-6">
-        <div className="flex flex-col w-full md:w-auto">
-          <div className="flex items-center justify-between md:justify-start gap-3">
+          <div className="flex flex-col w-full md:w-auto">
+            <div className="flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar pb-2">
+              {[
+                { id: 'all', label: 'All', icon: Filter },
+                { id: 'in', label: 'In Stock', icon: Check },
+                { id: 'low', label: 'Low Stock', icon: AlertTriangle },
+                { id: 'out', label: 'Out of Stock', icon: Trash2 }
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setStockFilter(f.id as any)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
+                    stockFilter === f.id
+                      ? f.id === 'in' ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' :
+                        f.id === 'low' ? 'bg-amber-500 text-white border-amber-500 shadow-md' :
+                        f.id === 'out' ? 'bg-red-500 text-white border-red-500 shadow-md' :
+                        'bg-[#141414] text-white border-[#141414] shadow-md'
+                      : 'bg-white text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/5'
+                  }`}
+                >
+                  <f.icon size={14} />
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            
+            <div className="flex items-center justify-between md:justify-start gap-3">
             <h1 className="text-2xl md:text-3xl font-bold text-[#141414]">Management</h1>
             <button 
               onClick={() => refresh(true)}
