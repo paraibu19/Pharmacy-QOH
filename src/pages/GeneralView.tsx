@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import { format } from 'date-fns';

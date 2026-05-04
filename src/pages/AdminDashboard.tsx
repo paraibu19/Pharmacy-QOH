@@ -3,9 +3,9 @@ import {
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
-  Camera, Image as ImageIcon
+  Camera, Image as ImageIcon, CheckCircle2
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
