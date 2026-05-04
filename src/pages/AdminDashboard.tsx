@@ -10,18 +10,20 @@ import { Link } from 'react-router-dom';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
 import * as XLSX from 'xlsx';
+import JSZip from 'jszip';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, systemOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
 
 import { db } from '../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
 export default function AdminDashboard() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
-  const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -34,6 +36,8 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isBulkPhotoUploading, setIsBulkPhotoUploading] = useState(false);
+  const [bulkPhotoProgress, setBulkPhotoProgress] = useState<{current: number, total: number} | null>(null);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [resetPassword, setResetPassword] = useState('');
   const [resetError, setResetError] = useState('');
@@ -125,6 +129,7 @@ export default function AdminDashboard() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bulkPhotoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Mini stats refresh or other side effects if needed
@@ -202,6 +207,12 @@ export default function AdminDashboard() {
     const timer = setTimeout(() => setShowSyncPulse(false), 2000);
     return () => clearTimeout(timer);
   }, [lastSynced]);
+
+  useEffect(() => {
+    if (fetchError) {
+      setError(`Fetch Error: ${fetchError}`);
+    }
+  }, [fetchError]);
 
   // Expiration helper
   const parseExpDate = (dateStr: string) => {
@@ -492,6 +503,111 @@ export default function AdminDashboard() {
     reader.readAsArrayBuffer(file);
   };
 
+  const handleBulkPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsBulkPhotoUploading(true);
+      setError(null);
+      setSuccess(null);
+      setBulkPhotoProgress({ current: 0, total: 0 });
+
+      const zip = new JSZip();
+      const content = await zip.loadAsync(file);
+      
+      const imageFiles = Object.keys(content.files).filter(fileName => {
+        const lower = fileName.toLowerCase();
+        return !content.files[fileName].dir && (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp'));
+      });
+
+      if (imageFiles.length === 0) {
+        throw new Error("No valid image files found in the ZIP archive.");
+      }
+
+      setBulkPhotoProgress({ current: 0, total: imageFiles.length });
+      
+      let updatedCount = 0;
+      let skippedCount = 0;
+
+      // Process in small batches to avoid blocking UI too much
+      for (let i = 0; i < imageFiles.length; i++) {
+        const fileName = imageFiles[i];
+        // Extract item code from filename (strip extension and path)
+        const baseName = fileName.split('/').pop() || '';
+        const itemCode = baseName.replace(/\.[^/.]+$/, "").trim();
+        
+        if (!itemCode) continue;
+
+        // Find matching medication strictly for the CURRENT location
+        let matchingMeds = medications.filter(m => 
+          m.itemCode.trim().toLowerCase() === itemCode.toLowerCase() && 
+          m.locationId === selectedLocation
+        );
+        
+        // If not found in current local list (sometimes local state is partial), 
+        // try to find it in Firestore strictly within this location
+        if (matchingMeds.length === 0 && db) {
+          try {
+            const q = query(
+              collection(db, 'medications'), 
+              where('itemCode', '==', itemCode),
+              where('locationId', '==', selectedLocation)
+            );
+            const snapshot = await getDocs(q);
+            matchingMeds = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Medication));
+          } catch (e) {
+            console.warn(`Error searching in location ${selectedLocation} for ${itemCode}:`, e);
+          }
+        }
+        
+        if (matchingMeds.length > 0) {
+          const fileData = await content.files[fileName].async('blob');
+          
+          // Resize image helper (reusing logic from handleImageUpload)
+          const dataUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const img = new Image();
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 400;
+                const scaleSize = MAX_WIDTH / img.width;
+                canvas.width = MAX_WIDTH;
+                canvas.height = img.height * scaleSize;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', 0.7));
+              };
+              img.src = event.target?.result as string;
+            };
+            reader.readAsDataURL(fileData);
+          });
+
+          // Update all matching medications (could be same code in different locations if allowed)
+          for (const med of matchingMeds) {
+            await medicationOps.update(med.id, { imageUrl: dataUrl });
+          }
+          updatedCount++;
+        } else {
+          skippedCount++;
+        }
+        
+        setBulkPhotoProgress(prev => prev ? { ...prev, current: i + 1 } : null);
+      }
+
+      await refresh();
+      setSuccess(`Bulk update complete: ${updatedCount} items updated, ${skippedCount} file names didn't match any item code.`);
+    } catch (err: any) {
+      setError(`Bulk photo upload failed: ${err.message}`);
+      console.error(err);
+    } finally {
+      setIsBulkPhotoUploading(false);
+      setBulkPhotoProgress(null);
+      if (bulkPhotoInputRef.current) bulkPhotoInputRef.current.value = '';
+    }
+  };
+
   const handlePasteImport = async () => {
     try {
       setIsImporting(true);
@@ -704,6 +820,32 @@ export default function AdminDashboard() {
             <ArrowLeftRight className="w-4 h-4" />
             Bulk Import
           </button>
+          
+          <button 
+            onClick={() => bulkPhotoInputRef.current?.click()}
+            disabled={isBulkPhotoUploading}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 border border-[#141414]/10 rounded-xl text-xs sm:text-sm font-bold hover:bg-[#141414]/5 transition-colors relative"
+          >
+            {isBulkPhotoUploading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            Bulk Photos
+            {bulkPhotoProgress && (
+              <span className="absolute -top-2 -right-2 bg-[#F27D26] text-white text-[8px] px-1.5 py-0.5 rounded-full shadow-sm font-black">
+                {Math.round((bulkPhotoProgress.current / bulkPhotoProgress.total) * 100)}%
+              </span>
+            )}
+          </button>
+          <input 
+            type="file" 
+            ref={bulkPhotoInputRef}
+            onChange={handleBulkPhotoUpload}
+            accept=".zip,.rar" 
+            className="hidden" 
+          />
+
           <button 
             onClick={() => setIsAdding(true)}
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-[#F27D26] text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-[#F27D26]/90 transition-colors shadow-lg shadow-[#F27D26]/20"

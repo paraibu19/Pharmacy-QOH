@@ -16,7 +16,51 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 // Ensure files exist
-if (!fs.existsSync(MEDS_FILE)) fs.writeFileSync(MEDS_FILE, '[]');
+if (!fs.existsSync(MEDS_FILE) || fs.readFileSync(MEDS_FILE, 'utf8') === '[]') {
+  const seedData = [
+    {
+      id: "seed-1",
+      itemCode: "1001",
+      itemName: "Panadol Advance 500mg",
+      generic: "Paracetamol",
+      qoh: 250,
+      minQty: 100,
+      maxQty: 500,
+      expiration1: "15-12-2026",
+      locationId: "adult",
+      addedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString()
+    },
+    {
+      id: "seed-2",
+      itemCode: "2002",
+      itemName: "Amoxicillin 250mg Susp",
+      generic: "Amoxicillin",
+      qoh: 45,
+      minQty: 50,
+      maxQty: 150,
+      expiration1: "01-08-2026",
+      locationId: "pediatric",
+      addedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString()
+    },
+    {
+      id: "seed-3",
+      itemCode: "3003",
+      itemName: "Lipitor 20mg",
+      generic: "Atorvastatin",
+      qoh: 120,
+      minQty: 50,
+      maxQty: 200,
+      expiration1: "10-10-2027",
+      locationId: "mesaieed",
+      addedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString()
+    }
+  ];
+  fs.writeFileSync(MEDS_FILE, JSON.stringify(seedData, null, 2));
+}
+
 if (!fs.existsSync(AUDITS_FILE)) fs.writeFileSync(AUDITS_FILE, '[]');
 if (!fs.existsSync(SETTINGS_FILE)) {
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify({

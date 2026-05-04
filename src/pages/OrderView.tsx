@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
@@ -48,7 +48,14 @@ export default function OrderView() {
   
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (fetchError) {
+      setError(`Fetch Error: ${fetchError}`);
+    }
+  }, [fetchError]);
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editMin, setEditMin] = useState<string>('');

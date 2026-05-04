@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
@@ -15,7 +15,13 @@ export default function GeneralView() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
-  const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+
+  useEffect(() => {
+    if (fetchError) {
+      console.error("GeneralView fetch error:", fetchError);
+    }
+  }, [fetchError]);
 
   const suggestions = useMemo(() => {
     if (searchQuery.length < 1) return [];

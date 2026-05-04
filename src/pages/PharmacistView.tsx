@@ -50,7 +50,14 @@ export default function UserHome() {
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   
-  const { medications, loading, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (fetchError) {
+      setError(`Fetch Error: ${fetchError}`);
+    }
+  }, [fetchError]);
 
   // Visual feedback for real-time sync
   useEffect(() => {
