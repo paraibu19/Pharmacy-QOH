@@ -25,6 +25,18 @@ export default function GeneralView() {
   const [reminderStartTime, setReminderStartTime] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   const [isGeneratingReminder, setIsGeneratingReminder] = useState(false);
   
+  // Saved Reminders from LocalStorage
+  const [savedReminders, setSavedReminders] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('medication_reminders');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [showSavedReminders, setShowSavedReminders] = useState(false);
+  
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
 
   useEffect(() => {
@@ -33,65 +45,153 @@ export default function GeneralView() {
     }
   }, [fetchError]);
 
-  const handleExportToCalendar = () => {
+  const handleSaveSchedule = () => {
     if (!selectedMedicationForReminder) return;
 
-    const startDate = new Date(reminderStartTime);
-    const endDate = new Date(startDate);
-    
-    if (reminderDurationType === 'days') endDate.setDate(endDate.getDate() + reminderDurationValue);
-    else if (reminderDurationType === 'weeks') endDate.setDate(endDate.getDate() + (reminderDurationValue * 7));
-    else if (reminderDurationType === 'months') endDate.setMonth(endDate.getMonth() + reminderDurationValue);
+    const newReminder = {
+      id: crypto.randomUUID(),
+      itemName: selectedMedicationForReminder.itemName,
+      generic: selectedMedicationForReminder.generic,
+      frequency: reminderFrequency,
+      intervalHours: reminderIntervalHours,
+      durationValue: reminderDurationValue,
+      durationType: reminderDurationType,
+      startTime: reminderStartTime,
+      createdAt: Date.now()
+    };
 
-    const occurrences: any[] = [];
+    const updated = [...savedReminders, newReminder];
+    setSavedReminders(updated);
+    localStorage.setItem('medication_reminders', JSON.stringify(updated));
+    
+    // Close modal and show success toast or similar
+    setSelectedMedicationForReminder(null);
+    setShowSavedReminders(true); // Open the list to show it's added
+  };
+
+  const handleDeleteReminder = (id: string) => {
+    const updated = savedReminders.filter(r => r.id !== id);
+    setSavedReminders(updated);
+    localStorage.setItem('medication_reminders', JSON.stringify(updated));
+  };
+
+  const handleExportSingleReminder = (reminder: any) => {
+    const startDate = new Date(reminder.startTime);
+    const untilDate = new Date(startDate);
+    
+    if (reminder.durationType === 'days') untilDate.setDate(untilDate.getDate() + reminder.durationValue);
+    else if (reminder.durationType === 'weeks') untilDate.setDate(untilDate.getDate() + (reminder.durationValue * 7));
+    else if (reminder.durationType === 'months') untilDate.setMonth(untilDate.getMonth() + reminder.durationValue);
+
+    const occurrences: ics.EventAttributes[] = [];
     let current = new Date(startDate);
 
-    while (isBefore(current, endDate)) {
-      const year = current.getFullYear();
-      const month = current.getMonth() + 1;
-      const day = current.getDate();
-      const hour = current.getHours();
-      const minute = current.getMinutes();
-
+    // Limit to safety (e.g. 365 events max) to prevent browser hang
+    let safetyCounter = 0;
+    while (isBefore(current, untilDate) && safetyCounter < 365) {
+      safetyCounter++;
+      
+      const eventUid = `med-rem-${reminder.id}-${current.getTime()}@medreminder.app`;
+      
       occurrences.push({
-        title: `Reminder: ${selectedMedicationForReminder.itemName}`,
-        description: `Scheduled reminder to take your medication: ${selectedMedicationForReminder.itemName}${selectedMedicationForReminder.generic ? ' (' + selectedMedicationForReminder.generic + ')' : ''}`,
-        start: [year, month, day, hour, minute],
+        uid: eventUid,
+        title: `Reminder: ${reminder.itemName}`,
+        description: `Medication Reminder: ${reminder.itemName}${reminder.generic ? ' (' + reminder.generic + ')' : ''}`,
+        start: [
+          current.getFullYear(),
+          current.getMonth() + 1,
+          current.getDate(),
+          current.getHours(),
+          current.getMinutes()
+        ],
         duration: { minutes: 15 },
+        categories: ['Medication', 'Health'],
         alarms: [
-          { action: 'display', description: 'Reminder', trigger: { minutes: 0, before: true } }
+          { 
+            action: 'display', 
+            description: `Take ${reminder.itemName}`, 
+            trigger: { minutes: 0, before: true } 
+          }
         ]
       });
 
       // Calculate next occurrence
-      if (reminderFrequency === 'daily') current = addDays(current, 1);
-      else if (reminderFrequency === 'weekly') current = addWeeks(current, 1);
-      else if (reminderFrequency === 'monthly') current = addMonths(current, 1);
-      else if (reminderFrequency === 'hours') current = addHours(current, reminderIntervalHours);
-      else if (reminderFrequency === 'other_day') current = addDays(current, 2);
-      else if (reminderFrequency === 'other_week') current = addWeeks(current, 2);
+      if (reminder.frequency === 'daily') current = addDays(current, 1);
+      else if (reminder.frequency === 'weekly') current = addWeeks(current, 1);
+      else if (reminder.frequency === 'monthly') current = addMonths(current, 1);
+      else if (reminder.frequency === 'hours') current = addHours(current, reminder.intervalHours);
+      else if (reminder.frequency === 'other_day') current = addDays(current, 2);
+      else if (reminder.frequency === 'other_week') current = addWeeks(current, 2);
       else break;
     }
 
     if (occurrences.length === 0) return;
 
     const { error, value } = ics.createEvents(occurrences);
+    if (!error && value) {
+      // iOS compatibility fixes:
+      // 1. Force METHOD:PUBLISH at the top to enable "Add All" on iPhone
+      // 2. Add X-WR-CALNAME for better identification
+      // 3. Force a specific VALARM block that iOS recognizes for "At time of event"
+      
+      let modified = value;
+      
+      // Ensure METHOD:PUBLISH and X-WR-CALNAME are at the top
+      // This is critical for the "Add All" button to show up and have a proper title
+      const calTitle = reminder.itemName.replace(/[^\w\s]/gi, '');
+      if (!modified.includes('METHOD:PUBLISH')) {
+        modified = modified.replace('BEGIN:VCALENDAR', 
+          'BEGIN:VCALENDAR\r\n' +
+          'METHOD:PUBLISH\r\n' +
+          'X-WR-CALNAME:' + calTitle + ' Schedule\r\n' +
+          'X-WR-TIMEZONE:UTC'
+        );
+      }
 
-    if (error) {
-      console.error(error);
-      return;
+      // Overwrite VALARM blocks with the specific iOS-supported trigger for "At time of event"
+      // we follow the exact format provided by the user for maximum compatibility
+      modified = modified.replace(/BEGIN:VEVENT([\s\S]*?)SUMMARY:(.*)([\s\S]*?)END:VEVENT/g, (match, p1, summary, p2) => {
+        // Remove existing VALARMs from the event parts
+        const cleanP1 = p1.replace(/BEGIN:VALARM[\s\S]*?END:VALARM/g, '');
+        const cleanP2 = p2.replace(/BEGIN:VALARM[\s\S]*?END:VALARM/g, '');
+        
+        return 'BEGIN:VEVENT' + cleanP1 + 'SUMMARY:' + summary + cleanP2 + 
+               'BEGIN:VALARM\r\n' +
+               'TRIGGER:PT0M\r\n' +
+               'ACTION:DISPLAY\r\n' +
+               'DESCRIPTION:Reminder\r\n' +
+               'END:VALARM\r\n' +
+               'END:VEVENT';
+      });
+
+      const blob = new Blob([modified], { type: 'text/calendar;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${reminder.itemName.replace(/\s+/g, '_')}_schedule.ics`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
     }
+  };
 
-    const blob = new Blob([value!], { type: 'text/calendar;charset=utf-8' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `${selectedMedicationForReminder.itemName}_reminders.ics`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleClearAllReminders = () => {
+    if (window.confirm('Are you sure you want to clear all saved reminders?')) {
+      setSavedReminders([]);
+      localStorage.removeItem('medication_reminders');
+    }
+  };
+
+  const handleExportToCalendar = () => {
+    if (!selectedMedicationForReminder) return;
+
+    const startDate = new Date(reminderStartTime);
     
-    setSelectedMedicationForReminder(null);
+    // ... same logic as handleExportSingleReminder but for the active modal state ...
+    // Since we now "Schedule" first, we might not need this direct export anymore,
+    // but I'll keep it as a "Quick Export" option or reuse the logic.
+    handleSaveSchedule(); // Call save instead of direct export in the modal
   };
 
   const suggestions = useMemo(() => {
@@ -151,6 +251,16 @@ export default function GeneralView() {
         </div>
         
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          {savedReminders.length > 0 && (
+            <button 
+              onClick={() => setShowSavedReminders(true)}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold transition-all bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 animate-pulse hover:animate-none"
+            >
+              <Bell className="w-4 h-4" />
+              <span>{savedReminders.length} Reminders</span>
+            </button>
+          )}
+
           <button 
             onClick={() => refresh(true)}
             disabled={isSyncing}
@@ -572,15 +682,29 @@ export default function GeneralView() {
                 </section>
 
                 {/* Info Box */}
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex gap-3">
-                  <div className="p-1.5 bg-emerald-500 rounded-lg text-white h-fit">
-                    <AlertCircle size={14} />
+                <div className="space-y-3">
+                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex gap-3">
+                    <div className="p-1.5 bg-emerald-500 rounded-lg text-white h-fit">
+                      <AlertCircle size={14} />
+                    </div>
+                    <div>
+                      <h4 className="text-[11px] font-bold text-emerald-800">Ready to Sync</h4>
+                      <p className="text-[10px] text-emerald-700/60 leading-relaxed mt-0.5">
+                        Schedule will repeat for the next {reminderDurationValue} {reminderDurationType}.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-[11px] font-bold text-emerald-800">Ready to Sync</h4>
-                    <p className="text-[10px] text-emerald-700/60 leading-relaxed mt-0.5">
-                      Clicking "Save to Calendar" will generate a schedule for the next {reminderDurationValue} {reminderDurationType}.
-                    </p>
+
+                  <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex gap-3">
+                    <div className="p-1.5 bg-blue-500 rounded-lg text-white h-fit">
+                      <MapPin size={14} />
+                    </div>
+                    <div>
+                      <h4 className="text-[11px] font-bold text-blue-800">Save to My Reminders</h4>
+                      <p className="text-[10px] text-blue-700/60 leading-relaxed mt-0.5">
+                        This schedule will be stored in the app. You can then export it to your phone calendar easily from the "My Reminders" list.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -594,13 +718,118 @@ export default function GeneralView() {
                   Cancel
                 </button>
                 <button 
-                  onClick={handleExportToCalendar}
-                  className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 bg-[#F27D26] text-white rounded-2xl text-xs font-bold hover:bg-[#F27D26]/90 transition-all shadow-lg shadow-[#F27D26]/20"
+                  onClick={handleSaveSchedule}
+                  className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 text-white rounded-2xl text-xs font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20"
                 >
                   <Save size={16} />
-                  Save to Calendar
+                  Save to My Reminders
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Saved Reminders Modal */}
+      <AnimatePresence>
+        {showSavedReminders && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="relative max-w-lg w-full bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
+            >
+              <div className="p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between sticky top-0 z-10">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-500">
+                    <Bell size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-[#141414] leading-tight">My Reminders</h2>
+                    <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">Stored Schedules</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {savedReminders.length > 0 && (
+                    <button 
+                      onClick={handleClearAllReminders}
+                      className="px-3 py-1.5 hover:bg-red-50 text-red-500 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setShowSavedReminders(false)}
+                    className="p-2 hover:bg-[#141414]/5 rounded-full text-[#141414]/40 transition-colors"
+                  >
+                    <XIcon size={20} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {savedReminders.length === 0 ? (
+                  <div className="py-20 text-center flex flex-col items-center gap-3">
+                    <AlertCircle className="text-[#141414]/10 w-10 h-10" />
+                    <p className="text-xs font-bold text-[#141414]/30 uppercase tracking-widest">No stored reminders</p>
+                  </div>
+                ) : (
+                  savedReminders.map((r) => (
+                    <div key={r.id} className="p-4 bg-[#141414]/[0.02] border border-[#141414]/5 rounded-2xl space-y-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h4 className="font-bold text-sm text-[#141414]">{r.itemName}</h4>
+                          {r.generic && <p className="text-[10px] text-[#141414]/40 italic">{r.generic}</p>}
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteReminder(r.id)}
+                          className="p-1.5 hover:bg-red-50 text-red-400 hover:text-red-500 rounded-lg transition-colors"
+                        >
+                          <XIcon size={16} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pb-4 border-b border-[#141414]/5">
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/30">Frequency</span>
+                          <div className="text-[11px] font-bold text-[#141414]/70">{r.frequency.replace('_', ' ')}</div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/30">Duration</span>
+                          <div className="text-[11px] font-bold text-[#141414]/70">{r.durationValue} {r.durationType}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => handleExportSingleReminder(r)}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-sky-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 transition-all shadow-md shadow-sky-500/10"
+                        >
+                          <Calendar size={14} />
+                          Add to Calendar
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {savedReminders.length > 0 && (
+                <div className="p-6 bg-blue-50 border-t border-blue-100">
+                  <div className="flex gap-3">
+                    <div className="p-2 bg-blue-500 text-white rounded-xl h-fit">
+                      <AlertCircle size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">Sync with iPhone</h4>
+                      <p className="text-[10px] text-blue-700/70 leading-relaxed mt-0.5">
+                        Exported files contain the full schedule. Tap "Add to Calendar" and then "Add All" on your iPhone to sync instantly.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
