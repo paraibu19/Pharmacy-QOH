@@ -24,6 +24,7 @@ const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 export default function AdminDashboard() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -315,6 +316,15 @@ export default function AdminDashboard() {
 
   const sortedMedications = useMemo(() => {
     let result = [...medications];
+
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter(m => 
+        m.itemName.toLowerCase().includes(q) || 
+        m.itemCode.toLowerCase().includes(q) ||
+        (m.generic && m.generic.toLowerCase().includes(q))
+      );
+    }
 
     if (stockFilter !== 'all') {
       result = result.filter(m => {
@@ -1157,34 +1167,58 @@ export default function AdminDashboard() {
       </AnimatePresence>
 
       {/* Location Filter & Table Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-4 md:px-0">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
-            <ClipboardList size={20} />
+      <div className="flex flex-col gap-4 px-4 md:px-0">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+              <ClipboardList size={20} />
+            </div>
+            <h2 className="text-xl font-bold tracking-tight">Inventory Management</h2>
           </div>
-          <h2 className="text-xl font-bold tracking-tight">Inventory Management</h2>
-        </div>
-        
-        <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-fit overflow-x-auto no-scrollbar">
-          {LOCATIONS.map(loc => (
-            <button
-              key={loc.id}
-              onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-              className={`flex-1 md:flex-none whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                selectedLocation === loc.id 
-                  ? loc.id === PharmacyLocation.ADULT
-                    ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
-                    : loc.id === PharmacyLocation.PEDIATRIC
-                      ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
-                      : loc.id === PharmacyLocation.MESAIEED
-                        ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
-                        : 'bg-white shadow-sm text-[#141414]'
-                  : 'text-[#141414]/40 hover:text-[#141414]'
-              }`}
-            >
-              {loc.name.replace('Aw-', '')}
-            </button>
-          ))}
+          
+          <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+            {/* Search Bar */}
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30" />
+              <input 
+                type="text" 
+                placeholder="Search code or name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-8 py-2.5 bg-[#141414]/5 border border-transparent rounded-2xl text-xs font-bold focus:outline-none focus:bg-white focus:border-[#F27D26]/20 transition-all"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#141414]/5 rounded-md text-[#141414]/40"
+                >
+                  <XIcon size={14} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-fit overflow-x-auto no-scrollbar">
+              {LOCATIONS.map(loc => (
+                <button
+                  key={loc.id}
+                  onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
+                  className={`flex-1 md:flex-none whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    selectedLocation === loc.id 
+                      ? loc.id === PharmacyLocation.ADULT
+                        ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
+                        : loc.id === PharmacyLocation.PEDIATRIC
+                          ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
+                          : loc.id === PharmacyLocation.MESAIEED
+                            ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
+                            : 'bg-white shadow-sm text-[#141414]'
+                      : 'text-[#141414]/40 hover:text-[#141414]'
+                  }`}
+                >
+                  {loc.name.replace('Aw-', '')}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
