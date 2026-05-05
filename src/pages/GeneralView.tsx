@@ -1,13 +1,26 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save } from 'lucide-react';
+import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
-import { format, addHours, addDays, addWeeks, addMonths, isBefore, startOfToday } from 'date-fns';
+import { format, addHours, addDays, addWeeks, addMonths, isBefore } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
+import { useNavigate } from 'react-router-dom';
+import { translations, LANGUAGES, Language, TranslationStrings } from '../lib/translations';
 import * as ics from 'ics';
 
 export default function GeneralView() {
+  const navigate = useNavigate();
+  
+  // Language State
+  const [language, setLanguage] = useState<Language>(() => {
+    const saved = localStorage.getItem('app_language');
+    return (saved as Language) || 'en';
+  });
+  const [showLanguageSelector, setShowLanguageSelector] = useState(false);
+  const t = translations[language];
+  const isRtl = LANGUAGES.find(l => l.id === language)?.dir === 'rtl';
+
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
@@ -23,7 +36,6 @@ export default function GeneralView() {
   const [reminderDurationValue, setReminderDurationValue] = useState(7);
   const [reminderDurationType, setReminderDurationType] = useState<'days' | 'weeks' | 'months'>('days');
   const [reminderStartTime, setReminderStartTime] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
-  const [isGeneratingReminder, setIsGeneratingReminder] = useState(false);
   
   // Saved Reminders from LocalStorage
   const [savedReminders, setSavedReminders] = useState<any[]>(() => {
@@ -38,6 +50,10 @@ export default function GeneralView() {
   const [showSavedReminders, setShowSavedReminders] = useState(false);
   
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+
+  useEffect(() => {
+    localStorage.setItem('app_language', language);
+  }, [language]);
 
   useEffect(() => {
     if (fetchError) {
@@ -64,9 +80,8 @@ export default function GeneralView() {
     setSavedReminders(updated);
     localStorage.setItem('medication_reminders', JSON.stringify(updated));
     
-    // Close modal and show success toast or similar
     setSelectedMedicationForReminder(null);
-    setShowSavedReminders(true); // Open the list to show it's added
+    setShowSavedReminders(true);
   };
 
   const handleDeleteReminder = (id: string) => {
@@ -85,41 +100,25 @@ export default function GeneralView() {
 
     const occurrences: ics.EventAttributes[] = [];
     let current = new Date(startDate);
-
-    // Limit to safety (e.g. 365 events max) to prevent browser hang
     let safetyCounter = 0;
+
     while (isBefore(current, untilDate) && safetyCounter < 365) {
       safetyCounter++;
-      
       const eventUid = `med-rem-${reminder.id}-${current.getTime()}@medreminder.app`;
-      
       occurrences.push({
         uid: eventUid,
         title: `Reminder: ${reminder.itemName}`,
         description: `Medication Reminder: ${reminder.itemName}${reminder.generic ? ' (' + reminder.generic + ')' : ''}`,
-        start: [
-          current.getFullYear(),
-          current.getMonth() + 1,
-          current.getDate(),
-          current.getHours(),
-          current.getMinutes()
-        ],
+        start: [current.getFullYear(), current.getMonth() + 1, current.getDate(), current.getHours(), current.getMinutes()],
         duration: { minutes: 15 },
         categories: ['Medication', 'Health'],
-        alarms: [
-          { 
-            action: 'display', 
-            description: `Take ${reminder.itemName}`, 
-            trigger: { minutes: 0, before: true } 
-          }
-        ]
+        alarms: [{ action: 'display', description: `Take ${reminder.itemName}`, trigger: { minutes: 0, before: true } }]
       });
 
-      // Calculate next occurrence
       if (reminder.frequency === 'daily') current = addDays(current, 1);
       else if (reminder.frequency === 'weekly') current = addWeeks(current, 1);
       else if (reminder.frequency === 'monthly') current = addMonths(current, 1);
-      else if (reminder.frequency === 'twice_weekly') current = addHours(current, 84); // 3.5 days
+      else if (reminder.frequency === 'twice_weekly') current = addHours(current, 84);
       else if (reminder.frequency === 'twice_monthly') current = addDays(current, 15);
       else if (reminder.frequency === 'hours') current = addHours(current, reminder.intervalHours);
       else if (reminder.frequency === 'other_day') current = addDays(current, 2);
@@ -131,39 +130,15 @@ export default function GeneralView() {
 
     const { error, value } = ics.createEvents(occurrences);
     if (!error && value) {
-      // iOS compatibility fixes:
-      // 1. Force METHOD:PUBLISH at the top to enable "Add All" on iPhone
-      // 2. Add X-WR-CALNAME for better identification
-      // 3. Force a specific VALARM block that iOS recognizes for "At time of event"
-      
       let modified = value;
-      
-      // Ensure METHOD:PUBLISH and X-WR-CALNAME are at the top
-      // This is critical for the "Add All" button to show up and have a proper title
       const calTitle = reminder.itemName.replace(/[^\w\s]/gi, '');
       if (!modified.includes('METHOD:PUBLISH')) {
-        modified = modified.replace('BEGIN:VCALENDAR', 
-          'BEGIN:VCALENDAR\r\n' +
-          'METHOD:PUBLISH\r\n' +
-          'X-WR-CALNAME:' + calTitle + ' Schedule\r\n' +
-          'X-WR-TIMEZONE:UTC'
-        );
+        modified = modified.replace('BEGIN:VCALENDAR', 'BEGIN:VCALENDAR\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:' + calTitle + ' Schedule\r\nX-WR-TIMEZONE:UTC');
       }
-
-      // Overwrite VALARM blocks with the specific iOS-supported trigger for "At time of event"
-      // we follow the exact format provided by the user for maximum compatibility
       modified = modified.replace(/BEGIN:VEVENT([\s\S]*?)SUMMARY:(.*)([\s\S]*?)END:VEVENT/g, (match, p1, summary, p2) => {
-        // Remove existing VALARMs from the event parts
         const cleanP1 = p1.replace(/BEGIN:VALARM[\s\S]*?END:VALARM/g, '');
         const cleanP2 = p2.replace(/BEGIN:VALARM[\s\S]*?END:VALARM/g, '');
-        
-        return 'BEGIN:VEVENT' + cleanP1 + 'SUMMARY:' + summary + cleanP2 + 
-               'BEGIN:VALARM\r\n' +
-               'TRIGGER:PT0M\r\n' +
-               'ACTION:DISPLAY\r\n' +
-               'DESCRIPTION:Reminder\r\n' +
-               'END:VALARM\r\n' +
-               'END:VEVENT';
+        return 'BEGIN:VEVENT' + cleanP1 + 'SUMMARY:' + summary + cleanP2 + 'BEGIN:VALARM\r\nTRIGGER:PT0M\r\nACTION:DISPLAY\r\nDESCRIPTION:Reminder\r\nEND:VALARM\r\nEND:VEVENT';
       });
 
       const blob = new Blob([modified], { type: 'text/calendar;charset=utf-8' });
@@ -179,21 +154,10 @@ export default function GeneralView() {
   };
 
   const handleClearAllReminders = () => {
-    if (window.confirm('Are you sure you want to clear all saved reminders?')) {
+    if (window.confirm(t.confirmClear)) {
       setSavedReminders([]);
       localStorage.removeItem('medication_reminders');
     }
-  };
-
-  const handleExportToCalendar = () => {
-    if (!selectedMedicationForReminder) return;
-
-    const startDate = new Date(reminderStartTime);
-    
-    // ... same logic as handleExportSingleReminder but for the active modal state ...
-    // Since we now "Schedule" first, we might not need this direct export anymore,
-    // but I'll keep it as a "Quick Export" option or reuse the logic.
-    handleSaveSchedule(); // Call save instead of direct export in the modal
   };
 
   const suggestions = useMemo(() => {
@@ -207,48 +171,78 @@ export default function GeneralView() {
 
   const filteredMeds = useMemo(() => {
     let result = medications;
-    
     if (searchQuery.length >= 1) {
       const lowerQuery = searchQuery.toLowerCase();
-      result = result.filter(m => 
-        m.itemName.toLowerCase().includes(lowerQuery) ||
-        (m.generic && m.generic.toLowerCase().includes(lowerQuery))
-      );
+      result = result.filter(m => m.itemName.toLowerCase().includes(lowerQuery) || (m.generic && m.generic.toLowerCase().includes(lowerQuery)));
     }
-
-    if (availableGenericsOnly) {
-      result = result.filter(m => m.generic && m.qoh > 0);
-    }
-
+    if (availableGenericsOnly) result = result.filter(m => m.generic && m.qoh > 0);
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
         const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
         const isIn = !isOut && !isLow;
-        
         if (stockFilter === 'in') return isIn;
         if (stockFilter === 'low') return isLow;
         if (stockFilter === 'out') return isOut;
         return true;
       });
     }
-    
     return result.sort((a, b) => a.itemName.localeCompare(b.itemName));
-  }, [medications, searchQuery, availableGenericsOnly]);
+  }, [medications, searchQuery, availableGenericsOnly, stockFilter]);
+
+  const changeLanguage = (newLang: Language) => {
+    setLanguage(newLang);
+    setShowLanguageSelector(false);
+  };
 
   return (
-    <div className="space-y-6 md:space-y-8">
+    <div className="space-y-6 md:space-y-8" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">General View</h1>
-            <div className="px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">{t.title}</h1>
+            <div className={`px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5`}>
               {format(new Date(), 'eeee, dd-MM-yyyy')}
+            </div>
+            
+            {/* Language Selector Dropdown */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowLanguageSelector(!showLanguageSelector)} 
+                className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#141414]/5 text-[#141414]/60 text-[10px] font-bold hover:bg-[#141414]/10 transition-all border border-[#141414]/5"
+              >
+                <Globe size={12} />
+                {LANGUAGES.find(l => l.id === language)?.label}
+              </button>
+              
+              <AnimatePresence>
+                {showLanguageSelector && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className={`absolute ${isRtl ? 'right-0' : 'left-0'} top-full mt-2 w-48 bg-white border border-[#141414]/10 rounded-2xl shadow-xl z-[150] overflow-hidden p-1 shadow-[#141414]/5`}
+                  >
+                    {LANGUAGES.map(lang => (
+                      <button
+                        key={lang.id}
+                        onClick={() => changeLanguage(lang.id)}
+                        className={`w-full flex items-center justify-between px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                          language === lang.id ? 'bg-[#F27D26] text-white' : 'hover:bg-[#141414]/5 text-[#141414]/60'
+                        }`}
+                      >
+                        <span>{lang.label}</span>
+                        {language === lang.id && <Check size={12} />}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
           <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">
-            Public availability status of medications at Alwakra and Mesaieed pharmacies.
+            {t.description}
           </p>
         </div>
         
@@ -259,7 +253,7 @@ export default function GeneralView() {
               className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold transition-all bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 animate-pulse hover:animate-none"
             >
               <Bell className="w-4 h-4" />
-              <span>{savedReminders.length} Reminders</span>
+              <span>{savedReminders.length} {t.reminders}</span>
             </button>
           )}
 
@@ -269,7 +263,7 @@ export default function GeneralView() {
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10 disabled:opacity-50"
           >
             {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            Synced {format(lastSynced, 'HH:mm:ss')}
+            {isSyncing ? t.syncing : t.lastSynced} {format(lastSynced, 'HH:mm:ss')}
           </button>
 
           <button 
@@ -281,7 +275,7 @@ export default function GeneralView() {
             }`}
           >
             <Filter className="w-4 h-4" />
-            <span>Filters</span>
+            <span>{t.filters}</span>
           </button>
         </div>
       </div>
@@ -290,8 +284,8 @@ export default function GeneralView() {
       <div className="space-y-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center bg-white p-4 md:p-6 rounded-2xl border border-[#141414]/10 shadow-sm">
           <div className="lg:col-span-1">
-            <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-[#141414]/40 mb-2 ml-1">
-              Select Pharmacy Location
+            <label className={`block text-[10px] font-bold uppercase tracking-[0.2em] text-[#141414]/40 mb-2 ${isRtl ? 'mr-1' : 'ml-1'}`}>
+              {t.selectLocation}
             </label>
             <div className="flex flex-wrap gap-2">
               {LOCATIONS.map(loc => (
@@ -305,26 +299,26 @@ export default function GeneralView() {
                   }`}
                 >
                   <MapPin className="w-3 h-3" />
-                  {loc.id === PharmacyLocation.ADULT ? 'Adult' : loc.id === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed'}
+                  {loc.id === PharmacyLocation.ADULT ? t.adult : loc.id === PharmacyLocation.PEDIATRIC ? t.pediatric : t.mesaieed}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="lg:col-span-2 relative">
-            <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-[#141414]/40 mb-2 ml-1">
-              Search Medication
+            <label className={`block text-[10px] font-bold uppercase tracking-[0.2em] text-[#141414]/40 mb-2 ${isRtl ? 'mr-1' : 'ml-1'}`}>
+              {t.searchLabel}
             </label>
             <div className="relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30 group-focus-within:text-[#F27D26] transition-colors" />
+              <Search className={`absolute ${isRtl ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30 group-focus-within:text-[#F27D26] transition-colors`} />
               <input
                 type="text"
-                placeholder="Start typing medication name..."
+                placeholder={t.searchPlaceholder}
                 value={searchQuery}
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all placeholder:text-[#141414]/30 text-sm font-medium"
+                className={`w-full ${isRtl ? 'pr-11 pl-4' : 'pl-11 pr-4'} py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all placeholder:text-[#141414]/30 text-sm font-medium`}
               />
 
               <AnimatePresence>
@@ -342,14 +336,14 @@ export default function GeneralView() {
                           setSearchQuery(s.itemName);
                           setShowSuggestions(false);
                         }}
-                        className="w-full px-4 py-3 text-left hover:bg-[#141414]/5 flex items-center justify-between transition-colors border-b border-[#141414]/5 last:border-0"
+                        className={`w-full px-4 py-3 ${isRtl ? 'text-right' : 'text-left'} hover:bg-[#141414]/5 flex items-center justify-between transition-colors border-b border-[#141414]/5 last:border-0`}
                       >
                         <div className="flex flex-col">
                           <span className="text-sm font-bold text-[#141414]">{s.itemName}</span>
                           {s.generic && <span className="text-[10px] text-[#141414]/40">{s.generic}</span>}
                         </div>
                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.qoh > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                          {s.qoh > 0 ? 'In Stock' : 'Out of Stock'}
+                          {s.qoh > 0 ? t.inStock : t.outOfStock}
                         </div>
                       </button>
                     ))}
@@ -370,12 +364,12 @@ export default function GeneralView() {
             >
               <div className="flex flex-col gap-4 bg-[#141414]/5 p-4 rounded-2xl border border-[#141414]/10">
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ml-1">Stock Status</span>
+                  <span className={`w-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ${isRtl ? 'mr-1' : 'ml-1'}`}>{t.stockStatus}</span>
                   {[
-                    { id: 'all', label: 'All', color: 'gray' },
-                    { id: 'in', label: 'In Stock', color: 'emerald' },
-                    { id: 'low', label: 'Low Stock', color: 'amber' },
-                    { id: 'out', label: 'Out of Stock', color: 'red' }
+                    { id: 'all', label: t.all, color: 'gray' },
+                    { id: 'in', label: t.inStock, color: 'emerald' },
+                    { id: 'low', label: t.lowStock, color: 'amber' },
+                    { id: 'out', label: t.outOfStock, color: 'red' }
                   ].map((f) => (
                     <button
                       key={f.id}
@@ -404,7 +398,7 @@ export default function GeneralView() {
                     }`}
                   >
                     <Sparkles className="w-4 h-4" />
-                    Available Generics
+                    {t.availableGenerics}
                   </button>
                   <button
                     onClick={() => {
@@ -412,10 +406,10 @@ export default function GeneralView() {
                       setStockFilter('all');
                       setSearchQuery('');
                     }}
-                    className="px-4 py-2 flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all font-bold"
+                    className={`px-4 py-2 flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all`}
                   >
                     <XIcon className="w-4 h-4" />
-                    Reset
+                    {t.reset}
                   </button>
                 </div>
               </div>
@@ -428,11 +422,11 @@ export default function GeneralView() {
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
         {/* Desktop View */}
         <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className={`w-full ${isRtl ? 'text-right' : 'text-left'} border-collapse`}>
             <thead className="bg-[#141414]/5 border-b border-[#141414]/10">
               <tr>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Medication Name</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">Status</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">{t.medicationName}</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">{t.status}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#141414]/5">
@@ -440,7 +434,7 @@ export default function GeneralView() {
                 <tr>
                   <td colSpan={2} className="px-6 py-20 text-center">
                     <Loader2 className="w-8 h-8 animate-spin text-[#F27D26] mx-auto mb-2" />
-                    <p className="font-bold text-xs uppercase tracking-widest text-[#141414]/40">Loading...</p>
+                    <p className="font-bold text-xs uppercase tracking-widest text-[#141414]/40">{t.loading}</p>
                   </td>
                 </tr>
               ) : filteredMeds.map((med) => (
@@ -461,7 +455,7 @@ export default function GeneralView() {
                         </div>
                       )}
                       <div 
-                        className="flex flex-col cursor-pointer hover:opacity-70 transition-opacity translate-x-0 group-hover:translate-x-1"
+                        className={`flex flex-col cursor-pointer hover:opacity-70 transition-all ${isRtl ? 'group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`}
                         onClick={() => setSelectedMedicationForReminder(med)}
                       >
                         <span className="text-sm font-bold text-[#141414] group-hover:text-[#F27D26] transition-colors">{med.itemName}</span>
@@ -478,10 +472,10 @@ export default function GeneralView() {
                         : 'bg-emerald-100 text-emerald-700'
                     }`}>
                       {med.qoh <= 0 
-                        ? 'Out of Stock' 
+                        ? t.outOfStock 
                         : (med.maxQty && med.qoh < med.maxQty * 0.3)
-                        ? 'Low Stock' 
-                        : 'In Stock'}
+                        ? t.lowStock 
+                        : t.inStock}
                     </span>
                   </td>
                 </tr>
@@ -521,10 +515,10 @@ export default function GeneralView() {
                   : 'bg-emerald-100 text-emerald-700'
               }`}>
                 {med.qoh <= 0 
-                  ? 'Out of Stock' 
+                  ? t.outOfStock 
                   : (med.maxQty && med.qoh < med.maxQty * 0.3)
-                  ? 'Low Stock' 
-                  : 'In Stock'}
+                  ? t.lowStock 
+                  : t.inStock}
               </span>
             </div>
           ))}
@@ -533,14 +527,15 @@ export default function GeneralView() {
         {filteredMeds.length === 0 && !loading && (
           <div className="p-20 text-center flex flex-col items-center gap-4">
             <Search className="w-8 h-8 text-[#141414]/10" />
-            <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-sm">No results found</p>
+            <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-sm">{t.noResults}</p>
           </div>
         )}
       </div>
+
       {/* Reminder Modal */}
       <AnimatePresence>
         {selectedMedicationForReminder && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
             <motion.div 
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -558,7 +553,7 @@ export default function GeneralView() {
                       {selectedMedicationForReminder.itemName}
                     </h2>
                     <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">
-                      Set Medication Reminder
+                      {t.setReminder}
                     </p>
                   </div>
                 </div>
@@ -576,17 +571,17 @@ export default function GeneralView() {
                 <section className="space-y-3">
                   <div className="flex items-center gap-2 text-[#141414]/40">
                     <Clock size={16} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">1. Choose Frequency</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">{t.frequency}</span>
                   </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {[
-                      { id: 'daily', label: 'Daily' },
-                      { id: 'weekly', label: 'Weekly' },
-                      { id: 'monthly', label: 'Monthly' },
-                      { id: 'twice_weekly', label: 'Twice Weekly' },
-                      { id: 'twice_monthly', label: 'Twice Monthly' },
-                      { id: 'other_day', label: 'Every Other Day' },
-                      { id: 'other_week', label: 'Every Other Week' },
+                      { id: 'daily', label: t.daily },
+                      { id: 'weekly', label: t.weekly },
+                      { id: 'monthly', label: t.monthly },
+                      { id: 'twice_weekly', label: t.twiceWeekly },
+                      { id: 'twice_monthly', label: t.twiceMonthly },
+                      { id: 'other_day', label: t.otherDay },
+                      { id: 'other_week', label: t.otherWeek },
                     ].map((freq) => (
                       <button
                         key={freq.id}
@@ -611,15 +606,15 @@ export default function GeneralView() {
                       onClick={() => setReminderFrequency('hours')}
                       className={`w-full py-3 rounded-xl border text-xs font-bold transition-all ${
                         reminderFrequency === 'hours'
-                          ? 'bg-[#F27D26] border-[#F27D26] text-white shadow-md shadow-[#F27D26]/20'
+                          ? 'bg-[#F27D26] border-[#F27D26] text-white shadow-md shadow-[#F27D26]/10'
                           : 'bg-white border-[#141414]/5 text-[#141414]/60 hover:bg-black/5'
                       }`}
                     >
-                      Every X Hours
+                      {t.everyXHours}
                     </button>
-
+ 
                     <div className="space-y-3">
-                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-wider pl-1">Select Interval</span>
+                      <span className={`text-[10px] font-bold text-[#141414]/40 uppercase tracking-wider ${isRtl ? 'pr-1' : 'pl-1'}`}>{t.selectInterval}</span>
                       <div className="grid grid-cols-5 gap-2">
                         {[4, 6, 8, 12, 24].map((h) => (
                           <button
@@ -634,7 +629,7 @@ export default function GeneralView() {
                                 : 'bg-white border-transparent text-[#141414]/60 hover:border-black/10'
                             }`}
                           >
-                            {h}h
+                            {h}{language === 'ar' || language === 'ur' ? 'س' : 'h'}
                           </button>
                         ))}
                       </div>
@@ -646,29 +641,29 @@ export default function GeneralView() {
                 <section className="space-y-3 pt-6 border-t border-[#141414]/5">
                   <div className="flex items-center gap-2 text-[#141414]/40">
                     <Calendar size={16} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">2. Set Schedule Duration</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">{t.duration}</span>
                   </div>
                   
                   <div className="flex flex-col gap-4">
                     <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-xl">
-                      {(['days', 'weeks', 'months'] as const).map((t) => (
+                      {(['days', 'weeks', 'months'] as const).map((tType) => (
                         <button
-                          key={t}
-                          onClick={() => setReminderDurationType(t)}
+                          key={tType}
+                          onClick={() => setReminderDurationType(tType)}
                           className={`flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
-                            reminderDurationType === t
+                            reminderDurationType === tType
                               ? 'bg-white text-[#F27D26] shadow-sm'
                               : 'text-[#141414]/40 hover:text-[#141414]'
                           }`}
                         >
-                          {t}
+                          {tType === 'days' ? t.days : tType === 'weeks' ? t.weeks : t.months}
                         </button>
                       ))}
                     </div>
 
                     <div className="flex items-center gap-6 p-4 bg-[#141414]/5 rounded-2xl">
                       <div className="flex-1">
-                        <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block mb-2">How many {reminderDurationType}?</span>
+                        <span className={`text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block mb-2`}>{t.howMany} {reminderDurationType === 'days' ? t.days : reminderDurationType === 'weeks' ? t.weeks : t.months}?</span>
                         <input 
                           type="range" 
                           min={1} 
@@ -684,7 +679,7 @@ export default function GeneralView() {
                     </div>
 
                     <div>
-                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block mb-2 ml-1">First Reminder</span>
+                      <span className={`text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block mb-2 ${isRtl ? 'mr-1' : 'ml-1'}`}>{t.firstReminder}</span>
                       <input 
                         type="datetime-local" 
                         value={reminderStartTime}
@@ -694,33 +689,6 @@ export default function GeneralView() {
                     </div>
                   </div>
                 </section>
-
-                {/* Info Box */}
-                <div className="space-y-3">
-                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex gap-3">
-                    <div className="p-1.5 bg-emerald-500 rounded-lg text-white h-fit">
-                      <AlertCircle size={14} />
-                    </div>
-                    <div>
-                      <h4 className="text-[11px] font-bold text-emerald-800">Ready to Sync</h4>
-                      <p className="text-[10px] text-emerald-700/60 leading-relaxed mt-0.5">
-                        Schedule will repeat for the next {reminderDurationValue} {reminderDurationType}.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex gap-3">
-                    <div className="p-1.5 bg-blue-500 rounded-lg text-white h-fit">
-                      <MapPin size={14} />
-                    </div>
-                    <div>
-                      <h4 className="text-[11px] font-bold text-blue-800">Save to My Reminders</h4>
-                      <p className="text-[10px] text-blue-700/60 leading-relaxed mt-0.5">
-                        This schedule will be stored in the app. You can then export it to your phone calendar easily from the "My Reminders" list.
-                      </p>
-                    </div>
-                  </div>
-                </div>
               </div>
 
               {/* Modal Footer */}
@@ -729,14 +697,14 @@ export default function GeneralView() {
                   onClick={() => setSelectedMedicationForReminder(null)}
                   className="flex-1 px-4 py-3 bg-white border border-[#141414]/10 rounded-2xl text-xs font-bold text-[#141414]/60 hover:bg-[#141414]/5 transition-all"
                 >
-                  Cancel
+                  {t.cancel}
                 </button>
                 <button 
                   onClick={handleSaveSchedule}
                   className="flex-[2] flex items-center justify-center gap-2 px-4 py-3 bg-emerald-500 text-white rounded-2xl text-xs font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20"
                 >
                   <Save size={16} />
-                  Save to My Reminders
+                  {t.saveReminder}
                 </button>
               </div>
             </motion.div>
@@ -747,7 +715,7 @@ export default function GeneralView() {
       {/* Saved Reminders Modal */}
       <AnimatePresence>
         {showSavedReminders && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
             <motion.div 
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
@@ -760,8 +728,8 @@ export default function GeneralView() {
                     <Bell size={20} />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-[#141414] leading-tight">My Reminders</h2>
-                    <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">Stored Schedules</p>
+                    <h2 className="text-lg font-bold text-[#141414] leading-tight">{t.myReminders}</h2>
+                    <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">{t.storedSchedules}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -770,7 +738,7 @@ export default function GeneralView() {
                       onClick={handleClearAllReminders}
                       className="px-3 py-1.5 hover:bg-red-50 text-red-500 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors"
                     >
-                      Clear All
+                      {t.clearAll}
                     </button>
                   )}
                   <button 
@@ -786,7 +754,7 @@ export default function GeneralView() {
                 {savedReminders.length === 0 ? (
                   <div className="py-20 text-center flex flex-col items-center gap-3">
                     <AlertCircle className="text-[#141414]/10 w-10 h-10" />
-                    <p className="text-xs font-bold text-[#141414]/30 uppercase tracking-widest">No stored reminders</p>
+                    <p className="text-xs font-bold text-[#141414]/30 uppercase tracking-widest">{t.noResults}</p>
                   </div>
                 ) : (
                   savedReminders.map((r) => (
@@ -798,80 +766,60 @@ export default function GeneralView() {
                         </div>
                         <button 
                           onClick={() => handleDeleteReminder(r.id)}
-                          className="p-1.5 hover:bg-red-50 text-red-400 hover:text-red-500 rounded-lg transition-colors"
+                          className="p-2 hover:bg-red-50 text-red-400 rounded-lg transition-colors"
                         >
                           <XIcon size={16} />
                         </button>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-3 pb-4 border-b border-[#141414]/5">
-                        <div className="space-y-1">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/30">Frequency</span>
-                          <div className="text-[11px] font-bold text-[#141414]/70">{r.frequency.replace('_', ' ')}</div>
+                      
+                      <div className="flex flex-wrap gap-2">
+                        <div className="px-2 py-1 bg-white rounded-lg border border-[#141414]/5 text-[9px] font-bold text-[#141414]/40 flex items-center gap-1.5">
+                          <Clock size={10} />
+                          {r.frequency === 'hours' ? `${t.everyXHours} (${r.intervalHours}h)` : t[r.frequency as keyof TranslationStrings] || r.frequency}
                         </div>
-                        <div className="space-y-1">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/30">Duration</span>
-                          <div className="text-[11px] font-bold text-[#141414]/70">{r.durationValue} {r.durationType}</div>
+                        <div className="px-2 py-1 bg-white rounded-lg border border-[#141414]/5 text-[9px] font-bold text-[#141414]/40 flex items-center gap-1.5">
+                          <Calendar size={10} />
+                          {r.durationValue} {r.durationType === 'days' ? t.days : r.durationType === 'weeks' ? t.weeks : t.months}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => handleExportSingleReminder(r)}
-                          className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-sky-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-sky-600 transition-all shadow-md shadow-sky-500/10"
-                        >
-                          <Calendar size={14} />
-                          Add to Calendar
-                        </button>
-                      </div>
+                      <button 
+                        onClick={() => handleExportSingleReminder(r)}
+                        className="w-full py-2.5 bg-white border border-[#141414]/10 rounded-xl text-[10px] font-bold text-[#141414] flex items-center justify-center gap-2 hover:bg-[#141414]/5 transition-all shadow-sm"
+                      >
+                        <Calendar size={14} className="text-[#F27D26]" />
+                        {t.exportCalendar}
+                      </button>
                     </div>
                   ))
                 )}
               </div>
-
-              {savedReminders.length > 0 && (
-                <div className="p-6 bg-blue-50 border-t border-blue-100">
-                  <div className="flex gap-3">
-                    <div className="p-2 bg-blue-500 text-white rounded-xl h-fit">
-                      <AlertCircle size={16} />
-                    </div>
-                    <div>
-                      <h4 className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">Sync with iPhone</h4>
-                      <p className="text-[10px] text-blue-700/70 leading-relaxed mt-0.5">
-                        Exported files contain the full schedule. Tap "Add to Calendar" and then "Add All" on your iPhone to sync instantly.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Image Preview Modal */}
+      {/* Image Modal */}
       <AnimatePresence>
         {selectedImage && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm shadow-2xl">
+          <div 
+            className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-12 bg-black/90 backdrop-blur-xl"
+            onClick={() => setSelectedImage(null)}
+          >
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative max-w-2xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+              className="relative max-w-5xl w-full h-full flex items-center justify-center"
+              onClick={e => e.stopPropagation()}
             >
+              <img src={selectedImage} alt="Medication" className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" />
               <button 
                 onClick={() => setSelectedImage(null)}
-                className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 text-white rounded-full z-10 transition-colors"
+                className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all backdrop-blur-md"
               >
                 <XIcon size={24} />
               </button>
-              <div className="aspect-square md:aspect-video w-full bg-[#141414] flex items-center justify-center">
-                <img 
-                  src={selectedImage} 
-                  alt="Medication Preview" 
-                  className="w-full h-full object-contain"
-                />
-              </div>
             </motion.div>
           </div>
         )}
