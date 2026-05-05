@@ -18,7 +18,7 @@ export default function GeneralView() {
   
   // Reminder State
   const [selectedMedicationForReminder, setSelectedMedicationForReminder] = useState<Medication | null>(null);
-  const [reminderFrequency, setReminderFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'hours' | 'other_day' | 'other_week'>('daily');
+  const [reminderFrequency, setReminderFrequency] = useState<'daily' | 'weekly' | 'monthly' | 'hours' | 'other_day' | 'other_week' | 'twice_weekly' | 'twice_monthly'>('daily');
   const [reminderIntervalHours, setReminderIntervalHours] = useState(8);
   const [reminderDurationValue, setReminderDurationValue] = useState(7);
   const [reminderDurationType, setReminderDurationType] = useState<'days' | 'weeks' | 'months'>('days');
@@ -119,6 +119,8 @@ export default function GeneralView() {
       if (reminder.frequency === 'daily') current = addDays(current, 1);
       else if (reminder.frequency === 'weekly') current = addWeeks(current, 1);
       else if (reminder.frequency === 'monthly') current = addMonths(current, 1);
+      else if (reminder.frequency === 'twice_weekly') current = addHours(current, 84); // 3.5 days
+      else if (reminder.frequency === 'twice_monthly') current = addDays(current, 15);
       else if (reminder.frequency === 'hours') current = addHours(current, reminder.intervalHours);
       else if (reminder.frequency === 'other_day') current = addDays(current, 2);
       else if (reminder.frequency === 'other_week') current = addWeeks(current, 2);
@@ -576,14 +578,15 @@ export default function GeneralView() {
                     <Clock size={16} />
                     <span className="text-[10px] font-bold uppercase tracking-widest">1. Choose Frequency</span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {[
                       { id: 'daily', label: 'Daily' },
                       { id: 'weekly', label: 'Weekly' },
                       { id: 'monthly', label: 'Monthly' },
+                      { id: 'twice_weekly', label: 'Twice Weekly' },
+                      { id: 'twice_monthly', label: 'Twice Monthly' },
                       { id: 'other_day', label: 'Every Other Day' },
                       { id: 'other_week', label: 'Every Other Week' },
-                      { id: 'hours', label: 'Every X Hours' }
                     ].map((freq) => (
                       <button
                         key={freq.id}
@@ -599,33 +602,44 @@ export default function GeneralView() {
                     ))}
                   </div>
 
-                  <AnimatePresence>
-                    {reminderFrequency === 'hours' && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="p-4 bg-[#141414]/5 rounded-2xl flex flex-col gap-3"
-                      >
-                        <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-wider">Interval (Hours)</span>
-                        <div className="grid grid-cols-5 gap-2">
-                          {[4, 6, 8, 12, 24].map((h) => (
-                            <button
-                              key={h}
-                              onClick={() => setReminderIntervalHours(h)}
-                              className={`py-2 rounded-lg text-[10px] font-black transition-all ${
-                                reminderIntervalHours === h
-                                  ? 'bg-[#141414] text-white'
-                                  : 'bg-white text-[#141414]/60'
-                              }`}
-                            >
-                              {h}h
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  <div className={`mt-4 p-4 rounded-2xl flex flex-col gap-4 transition-all border-2 ${
+                    reminderFrequency === 'hours' 
+                      ? 'bg-[#F27D26]/5 border-[#F27D26]/20' 
+                      : 'bg-[#141414]/5 border-transparent'
+                  }`}>
+                    <button
+                      onClick={() => setReminderFrequency('hours')}
+                      className={`w-full py-3 rounded-xl border text-xs font-bold transition-all ${
+                        reminderFrequency === 'hours'
+                          ? 'bg-[#F27D26] border-[#F27D26] text-white shadow-md shadow-[#F27D26]/20'
+                          : 'bg-white border-[#141414]/5 text-[#141414]/60 hover:bg-black/5'
+                      }`}
+                    >
+                      Every X Hours
+                    </button>
+
+                    <div className="space-y-3">
+                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-wider pl-1">Select Interval</span>
+                      <div className="grid grid-cols-5 gap-2">
+                        {[4, 6, 8, 12, 24].map((h) => (
+                          <button
+                            key={h}
+                            onClick={() => {
+                              setReminderIntervalHours(h);
+                              setReminderFrequency('hours');
+                            }}
+                            className={`py-2.5 rounded-xl text-[11px] font-black transition-all border-2 ${
+                              reminderIntervalHours === h && reminderFrequency === 'hours'
+                                ? 'bg-[#141414] border-[#141414] text-white'
+                                : 'bg-white border-transparent text-[#141414]/60 hover:border-black/10'
+                            }`}
+                          >
+                            {h}h
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </section>
 
                 {/* 2. Duration Setup */}
