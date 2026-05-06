@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { PharmacyLocation, Medication } from '../types';
+import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
@@ -46,9 +46,11 @@ export default function AdminDashboard() {
   const [resetError, setResetError] = useState('');
   const [isResetting, setIsResetting] = useState(false);
   const [showSyncPulse, setShowSyncPulse] = useState(false);
+  const [skippedUploads, setSkippedUploads] = useState<string[]>([]);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   const [isCapturing, setIsCapturing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -218,6 +220,8 @@ export default function AdminDashboard() {
       setError(`Fetch Error: ${fetchError}`);
     }
   }, [fetchError]);
+
+  const isFirebaseConnected = !!db;
 
   // Expiration helper
   const parseExpDate = (dateStr: string) => {
@@ -542,9 +546,10 @@ export default function AdminDashboard() {
       }
 
       setBulkPhotoProgress({ current: 0, total: imageFiles.length });
+      setSkippedUploads([]);
       
       let updatedCount = 0;
-      let skippedCount = 0;
+      let skipped: string[] = [];
 
       // Process in small batches to avoid blocking UI too much
       for (let i = 0; i < imageFiles.length; i++) {
@@ -580,7 +585,7 @@ export default function AdminDashboard() {
         if (matchingMeds.length > 0) {
           const fileData = await content.files[fileName].async('blob');
           
-          // Resize image helper (reusing logic from handleImageUpload)
+          // Resize image helper
           const dataUrl = await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onload = (event) => {
@@ -600,20 +605,25 @@ export default function AdminDashboard() {
             reader.readAsDataURL(fileData);
           });
 
-          // Update all matching medications (could be same code in different locations if allowed)
+          // Update all matching medications
           for (const med of matchingMeds) {
             await medicationOps.update(med.id, { imageUrl: dataUrl });
           }
           updatedCount++;
         } else {
-          skippedCount++;
+          skipped.push(itemCode);
         }
         
         setBulkPhotoProgress(prev => prev ? { ...prev, current: i + 1 } : null);
       }
 
+      setSkippedUploads(skipped);
       await refresh();
-      setSuccess(`Bulk update complete: ${updatedCount} items updated, ${skippedCount} file names didn't match any item code.`);
+      if (skipped.length > 0) {
+        setSuccess(`Bulk update complete: ${updatedCount} items updated. ${skipped.length} items skipped (could not find matching item code in this location).`);
+      } else {
+        setSuccess(`Bulk update complete: ${updatedCount} items successfully updated.`);
+      }
     } catch (err: any) {
       setError(`Bulk photo upload failed: ${err.message}`);
       console.error(err);
@@ -773,6 +783,34 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6 md:space-y-8 pb-20 px-4 md:px-0">
+      {!isFirebaseConnected && (
+        <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+          <AlertCircle className="text-amber-500 w-5 h-5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-bold text-amber-800">Preview is running in Offline Mode (Local Storage)</p>
+            <p className="text-[10px] text-amber-700/60 leading-tight">Data will not sync with the shared link until you complete the Firebase setup in the AI Studio panel.</p>
+          </div>
+        </div>
+      )}
+
+      {skippedUploads.length > 0 && (
+        <div className="bg-red-50 border border-red-200 p-4 rounded-2xl space-y-2 animate-in fade-in zoom-in-95">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-red-800 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Skipped Items ({skippedUploads.length})
+            </h4>
+            <button onClick={() => setSkippedUploads([])} className="text-[10px] font-bold text-red-400 hover:text-red-600">Dismiss</button>
+          </div>
+          <p className="text-[10px] text-red-700/60 leading-tight">The following item codes were found in the ZIP but didn't match any items in the current location ({PHARMACY_NAMES[selectedLocation]}):</p>
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {skippedUploads.map(code => (
+              <span key={code} className="px-2 py-0.5 bg-white/50 border border-red-100 rounded text-[9px] font-mono font-medium text-red-600">{code}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-6">
           <div className="flex flex-col w-full md:w-auto">
             <div className="flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar pb-2">
@@ -1647,15 +1685,24 @@ export default function AdminDashboard() {
               className={`p-4 space-y-4 ${editingId === med.id ? 'hidden' : ''} ${isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : ''}`}
             >
               <div className="flex justify-between items-start">
-                <div className="space-y-1">
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => med.to ? setSelectedMedForLinks(med) : startEdit(med)}
-                        className="font-bold text-[#141414] leading-tight text-left hover:text-[#F27D26] transition-colors"
-                      >
-                        {med.itemName}
-                      </button>
+                <div className="flex gap-4">
+                  {med.imageUrl && (
+                    <button 
+                      onClick={() => setSelectedImage(med.imageUrl!)}
+                      className="w-12 h-12 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden hover:scale-105 transition-transform flex-shrink-0"
+                    >
+                      <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                    </button>
+                  )}
+                  <div className="space-y-1">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => med.to ? setSelectedMedForLinks(med) : startEdit(med)}
+                          className="font-bold text-[#141414] leading-tight text-left hover:text-[#F27D26] transition-colors"
+                        >
+                          {med.itemName}
+                        </button>
                       {isNew && (
                         <span className="px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] rounded text-[8px] font-black uppercase tracking-widest whitespace-nowrap">
                           NEW
@@ -1676,11 +1723,12 @@ export default function AdminDashboard() {
                   </div>
                   <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</p>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => startEdit(med)} className="p-2 bg-[#141414]/5 rounded-lg text-[#141414]/40"><Edit2 className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => handleDelete(med.id)} className="p-2 bg-red-50 rounded-lg text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
               </div>
+              <div className="flex gap-2">
+                <button onClick={() => startEdit(med)} className="p-2 bg-[#141414]/5 rounded-lg text-[#141414]/40"><Edit2 className="w-3.5 h-3.5" /></button>
+                <button onClick={() => handleDelete(med.id)} className="p-2 bg-red-50 rounded-lg text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -1989,6 +2037,31 @@ export default function AdminDashboard() {
             allMedications={medications}
             onClose={() => setSelectedMedForLinks(null)}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {selectedImage && (
+          <div 
+            className="fixed inset-0 bg-[#141414]/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"
+            onClick={() => setSelectedImage(null)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-lg w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <img src={selectedImage} alt="Full size" className="w-full h-auto" />
+              <button 
+                onClick={() => setSelectedImage(null)}
+                className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 text-white rounded-full backdrop-blur-md transition-colors"
+              >
+                <XIcon size={20} />
+              </button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
