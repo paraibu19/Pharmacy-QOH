@@ -14,6 +14,7 @@ import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
+import LinkedItemsModal from '../components/LinkedItemsModal';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQty';
 type SortOrder = 'asc' | 'desc';
@@ -38,6 +39,7 @@ export default function OrderView() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
+  const [availableBrandsOnly, setAvailableBrandsOnly] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
@@ -64,6 +66,7 @@ export default function OrderView() {
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
+  const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
 
   React.useEffect(() => {
     technicianAuthOps.getPassword('order').then(setPersistedPassword);
@@ -160,6 +163,10 @@ export default function OrderView() {
       result = result.filter(m => m.generic && m.qoh > 0);
     }
 
+    if (availableBrandsOnly) {
+      result = result.filter(m => m.to && m.qoh > 0);
+    }
+
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
@@ -216,6 +223,10 @@ export default function OrderView() {
 
   const availableGenericsCount = useMemo(() => {
     return medications.filter(m => m.generic && m.qoh > 0).length;
+  }, [medications]);
+
+  const availableBrandsCount = useMemo(() => {
+    return medications.filter(m => m.to && m.qoh > 0).length;
   }, [medications]);
 
   const toggleSort = (field: SortField) => {
@@ -511,7 +522,7 @@ export default function OrderView() {
         </div>
       </div>
 
-      {(availableGenericsOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1) && (
+      {(availableGenericsOnly || availableBrandsOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
@@ -532,8 +543,13 @@ export default function OrderView() {
               In-Stock Generics
             </span>
           )}
+          {availableBrandsOnly && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
+              Available Brands
+            </span>
+          )}
           <button 
-            onClick={() => { setAvailableGenericsOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+            onClick={() => { setAvailableGenericsOnly(false); setAvailableBrandsOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -576,6 +592,17 @@ export default function OrderView() {
                 <Sparkles className="w-3 h-3" />
                 Available Generics ({availableGenericsCount})
               </button>
+              <button
+                onClick={() => setAvailableBrandsOnly(!availableBrandsOnly)}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  availableBrandsOnly 
+                    ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
+                    : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100 shadow-sm'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                Available Brands ({availableBrandsCount})
+              </button>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
@@ -611,7 +638,7 @@ export default function OrderView() {
             <button 
               onClick={() => setShowFilters(!showFilters)}
               className={`w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                showFilters || availableGenericsOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1
+                showFilters || availableGenericsOnly || availableBrandsOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1
                 ? 'bg-[#F27D26] text-white shadow-lg'
                 : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
               }`}
@@ -719,6 +746,7 @@ export default function OrderView() {
                       <button
                         onClick={() => { 
                           setAvailableGenericsOnly(false); 
+                          setAvailableBrandsOnly(false);
                           setStockFilter('all');
                           setExpStart(''); 
                           setExpEnd(''); 
@@ -829,23 +857,38 @@ export default function OrderView() {
                                 <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
                               </button>
                             )}
-                            <button 
-                              onClick={() => startEdit(med)}
-                              className="flex flex-col group/name text-left"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
-                                {med.isNew && (
-                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
-                                    NEW
-                                  </span>
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (med.to) {
+                                    setSelectedMedForLinks(med);
+                                  } else {
+                                    startEdit(med);
+                                  }
+                                }}
+                                className="flex flex-col group/name text-left hover:opacity-80 transition-all"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                                  {med.isNew && (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
+                                      NEW
+                                    </span>
+                                  )}
+                                  {med.to && (
+                                    <div className="flex items-center gap-1">
+                                      <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
+                                      <span className="text-[8px] font-black text-[#F27D26] uppercase tracking-tighter">Links</span>
+                                    </div>
+                                  )}
+                                  <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
+                                </div>
+                                {med.generic && (
+                                  <span className="text-[10px] italic text-[#141414]/40 leading-tight group-hover/name:text-[#F27D26]/60 transition-colors">{med.generic}</span>
                                 )}
-                                <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
-                              </div>
-                              {med.generic && (
-                                <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
-                              )}
-                            </button>
+                              </button>
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -917,11 +960,23 @@ export default function OrderView() {
                         )}
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-[#141414] leading-tight">{med.itemName}</h3>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (med.to) setSelectedMedForLinks(med);
+                                else startEdit(med);
+                              }}
+                              className="font-bold text-[#141414] text-left hover:text-[#F27D26] transition-colors"
+                            >
+                              {med.itemName}
+                            </button>
                             {med.isNew && (
                               <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[8px] font-black uppercase tracking-widest">
                                 NEW
                               </span>
+                            )}
+                            {med.to && (
+                              <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
                             )}
                           </div>
                           <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest leading-none">{med.itemCode}</p>
@@ -1238,6 +1293,15 @@ export default function OrderView() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {selectedMedForLinks && (
+          <LinkedItemsModal 
+            medication={selectedMedForLinks}
+            allMedications={medications}
+            onClose={() => setSelectedMedForLinks(null)}
+          />
         )}
       </AnimatePresence>
     </div>

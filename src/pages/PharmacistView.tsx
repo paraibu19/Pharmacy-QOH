@@ -14,6 +14,7 @@ import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { formatNumber } from '../lib/formatters';
 import { technicianAuthOps } from '../lib/firebaseOperations';
+import LinkedItemsModal from '../components/LinkedItemsModal';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3';
 type SortOrder = 'asc' | 'desc';
@@ -28,6 +29,7 @@ export default function UserHome() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
+  const [availableBrandsOnly, setAvailableBrandsOnly] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
@@ -39,6 +41,7 @@ export default function UserHome() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
   
   // Password change states
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -145,6 +148,10 @@ export default function UserHome() {
       result = result.filter(m => m.generic && m.qoh > 0);
     }
 
+    if (availableBrandsOnly) {
+      result = result.filter(m => m.to && m.qoh > 0);
+    }
+
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
@@ -211,6 +218,10 @@ export default function UserHome() {
 
   const availableGenericsCount = useMemo(() => {
     return medications.filter(m => m.generic && m.qoh > 0).length;
+  }, [medications]);
+
+  const availableBrandsCount = useMemo(() => {
+    return medications.filter(m => m.to && m.qoh > 0).length;
   }, [medications]);
 
   // Handle PDF Export
@@ -480,7 +491,7 @@ export default function UserHome() {
       </div>
 
       {/* Active Filters Bar */}
-      {(availableGenericsOnly || stockFilter !== 'all' || expStart || expEnd) && (
+      {(availableGenericsOnly || availableBrandsOnly || stockFilter !== 'all' || expStart || expEnd) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
@@ -496,13 +507,18 @@ export default function UserHome() {
               In-Stock Generics
             </span>
           )}
+          {availableBrandsOnly && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
+              Available Brands
+            </span>
+          )}
           {(expStart || expEnd) && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
               Expiry: <span className="text-[#F27D26]">{expStart || 'Any'}</span> – <span className="text-[#F27D26]">{expEnd || 'Any'}</span>
             </span>
           )}
           <button 
-            onClick={() => { setAvailableGenericsOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); }}
+            onClick={() => { setAvailableGenericsOnly(false); setAvailableBrandsOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -630,7 +646,7 @@ export default function UserHome() {
                   ))}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-4 border-t border-[#141414]/5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 pt-4 border-t border-[#141414]/5">
                   <div className="space-y-1.5">
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
                       Generics filter
@@ -645,6 +661,23 @@ export default function UserHome() {
                     >
                       <Sparkles className="w-4 h-4" />
                       Available Generics ({availableGenericsCount})
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                      Brands filter
+                    </label>
+                    <button
+                      onClick={() => setAvailableBrandsOnly(!availableBrandsOnly)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                        availableBrandsOnly 
+                          ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
+                          : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100'
+                      }`}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      Available Brands ({availableBrandsCount})
                     </button>
                   </div>
                   
@@ -941,12 +974,20 @@ export default function UserHome() {
                             <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
                           </button>
                         )}
-                        <div className="flex flex-col">
-                          <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
+                        <button 
+                          onClick={() => med.to ? setSelectedMedForLinks(med) : null}
+                          className={`flex flex-col text-left transition-all ${med.to ? 'cursor-pointer hover:opacity-80 group/link' : 'cursor-default'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-bold text-[#141414] ${med.to ? 'group-hover/link:text-[#F27D26]' : ''}`}>{med.itemName}</span>
+                            {med.to && (
+                              <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
+                            )}
+                          </div>
                           {med.generic && (
-                            <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
+                            <span className="text-[10px] italic text-[#141414]/40 leading-tight group-hover/link:text-[#F27D26]/60 transition-colors">{med.generic}</span>
                           )}
-                        </div>
+                        </button>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -1007,8 +1048,16 @@ export default function UserHome() {
                       </button>
                     )}
                     <div className="space-y-1">
-                      <div className="flex flex-col">
-                        <h3 className="font-bold text-[#141414] leading-tight">{med.itemName}</h3>
+                      <div 
+                        className="flex flex-col cursor-pointer"
+                        onClick={() => med.to ? setSelectedMedForLinks(med) : null}
+                      >
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-[#141414] leading-tight group-active:text-[#F27D26] transition-colors">{med.itemName}</h3>
+                          {med.to && (
+                            <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
+                          )}
+                        </div>
                         {med.generic && (
                           <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>
                         )}
@@ -1092,6 +1141,15 @@ export default function UserHome() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {selectedMedForLinks && (
+          <LinkedItemsModal 
+            medication={selectedMedForLinks}
+            allMedications={medications}
+            onClose={() => setSelectedMedForLinks(null)}
+          />
         )}
       </AnimatePresence>
     </div>

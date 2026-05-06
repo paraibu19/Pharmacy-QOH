@@ -19,6 +19,8 @@ import { formatNumber } from '../lib/formatters';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 
+import LinkedItemsModal from '../components/LinkedItemsModal';
+
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
 export default function AdminDashboard() {
@@ -46,6 +48,7 @@ export default function AdminDashboard() {
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
+  const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
   
   const [isCapturing, setIsCapturing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -161,7 +164,8 @@ export default function AdminDashboard() {
     generic: '',
     expiration1: '',
     expiration2: '',
-    expiration3: ''
+    expiration3: '',
+    to: ''
   });
 
   // Check for draft on mount
@@ -472,6 +476,7 @@ export default function AdminDashboard() {
             const itemCode = String(getRowValue(row, ['itemCode', 'Code', 'ItemNo', 'Item No', 'Product Code', 'Reference']) || '');
             const itemName = String(getRowValue(row, ['itemName', 'Name', 'Description', 'ItemName', 'Item Name', 'Product']) || '');
             const generic = String(getRowValue(row, ['generic', 'Generic Name', 'GenericName', 'Generic', 'GenericName']) || '');
+            const to = String(getRowValue(row, ['to', 'Linked', 'Cross Reference', 'BrandItem', 'GenericItem']) || '');
             
             if (!itemName) return null;
 
@@ -479,6 +484,7 @@ export default function AdminDashboard() {
               itemCode: itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`,
               itemName,
               generic,
+              to,
               qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total', 'Available']) || 0),
               minQty: Number(getRowValue(row, ['minQty', 'Min', 'Order Min', 'Minimum']) || 0),
               maxQty: Number(getRowValue(row, ['maxQty', 'Max', 'Order Max', 'Maximum']) || 0),
@@ -680,7 +686,7 @@ export default function AdminDashboard() {
       await refresh();
       setEditingId(null);
       setIsAdding(false);
-      setForm({ itemCode: '', itemName: '', generic: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '', imageUrl: '' });
+      setForm({ itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '', imageUrl: '' });
       clearDraft();
     } catch (error: any) {
       setError(error.message);
@@ -706,6 +712,7 @@ export default function AdminDashboard() {
       itemCode: med.itemCode,
       itemName: med.itemName,
       generic: med.generic || '',
+      to: med.to || '',
       qoh: med.qoh,
       minQty: med.minQty ?? 0,
       maxQty: med.maxQty ?? 0,
@@ -1342,6 +1349,13 @@ export default function AdminDashboard() {
                         value={form.generic}
                         onChange={e => setForm({...form, generic: e.target.value})}
                       />
+                      <input 
+                        type="text" 
+                        placeholder="Linked Codes (To)" 
+                        className="w-full text-[10px] p-1 border rounded text-[#F27D26] font-bold"
+                        value={form.to}
+                        onChange={e => setForm({...form, to: e.target.value})}
+                      />
                     </div>
                   </div>
                 </td>
@@ -1434,14 +1448,22 @@ export default function AdminDashboard() {
                         )}
                       </div>
                       <button 
-                        onClick={() => startCorrection(med)}
-                        className="text-sm font-bold text-[#141414] hover:text-[#F27D26] transition-colors text-left"
+                        onClick={() => med.to ? setSelectedMedForLinks(med) : startCorrection(med)}
+                        className="flex flex-col items-start gap-0.5 group/name"
                       >
-                        {med.itemName}
+                        <span className="text-sm font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                        {med.generic && (
+                          <span className="text-[10px] italic text-[#141414]/40 leading-tight group-hover/name:text-[#F27D26]/60 transition-colors">
+                            {med.generic}
+                          </span>
+                        )}
+                        {med.to && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                             <div className="w-1 h-1 rounded-full bg-[#F27D26] animate-pulse" />
+                             <span className="text-[8px] font-black text-[#F27D26] uppercase tracking-tighter">Linked items available</span>
+                          </div>
+                        )}
                       </button>
-                      {med.generic && (
-                        <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
-                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -1628,15 +1650,28 @@ export default function AdminDashboard() {
                 <div className="space-y-1">
                   <div className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-[#141414] leading-tight truncate max-w-[200px]">{med.itemName}</h3>
+                      <button 
+                        onClick={() => med.to ? setSelectedMedForLinks(med) : startEdit(med)}
+                        className="font-bold text-[#141414] leading-tight text-left hover:text-[#F27D26] transition-colors"
+                      >
+                        {med.itemName}
+                      </button>
                       {isNew && (
                         <span className="px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] rounded text-[8px] font-black uppercase tracking-widest whitespace-nowrap">
                           NEW
                         </span>
                       )}
+                      {med.to && (
+                        <ArrowLeftRight size={10} className="text-[#F27D26] animate-pulse" />
+                      )}
                     </div>
                     {med.generic && (
-                      <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>
+                      <button 
+                        onClick={() => med.to ? setSelectedMedForLinks(med) : null}
+                        className="text-[10px] italic text-[#141414]/40 leading-tight text-left hover:text-[#F27D26] transition-colors"
+                      >
+                        {med.generic}
+                      </button>
                     )}
                   </div>
                   <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</p>
@@ -1945,6 +1980,15 @@ export default function AdminDashboard() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {selectedMedForLinks && (
+          <LinkedItemsModal 
+            medication={selectedMedForLinks}
+            allMedications={medications}
+            onClose={() => setSelectedMedForLinks(null)}
+          />
         )}
       </AnimatePresence>
     </div>

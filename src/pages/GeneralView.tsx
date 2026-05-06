@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check } from 'lucide-react';
+import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check, ArrowRightLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
@@ -7,6 +7,7 @@ import { format, addHours, addDays, addWeeks, addMonths, isBefore } from 'date-f
 import { useMedications } from '../hooks/useMedications';
 import { useNavigate } from 'react-router-dom';
 import { translations, LANGUAGES, Language, TranslationStrings } from '../lib/translations';
+import LinkedItemsModal from '../components/LinkedItemsModal';
 import * as ics from 'ics';
 
 export default function GeneralView() {
@@ -23,11 +24,11 @@ export default function GeneralView() {
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
-  const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
   
   // Reminder State
   const [selectedMedicationForReminder, setSelectedMedicationForReminder] = useState<Medication | null>(null);
@@ -175,7 +176,6 @@ export default function GeneralView() {
       const lowerQuery = searchQuery.toLowerCase();
       result = result.filter(m => m.itemName.toLowerCase().includes(lowerQuery) || (m.generic && m.generic.toLowerCase().includes(lowerQuery)));
     }
-    if (availableGenericsOnly) result = result.filter(m => m.generic && m.qoh > 0);
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
@@ -188,7 +188,7 @@ export default function GeneralView() {
       });
     }
     return result.sort((a, b) => a.itemName.localeCompare(b.itemName));
-  }, [medications, searchQuery, availableGenericsOnly, stockFilter]);
+  }, [medications, searchQuery, stockFilter]);
 
   const changeLanguage = (newLang: Language) => {
     setLanguage(newLang);
@@ -269,7 +269,7 @@ export default function GeneralView() {
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold transition-all ${
-              showFilters || availableGenericsOnly
+              showFilters
               ? 'bg-[#F27D26] text-white shadow-lg shadow-[#F27D26]/20'
               : 'bg-white border border-[#141414]/10 text-[#141414]/60 hover:bg-[#141414]/5'
             }`}
@@ -390,19 +390,7 @@ export default function GeneralView() {
 
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-[#141414]/5">
                   <button
-                    onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                      availableGenericsOnly 
-                        ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
-                        : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100'
-                    }`}
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {t.availableGenerics}
-                  </button>
-                  <button
                     onClick={() => {
-                      setAvailableGenericsOnly(false);
                       setStockFilter('all');
                       setSearchQuery('');
                     }}
@@ -500,11 +488,25 @@ export default function GeneralView() {
                   <ImageIcon size={20} className="text-[#141414]/10" />
                 </div>
               )}
-              <div 
-                className="flex-1 cursor-pointer"
-                onClick={() => setSelectedMedicationForReminder(med)}
-              >
-                <h3 className="font-bold text-[#141414] text-sm group-active:text-[#F27D26]">{med.itemName}</h3>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 
+                    className="font-bold text-[#141414] text-sm group-active:text-[#F27D26] cursor-pointer hover:underline"
+                    onClick={() => setSelectedMedicationForReminder(med)}
+                  >
+                    {med.itemName}
+                  </h3>
+                  {med.to && (
+                    <button 
+                      onClick={() => setSelectedMedForLinks(med)}
+                      className="p-1 px-2 bg-[#F27D26]/10 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/btn"
+                      title="View Linked Brand/Generic Items"
+                    >
+                      <ArrowRightLeft size={10} className="group-hover/btn:rotate-180 transition-transform duration-500" />
+                      <span className="text-[8px] font-black uppercase tracking-tighter">Linked Info</span>
+                    </button>
+                  )}
+                </div>
                 {med.generic && <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>}
               </div>
               <span className={`inline-flex items-center px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest ${
@@ -822,6 +824,15 @@ export default function GeneralView() {
               </button>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {selectedMedForLinks && (
+          <LinkedItemsModal 
+            medication={selectedMedForLinks}
+            allMedications={medications}
+            onClose={() => setSelectedMedForLinks(null)}
+          />
         )}
       </AnimatePresence>
     </div>
