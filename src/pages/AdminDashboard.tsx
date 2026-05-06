@@ -14,6 +14,7 @@ import JSZip from 'jszip';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, systemOps } from '../lib/firebaseOperations';
+import { sharedDb } from '../lib/sharedDb';
 import { formatNumber } from '../lib/formatters';
 
 import { db } from '../lib/firebase';
@@ -551,34 +552,48 @@ export default function AdminDashboard() {
       let updatedCount = 0;
       let skipped: string[] = [];
 
+      // If we don't have Firebase, fetch ALL medications once to matching against all locations
+      let allMeds: Medication[] = medications;
+      if (!db) {
+        try {
+          allMeds = await sharedDb.getMedications();
+        } catch (e) {
+          console.warn("Could not fetch all meds for bulk matching, using current location list only.");
+        }
+      }
+
       // Process in small batches to avoid blocking UI too much
       for (let i = 0; i < imageFiles.length; i++) {
         const fileName = imageFiles[i];
-        // Extract item code from filename (strip extension and path)
         const baseName = fileName.split('/').pop() || '';
         const itemCode = baseName.replace(/\.[^/.]+$/, "").trim();
         
         if (!itemCode) continue;
 
-        // Find matching medication strictly for the CURRENT location
-        let matchingMeds = medications.filter(m => 
+        // 1. Try matching in CURRENT location first
+        let matchingMeds = allMeds.filter(m => 
           m.itemCode.trim().toLowerCase() === itemCode.toLowerCase() && 
           m.locationId === selectedLocation
         );
         
-        // If not found in current local list (sometimes local state is partial), 
-        // try to find it in Firestore strictly within this location
+        // 2. If not found, try matching across ANY location
+        if (matchingMeds.length === 0) {
+          matchingMeds = allMeds.filter(m => 
+            m.itemCode.trim().toLowerCase() === itemCode.toLowerCase()
+          );
+        }
+
+        // 3. If still not found and we have Firebase, search the cloud database globally
         if (matchingMeds.length === 0 && db) {
           try {
             const q = query(
               collection(db, 'medications'), 
-              where('itemCode', '==', itemCode),
-              where('locationId', '==', selectedLocation)
+              where('itemCode', '==', itemCode)
             );
             const snapshot = await getDocs(q);
             matchingMeds = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Medication));
           } catch (e) {
-            console.warn(`Error searching in location ${selectedLocation} for ${itemCode}:`, e);
+            console.warn(`Error searching cloud for ${itemCode}:`, e);
           }
         }
         
@@ -620,9 +635,9 @@ export default function AdminDashboard() {
       setSkippedUploads(skipped);
       await refresh();
       if (skipped.length > 0) {
-        setSuccess(`Bulk update complete: ${updatedCount} items updated. ${skipped.length} items skipped (could not find matching item code in this location).`);
+        setSuccess(`Bulk update complete: ${updatedCount} items updated. ${skipped.length} items skipped (could not find matching item code in any location).`);
       } else {
-        setSuccess(`Bulk update complete: ${updatedCount} items successfully updated.`);
+        setSuccess(`Bulk update complete: ${updatedCount} items successfully updated across all locations.`);
       }
     } catch (err: any) {
       setError(`Bulk photo upload failed: ${err.message}`);
@@ -784,29 +799,38 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6 md:space-y-8 pb-20 px-4 md:px-0">
       {!isFirebaseConnected && (
-        <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
-          <AlertCircle className="text-amber-500 w-5 h-5 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm font-bold text-amber-800">Preview is running in Offline Mode (Local Storage)</p>
-            <p className="text-[10px] text-amber-700/60 leading-tight">Data will not sync with the shared link until you complete the Firebase setup in the AI Studio panel.</p>
+        <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 shadow-sm">
+          <AlertCircle className="text-red-500 w-5 h-5 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 space-y-1">
+            <p className="text-sm font-bold text-red-800">Critical: Firebase Setup Incomplete</p>
+            <p className="text-[10px] text-red-700/70 leading-relaxed font-medium">
+              You are running in <span className="font-bold underline">Offline Mode</span>. Data and photos you upload to the shared link <span className="text-red-900 font-bold italic">will be PERMANENTLY LOST</span> whenever the browser reloads or the server restarts.
+            </p>
+            <div className="pt-2">
+              <p className="text-[9px] font-bold text-red-800 uppercase tracking-widest">How to fix:</p>
+              <p className="text-[10px] text-red-700/60 leading-tight mt-1">Open the <span className="font-bold">Firebase</span> tab in the AI Studio side panel, click "Setup Firebase", and accept the terms to enable permanent cloud storage.</p>
+            </div>
           </div>
         </div>
       )}
 
       {skippedUploads.length > 0 && (
-        <div className="bg-red-50 border border-red-200 p-4 rounded-2xl space-y-2 animate-in fade-in zoom-in-95">
-          <div className="flex items-center justify-between">
+        <div className="bg-red-50 border border-red-200 p-4 rounded-2xl animate-in fade-in zoom-in-95">
+          <div className="flex items-center justify-between mb-2">
             <h4 className="text-xs font-bold text-red-800 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
-              Skipped Items ({skippedUploads.length})
+              Upload Summary
             </h4>
             <button onClick={() => setSkippedUploads([])} className="text-[10px] font-bold text-red-400 hover:text-red-600">Dismiss</button>
           </div>
-          <p className="text-[10px] text-red-700/60 leading-tight">The following item codes were found in the ZIP but didn't match any items in the current location ({PHARMACY_NAMES[selectedLocation]}):</p>
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {skippedUploads.map(code => (
-              <span key={code} className="px-2 py-0.5 bg-white/50 border border-red-100 rounded text-[9px] font-mono font-medium text-red-600">{code}</span>
-            ))}
+          <div className="space-y-1 text-[10px] text-red-700/60 leading-tight">
+            <p>The following item codes were in the ZIP but didn't match ANY items in the database:</p>
+            <div className="flex flex-wrap gap-1.5 pt-1 mb-2">
+              {skippedUploads.map(code => (
+                <span key={code} className="px-2 py-0.5 bg-white/50 border border-red-100 rounded text-[9px] font-mono font-medium text-red-600">{code}</span>
+              ))}
+            </div>
+            <p className="font-bold text-red-700/80 italic">Tip: Ensure your file names exactly match the "Item Code" column (e.g., 1001.jpg).</p>
           </div>
         </div>
       )}
