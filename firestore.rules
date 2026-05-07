@@ -66,6 +66,15 @@ service cloud.firestore {
       allow delete: if true; 
     }
 
+    // System Operations Rule (Label used in error handling for medications/audits deletion)
+    // No specific collection 'system' exists, but we can match the common collections involved
+    match /medications/{medId} {
+      allow delete: if true;
+    }
+    match /inventory_audits/{auditId} {
+      allow delete: if true;
+    }
+
     // Inventory Audit Collection
     match /inventory_audits/{auditId} {
       function isValidAudit(data) {

@@ -130,6 +130,15 @@ export default function AdminDashboard() {
     }
   };
 
+  useEffect(() => {
+    // Sign in anonymously for Firestore rules that might require a UID
+    if (auth && !auth.currentUser) {
+      signInAnonymously(auth).catch(err => {
+        console.warn("Anonymous sign-in failed:", err);
+      });
+    }
+  }, []);
+
   const [editMin, setEditMin] = useState<string>('');
   const [editMax, setEditMax] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
@@ -328,12 +337,13 @@ export default function AdminDashboard() {
   const sortedMedications = useMemo(() => {
     let result = [...medications];
 
-    if (searchQuery) {
+    if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(m => 
-        m.itemName.toLowerCase().includes(q) || 
-        m.itemCode.toLowerCase().includes(q) ||
-        (m.generic && m.generic.toLowerCase().includes(q))
+        (m.itemName && m.itemName.toLowerCase().includes(q)) || 
+        (m.itemCode && m.itemCode.toLowerCase().includes(q)) ||
+        (m.generic && m.generic.toLowerCase().includes(q)) ||
+        (m.to && m.to.toLowerCase().includes(q))
       );
     }
 
@@ -490,9 +500,15 @@ export default function AdminDashboard() {
                                   String(refridgeRaw || '').toLowerCase().includes('yes') ||
                                   String(refridgeRaw || '').toLowerCase().includes('keep') ||
                                   String(refridgeRaw || '').toLowerCase().includes('refrig') ||
+                                  String(refridgeRaw || '').toLowerCase().includes('*') ||
                                   itemName.toLowerCase().includes('refridge') ||
+                                  itemName.toLowerCase().includes('refrig') ||
+                                  itemName.toLowerCase().includes('fridge') ||
+                                  itemName.toLowerCase().includes('2-8') ||
                                   itemName.toLowerCase().includes('(ref)') ||
-                                  generic.toLowerCase().includes('refridge');
+                                  generic.toLowerCase().includes('refridge') ||
+                                  generic.toLowerCase().includes('fridge') ||
+                                  generic.toLowerCase().includes('2-8');
             
             if (!itemName) return null;
 
@@ -1431,6 +1447,18 @@ export default function AdminDashboard() {
                         value={form.to}
                         onChange={e => setForm({...form, to: e.target.value})}
                       />
+                      <label className="flex items-center gap-2 cursor-pointer select-none mt-1">
+                        <input 
+                          type="checkbox" 
+                          className="w-3 h-3 rounded text-[#F27D26] focus:ring-[#F27D26]/20 border-[#141414]/10"
+                          checked={form.isRefrigerated}
+                          onChange={e => setForm({...form, isRefrigerated: e.target.checked})}
+                        />
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-tighter border border-blue-100/50">
+                          <ThermometerSnowflake size={10} className="text-blue-500" />
+                          Refrigerated (2-8°C)
+                        </div>
+                      </label>
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                        <input 
@@ -1494,6 +1522,22 @@ export default function AdminDashboard() {
                   <div className="flex justify-end gap-2">
                     <button onClick={() => { setIsAdding(false); setEditingId(null); clearDraft(); }} className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><XIcon className="w-4 h-4" /></button>
                     <button onClick={() => handleSave()} className="p-1.5 bg-green-50 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-colors"><Check className="w-4 h-4" /></button>
+                  </div>
+                </td>
+              </tr>
+            )}
+            {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all') && (
+              <tr>
+                <td colSpan={5} className="px-6 py-20 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <Search className="w-8 h-8 text-[#141414]/10" />
+                    <p className="text-sm font-bold text-[#141414]/40 italic">No products match your search or filter.</p>
+                    <button 
+                      onClick={() => { setSearchQuery(''); setStockFilter('all'); }}
+                      className="text-[10px] font-bold text-[#F27D26] hover:underline uppercase tracking-widest mt-2"
+                    >
+                      Clear all filters
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -1628,6 +1672,21 @@ export default function AdminDashboard() {
             <Loader2 className="w-8 h-8 animate-spin text-[#F27D26]" />
             <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Loading Items...</p>
           </div>
+        )}
+
+        {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all') && (
+           <div className="p-16 text-center flex flex-col items-center gap-3">
+             <Search className="w-10 h-10 text-[#141414]/10" />
+             <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-xs leading-relaxed px-4">
+               No medications match your <br/> current search criteria
+             </p>
+             <button 
+                onClick={() => { setSearchQuery(''); setStockFilter('all'); }}
+                className="mt-2 px-6 py-2.5 bg-[#F27D26]/10 text-[#F27D26] rounded-full text-[10px] font-bold uppercase tracking-widest"
+             >
+                Reset Search
+             </button>
+           </div>
         )}
         
         {/* Inline Add/Edit Form for Mobile */}
