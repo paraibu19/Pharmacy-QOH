@@ -3,7 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
-  Camera, Image as ImageIcon, CheckCircle2, Users, ShoppingCart, ExternalLink
+  Camera, Image as ImageIcon, CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -963,7 +963,7 @@ export default function AdminDashboard() {
       {/* Expiration Alerts Widget */}
       <div className="flex flex-col gap-6 md:gap-8">
         {/* Top Horizontal Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Inventory Stats Mini Card */}
           <div className="bg-[#141414] text-white p-5 rounded-3xl shadow-xl flex flex-col justify-between border border-white/5">
             <div className="flex justify-between items-start mb-4">
@@ -989,37 +989,6 @@ export default function AdminDashboard() {
                   {formatNumber(medications.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length)}
                 </p>
               </div>
-            </div>
-          </div>
-
-          {/* Access Portals Card */}
-          <div className="bg-white p-5 rounded-3xl border border-[#141414]/10 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
-                <Sparkles size={18} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[#141414]">Logged-in Portals</h3>
-                <p className="text-[9px] text-[#141414]/40 font-bold uppercase tracking-tight">Admin Override Active</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Link 
-                to="/pharmacist"
-                className="flex items-center justify-center gap-2 py-2.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-xl text-[10px] font-bold transition-all"
-              >
-                <Users size={12} className="text-[#F27D26]" />
-                Pharmacist
-                <ExternalLink size={10} className="opacity-30" />
-              </Link>
-              <Link 
-                to="/order"
-                className="flex items-center justify-center gap-2 py-2.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-xl text-[10px] font-bold transition-all"
-              >
-                <ShoppingCart size={12} className="text-[#F27D26]" />
-                Order
-                <ExternalLink size={10} className="opacity-30" />
-              </Link>
             </div>
           </div>
 

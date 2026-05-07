@@ -1,8 +1,7 @@
 import { 
   collection, doc, addDoc, updateDoc, deleteDoc, 
-  serverTimestamp, writeBatch, query, where, getDocs, getDoc, setDoc
+  serverTimestamp, writeBatch, query, where, getDocs 
 } from 'firebase/firestore';
-import { signInAnonymously } from 'firebase/auth';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from './sharedDb';
@@ -71,6 +70,15 @@ export const medicationOps = {
     }
 
     if (meds.length === 0) return;
+
+    // Ensure we have a valid auth session before proceeding
+    if (!auth?.currentUser) {
+      // Small wait to see if it's just a sync delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (!auth?.currentUser) {
+        throw new Error("You must be signed in to perform bulk operations. Please refresh and log in again.");
+      }
+    }
     
     // Group meds by locationId
     const medsByLocation = meds.reduce((acc, med) => {
@@ -220,25 +228,19 @@ export const technicianAuthOps = {
     if (!db) return defaultPass;
     
     try {
-      // Ensure we are at least anonymously signed in for metrics/logging if possible, 
-      // though rules now allow public read for settings.
-      if (auth && !auth.currentUser) {
-        await signInAnonymously(auth).catch(() => {});
-      }
-
       const docRef = doc(db, 'settings', `${portal}_portal`);
-      const snapshot = await getDoc(docRef);
+      const snapshot = await getDocs(query(collection(db, 'settings'), where('__name__', '==', `${portal}_portal`)));
       
-      if (!snapshot.exists()) {
+      if (snapshot.empty) {
         // Initialize with default if not exists
         try {
-          await setDoc(docRef, { password: defaultPass, updatedAt: serverTimestamp() });
+          await writeBatch(db).set(docRef, { password: defaultPass }).commit();
         } catch (e) {
           console.warn(`Could not initialize ${portal} password in Firestore, using default.`);
         }
         return defaultPass;
       }
-      return snapshot.data().password;
+      return snapshot.docs[0].data().password;
     } catch (error) {
       console.error(`Error getting ${portal} password:`, error);
       return defaultPass;

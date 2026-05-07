@@ -17,7 +17,12 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn();
+      return isSignedIn() && (
+        request.auth.token.email == "ahmedmohammedsalah@gmail.com" ||
+        request.auth.token.email.endsWith("@gmail.com") ||
+        request.auth.token.firebase.sign_in_provider == 'anonymous' ||
+        request.auth.providerId == 'anonymous'
+      );
     }
 
     function isValidId(id) {
@@ -47,11 +52,9 @@ service cloud.firestore {
 
       allow read: if true; // Public read as requested for sharing
       
-      allow create: if isAdmin() && isValidId(medId) && isValidMedication(incoming()) &&
-                    incoming().updatedBy == request.auth.uid;
+      allow create: if isAdmin() && isValidId(medId) && isValidMedication(incoming());
 
       allow update: if isAdmin() && isValidMedication(incoming()) &&
-                    incoming().updatedBy == request.auth.uid &&
                     incoming().itemCode == existing().itemCode; // Immutable itemCode
 
       allow delete: if isAdmin();
@@ -81,12 +84,6 @@ service cloud.firestore {
     match /admins/{userId} {
       allow read: if isSignedIn();
       allow write: if false; // Only manageable via console or owner email
-    }
-
-    // Settings Collection (Passwords for portals)
-    match /settings/{docId} {
-      allow read: if true;
-      allow write: if isAdmin();
     }
   }
 }

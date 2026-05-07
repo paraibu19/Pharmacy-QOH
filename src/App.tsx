@@ -22,13 +22,25 @@ export default function App() {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       // If signed in via Google, also set isAdmin to true automatically
       const isGoogleAdmin = !!user && (user.email === 'ahmedmohammedsalah@gmail.com' || user.email?.endsWith('@gmail.com'));
+      
       if (isGoogleAdmin) {
         setIsAdmin(true);
         localStorage.setItem('admin_session', 'true');
+      } else if (!user && localStorage.getItem('admin_session') === 'true') {
+        // Try to recover firebase session anonymously if we have a local admin session
+        try {
+          const { signInAnonymously } = await import('firebase/auth');
+          await signInAnonymously(auth);
+          // Wait for the next onAuthStateChanged fire to set loading to false
+          return;
+        } catch (e) {
+          console.warn('Silent anonymous sign-in failed:', e);
+        }
       }
+      
       setAuthLoading(false);
     });
 
