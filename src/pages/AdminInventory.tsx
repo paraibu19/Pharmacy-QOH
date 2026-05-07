@@ -80,7 +80,10 @@ export default function AdminInventory() {
       result = result.filter(m => 
         m.itemName.toLowerCase().includes(q) || 
         m.itemCode.toLowerCase().includes(q) ||
-        (m.generic && m.generic.toLowerCase().includes(q))
+        (m.generic && m.generic.toLowerCase().includes(q)) ||
+        (q === 'refrig' && m.isRefrigerated) ||
+        (q === 'refridge' && m.isRefrigerated) ||
+        (q === 'refrigerated' && m.isRefrigerated)
       );
     }
 
@@ -498,9 +501,9 @@ export default function AdminInventory() {
                         <span className="text-[10px] font-mono text-[#141414]/40 mb-0.5">{med.itemCode}</span>
                         <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
                         {med.isRefrigerated && (
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
-                            <ThermometerSnowflake size={8} />
-                            Refrigerated (2-8°C)
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100/50 text-blue-700 rounded-md text-[9px] font-black uppercase tracking-tighter w-fit border border-blue-200/50 shadow-sm mt-0.5">
+                            <ThermometerSnowflake size={10} className="text-blue-500" />
+                            REFRIGERATED
                           </div>
                         )}
                         {med.generic && (

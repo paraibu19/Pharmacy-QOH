@@ -140,7 +140,10 @@ export default function UserHome() {
       result = result.filter(m => 
         m.itemCode.toLowerCase().includes(lowerQuery) || 
         m.itemName.toLowerCase().includes(lowerQuery) ||
-        (m.generic && m.generic.toLowerCase().includes(lowerQuery))
+        (m.generic && m.generic.toLowerCase().includes(lowerQuery)) ||
+        (lowerQuery === 'refrig' && m.isRefrigerated) ||
+        (lowerQuery === 'refridge' && m.isRefrigerated) ||
+        (lowerQuery === 'refrigerated' && m.isRefrigerated)
       );
     }
 
@@ -991,9 +994,9 @@ export default function UserHome() {
                               )}
                             </div>
                             {med.isRefrigerated && (
-                              <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
-                                <ThermometerSnowflake size={8} />
-                                Refrigerated (2-8°C)
+                              <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100/50 text-blue-700 rounded-md text-[9px] font-black uppercase tracking-tighter w-fit border border-blue-200/50 shadow-sm">
+                                <ThermometerSnowflake size={10} className="text-blue-500" />
+                                REFRIGERATED
                               </div>
                             )}
                           </div>
@@ -1073,9 +1076,9 @@ export default function UserHome() {
                             )}
                           </div>
                           {med.isRefrigerated && (
-                            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-500 text-white rounded-full text-[8px] font-black uppercase tracking-tighter shadow-sm w-fit">
                               <ThermometerSnowflake size={8} />
-                              Refrigerated
+                              REF
                             </div>
                           )}
                         </div>

@@ -343,7 +343,10 @@ export default function AdminDashboard() {
         (m.itemName && m.itemName.toLowerCase().includes(q)) || 
         (m.itemCode && m.itemCode.toLowerCase().includes(q)) ||
         (m.generic && m.generic.toLowerCase().includes(q)) ||
-        (m.to && m.to.toLowerCase().includes(q))
+        (m.to && m.to.toLowerCase().includes(q)) ||
+        (q === 'refrig' && m.isRefrigerated) ||
+        (q === 'refridge' && m.isRefrigerated) ||
+        (q === 'refrigerated' && m.isRefrigerated)
       );
     }
 
@@ -495,20 +498,23 @@ export default function AdminDashboard() {
             const generic = String(getRowValue(row, ['generic', 'Generic Name', 'GenericName', 'Generic', 'GenericName']) || '');
             const to = String(getRowValue(row, ['to', 'Linked', 'Cross Reference', 'BrandItem', 'GenericItem']) || '');
             
-            const refridgeRaw = getRowValue(row, ['isRefrigerated', 'Refridge', 'Refrig', 'Fridge', 'Cold', 'Refrigerator']);
+            const refridgeRaw = getRowValue(row, ['isRefrigerated', 'Refridge', 'Refrig', 'Fridge', 'Cold', 'Refrigerator', 'Temp', 'Temperature', 'Storage']);
             const isRefrigerated = refridgeRaw === true || 
                                   String(refridgeRaw || '').toLowerCase().includes('yes') ||
                                   String(refridgeRaw || '').toLowerCase().includes('keep') ||
                                   String(refridgeRaw || '').toLowerCase().includes('refrig') ||
                                   String(refridgeRaw || '').toLowerCase().includes('*') ||
+                                  String(refridgeRaw || '').toLowerCase().includes('2-8') ||
                                   itemName.toLowerCase().includes('refridge') ||
                                   itemName.toLowerCase().includes('refrig') ||
                                   itemName.toLowerCase().includes('fridge') ||
                                   itemName.toLowerCase().includes('2-8') ||
                                   itemName.toLowerCase().includes('(ref)') ||
+                                  itemName.toLowerCase().includes('cold') ||
                                   generic.toLowerCase().includes('refridge') ||
                                   generic.toLowerCase().includes('fridge') ||
-                                  generic.toLowerCase().includes('2-8');
+                                  generic.toLowerCase().includes('2-8') ||
+                                  generic.toLowerCase().includes('cold');
             
             if (!itemName) return null;
 
@@ -1585,9 +1591,9 @@ export default function AdminDashboard() {
                       >
                         <span className="text-sm font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
                         {med.isRefrigerated && (
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
-                            <ThermometerSnowflake size={8} />
-                            Refrigerated (2-8°C)
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100/50 text-blue-700 rounded-md text-[9px] font-black uppercase tracking-tighter w-fit border border-blue-200/50 shadow-sm mt-0.5">
+                            <ThermometerSnowflake size={10} className="text-blue-500" />
+                            REFRIGERATED
                           </div>
                         )}
                         {med.generic && (
@@ -1831,9 +1837,9 @@ export default function AdminDashboard() {
                         >
                           {med.itemName}
                           {med.isRefrigerated && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 text-white rounded-full text-[8px] font-black uppercase tracking-tighter shadow-sm">
                               <ThermometerSnowflake size={8} />
-                              Refrigerated
+                              REF
                             </span>
                           )}
                         </button>

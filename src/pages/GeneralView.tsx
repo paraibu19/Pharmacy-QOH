@@ -197,7 +197,13 @@ export default function GeneralView() {
     let result = medications;
     if (searchQuery.length >= 1) {
       const lowerQuery = searchQuery.toLowerCase();
-      result = result.filter(m => m.itemName.toLowerCase().includes(lowerQuery) || (m.generic && m.generic.toLowerCase().includes(lowerQuery)));
+      result = result.filter(m => 
+        m.itemName.toLowerCase().includes(lowerQuery) || 
+        (m.generic && m.generic.toLowerCase().includes(lowerQuery)) ||
+        (lowerQuery === 'refrig' && m.isRefrigerated) ||
+        (lowerQuery === 'refridge' && m.isRefrigerated) ||
+        (lowerQuery === 'refrigerated' && m.isRefrigerated)
+      );
     }
     if (stockFilter !== 'all') {
       result = result.filter(m => {
@@ -476,8 +482,8 @@ export default function GeneralView() {
                       >
                         <span className="text-sm font-bold text-[#141414] group-hover:text-[#F27D26] transition-colors">{med.itemName}</span>
                         {med.isRefrigerated && (
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
-                            <ThermometerSnowflake size={8} />
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100/50 text-blue-700 rounded-md text-[9px] font-black uppercase tracking-tighter w-fit border border-blue-200/50 shadow-sm mt-0.5">
+                            <ThermometerSnowflake size={10} className="text-blue-500" />
                             {t.refrigerated}
                           </div>
                         )}
@@ -531,9 +537,9 @@ export default function GeneralView() {
                     {med.itemName}
                   </h3>
                   {med.isRefrigerated && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 text-white rounded-full text-[8px] font-black uppercase tracking-tighter shadow-sm">
                       <ThermometerSnowflake size={8} />
-                      Ref
+                      REF
                     </span>
                   )}
                   {med.to && (
