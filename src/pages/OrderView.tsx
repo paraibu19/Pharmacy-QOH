@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
-  Eye, EyeOff, Settings, Key, LogOut, KeyRound
+  Eye, EyeOff, Settings, Key, LogOut, KeyRound, ThermometerSnowflake
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -679,7 +679,12 @@ export default function OrderView() {
                     className="w-full px-4 py-3 text-left hover:bg-[#141414]/5 flex items-center justify-between transition-colors border-b border-[#141414]/5 last:border-0"
                   >
                     <div className="flex flex-col">
-                      <span className="text-sm font-bold text-[#141414]">{s.itemName}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-[#141414]">{s.itemName}</span>
+                        {s.isRefrigerated && (
+                          <ThermometerSnowflake size={10} className="text-blue-500" />
+                        )}
+                      </div>
                       <span className="text-[10px] font-mono text-[#141414]/40">{s.itemCode}</span>
                     </div>
                   </button>
@@ -869,20 +874,28 @@ export default function OrderView() {
                                 }}
                                 className="flex flex-col group/name text-left hover:opacity-80 transition-all"
                               >
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
-                                  {med.isNew && (
-                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
-                                      NEW
-                                    </span>
-                                  )}
-                                  {med.to && (
-                                    <div className="flex items-center gap-1">
-                                      <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
-                                      <span className="text-[8px] font-black text-[#F27D26] uppercase tracking-tighter">Links</span>
+                                <div className="flex flex-col gap-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                                    {med.isNew && (
+                                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px] font-black uppercase tracking-widest">
+                                        NEW
+                                      </span>
+                                    )}
+                                    {med.to && (
+                                      <div className="flex items-center gap-1">
+                                        <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
+                                        <span className="text-[8px] font-black text-[#F27D26] uppercase tracking-tighter">Links</span>
+                                      </div>
+                                    )}
+                                    <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
+                                  </div>
+                                  {med.isRefrigerated && (
+                                    <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                                      <ThermometerSnowflake size={8} />
+                                      Refrigerated (2-8°C)
                                     </div>
                                   )}
-                                  <Edit3 className="w-3 h-3 text-[#141414]/20 opacity-0 group-hover/name:opacity-100 transition-all" />
                                 </div>
                                 {med.generic && (
                                   <span className="text-[10px] italic text-[#141414]/40 leading-tight group-hover/name:text-[#F27D26]/60 transition-colors">{med.generic}</span>
@@ -966,9 +979,15 @@ export default function OrderView() {
                                 if (med.to) setSelectedMedForLinks(med);
                                 else startEdit(med);
                               }}
-                              className="font-bold text-[#141414] text-left hover:text-[#F27D26] transition-colors"
+                              className="font-bold text-[#141414] text-left hover:text-[#F27D26] transition-colors flex flex-col items-start gap-1"
                             >
                               {med.itemName}
+                              {med.isRefrigerated && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter">
+                                  <ThermometerSnowflake size={8} />
+                                  Refrigerated
+                                </span>
+                              )}
                             </button>
                             {med.isNew && (
                               <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[8px] font-black uppercase tracking-widest">

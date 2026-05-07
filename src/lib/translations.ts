@@ -49,6 +49,8 @@ export interface TranslationStrings {
   weeks: string;
   months: string;
   confirmClear: string;
+  storageInstructions: string;
+  refrigerated: string;
 }
 
 export const LANGUAGES: { id: Language; label: string; dir: 'ltr' | 'rtl' }[] = [
@@ -110,6 +112,8 @@ export const translations: Record<Language, TranslationStrings> = {
     weeks: 'Weeks',
     months: 'Months',
     confirmClear: 'Are you sure you want to clear all saved reminders?',
+    storageInstructions: '**STORAGE INSTRUCTIONS:** Store in refrigerator (2-8°C). DO NOT FREEZE.',
+    refrigerated: 'Refrigerated (2-8°C)',
   },
   ar: {
     title: 'العرض العام',
@@ -159,6 +163,8 @@ export const translations: Record<Language, TranslationStrings> = {
     weeks: 'أسابيع',
     months: 'شهور',
     confirmClear: 'هل أنت متأكد من مسح جميع التذكيرات؟',
+    storageInstructions: '**تعليمات التخزين:** يحفظ في الثلاجة (2-8 درجات مئوية). لا يجمد.',
+    refrigerated: 'مبرّد (2-8 درجة مئوية)',
   },
   hi: {
     title: 'सामान्य दृश्य',
@@ -208,6 +214,8 @@ export const translations: Record<Language, TranslationStrings> = {
     weeks: 'सप्ताह',
     months: 'महीने',
     confirmClear: 'क्या आप वाकई सभी रिमाइंडर हटाना चाहते हैं?',
+    storageInstructions: '**भण्डारण निर्देश:** रेफ्रिजरेटर (2-8°C) में रखें। फ्रीज न करें।',
+    refrigerated: 'रेफ्रिजरेटेड (2-8°C)',
   },
   ur: {
     title: 'عمومی منظر',
@@ -257,6 +265,8 @@ export const translations: Record<Language, TranslationStrings> = {
     weeks: 'ہفتے',
     months: 'مہینے',
     confirmClear: 'کیا آپ واقعی تمام ریمنڈرز ختم کرنا چاہتے ہیں؟',
+    storageInstructions: '**سٹوریج کی ہدایات:** ریفریجریٹر (2-8°C) میں رکھیں۔ فریز نہ کریں۔',
+    refrigerated: 'ریفریجریٹڈ (2-8°C)',
   },
   ml: {
     title: 'പൊതുവായ കാഴ്ച',
@@ -306,6 +316,8 @@ export const translations: Record<Language, TranslationStrings> = {
     weeks: 'ആഴ്ചകൾ',
     months: 'മാസങ്ങൾ',
     confirmClear: 'എല്ലാ ഓർമ്മപ്പെടുത്തലുകളും കളയണോ?',
+    storageInstructions: '**സംഭരണ നിർദ്ദേശങ്ങൾ:** റഫ്രിജറേറ്ററിൽ (2-8°C) സൂക്ഷിക്കുക. ഫ്രീസ് ചെയ്യരുത്.',
+    refrigerated: 'റെഫ്രിജറേറ്ററിൽ സൂക്ഷിക്കേണ്ടവ (2-8°C)',
   },
   bn: {
     title: 'সাধারণ দৃশ্য',
@@ -355,6 +367,8 @@ export const translations: Record<Language, TranslationStrings> = {
     weeks: 'সপ্তাহ',
     months: 'মাস',
     confirmClear: 'আপনি কি সব রিমাইন্ডার মুছতে চান?',
+    storageInstructions: '**সংরক্ষণের নির্দেশাবলী:** রেফ্রিজারেটরে (2-8°C) রাখুন। ফ্রিজে রাখবেন না।',
+    refrigerated: 'রেফ্রিজারেটরে রাখতে হবে (2-8°C)',
   },
   tl: {
     title: 'Pangkalahatang Tanawin',
@@ -404,5 +418,7 @@ export const translations: Record<Language, TranslationStrings> = {
     weeks: 'Linggo',
     months: 'Buwan',
     confirmClear: 'Siguradong i-clear ang lahat ng paalala?',
+    storageInstructions: '**MGA INSTRUKSYON SA PAG-IIMBAK:** Itabi sa refrigerator (2-8°C). HUWAG I-FREEZE.',
+    refrigerated: 'Naka-refrigerator (2-8°C)',
   },
 };

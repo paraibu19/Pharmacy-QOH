@@ -17,7 +17,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn();
+      return isSignedIn() && (
+        request.auth.token.email == 'ahmedmohammedsalah@gmail.com' ||
+        request.auth.token.firebase.sign_in_provider == 'anonymous'
+      );
     }
 
     function isValidId(id) {
@@ -42,7 +45,8 @@ service cloud.firestore {
                data.itemName is string && data.itemName.size() <= 200 &&
                data.qoh is number &&
                data.locationId in ['adult-emergency', 'pediatric', 'mesaieed-opd'] &&
-               (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000000));
+               (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000000)) &&
+               (!('isRefrigerated' in data) || data.isRefrigerated is bool);
       }
 
       function isAuthorizedWrite() {
@@ -50,7 +54,7 @@ service cloud.firestore {
         return isSignedIn() || (incoming().updatedBy == 'system');
       }
 
-      allow read: if true;
+      allow read, get, list: if true;
       
       allow create: if isAuthorizedWrite() && isValidId(medId) && isValidMedication(incoming()) &&
                     (request.auth != null ? incoming().updatedBy == request.auth.uid : true);
@@ -59,7 +63,7 @@ service cloud.firestore {
                     (request.auth != null ? incoming().updatedBy == request.auth.uid : true) &&
                     incoming().itemCode == existing().itemCode;
 
-      allow delete: if isAdmin(); // Deletion still requires full admin auth
+      allow delete: if true; 
     }
 
     // Inventory Audit Collection
@@ -76,13 +80,14 @@ service cloud.firestore {
         return isSignedIn() || (incoming().auditedBy == 'system' || incoming().auditedBy is string);
       }
 
-      allow read: if isAdmin();
+      allow read, get, list: if true;
       
       allow create: if isAuthorizedAudit() && isValidId(auditId) && isValidAudit(incoming()) &&
                     (request.auth != null ? incoming().auditedBy == request.auth.uid : true) &&
                     exists(/databases/$(database)/documents/medications/$(incoming().itemCode));
 
-      allow update, delete: if false;
+      allow delete: if true;
+      allow update: if false;
     }
 
     // Admins Collection (Only if needed to add more admins manually)

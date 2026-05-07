@@ -15,7 +15,8 @@
         "addedAt": { "type": "string", "format": "date-time", "description": "When the item was first added" },
         "lastUpdatedAt": { "type": "string", "format": "date-time", "description": "When the item was last modified" },
         "updatedBy": { "type": "string", "description": "UID of the admin who updated" },
-        "imageUrl": { "type": "string", "description": "Base64 or URL of the medication photo" }
+        "imageUrl": { "type": "string", "description": "Base64 or URL of the medication photo" },
+        "isRefrigerated": { "type": "boolean", "description": "Whether item requires refrigeration (2-8C)" }
       },
       "required": ["itemCode", "itemName", "qoh", "locationId"]
     },

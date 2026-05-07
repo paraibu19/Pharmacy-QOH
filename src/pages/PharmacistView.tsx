@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, FileSpreadsheet, KeyRound, 
-  Key, Eye, EyeOff, Lock, LogOut 
+  Key, Eye, EyeOff, Lock, LogOut, ThermometerSnowflake
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -214,7 +214,7 @@ export default function UserHome() {
 
       return a[sortField as keyof typeof a].localeCompare(b[sortField as keyof typeof b]) * multiplier;
     });
-  }, [medications, searchQuery, availableGenericsOnly, stockFilter, expStart, expEnd, sortField, sortOrder]);
+  }, [medications, searchQuery, availableGenericsOnly, availableBrandsOnly, stockFilter, expStart, expEnd, sortField, sortOrder]);
 
   const availableGenericsCount = useMemo(() => {
     return medications.filter(m => m.generic && m.qoh > 0).length;
@@ -597,7 +597,12 @@ export default function UserHome() {
                         className="w-full px-4 py-3 text-left hover:bg-[#141414]/5 flex items-center justify-between transition-colors border-b border-[#141414]/5 last:border-0"
                       >
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-[#141414]">{s.itemName}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-[#141414]">{s.itemName}</span>
+                            {s.isRefrigerated && (
+                              <ThermometerSnowflake size={10} className="text-blue-500" />
+                            )}
+                          </div>
                           <span className="text-[10px] font-mono text-[#141414]/40">{s.itemCode}</span>
                         </div>
                         <div className="text-[10px] font-bold text-[#F27D26] bg-[#F27D26]/10 px-2 py-0.5 rounded-full">
@@ -978,10 +983,18 @@ export default function UserHome() {
                           onClick={() => med.to ? setSelectedMedForLinks(med) : null}
                           className={`flex flex-col text-left transition-all ${med.to ? 'cursor-pointer hover:opacity-80 group/link' : 'cursor-default'}`}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className={`text-sm font-bold text-[#141414] ${med.to ? 'group-hover/link:text-[#F27D26]' : ''}`}>{med.itemName}</span>
-                            {med.to && (
-                              <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-sm font-bold text-[#141414] ${med.to ? 'group-hover/link:text-[#F27D26]' : ''}`}>{med.itemName}</span>
+                              {med.to && (
+                                <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
+                              )}
+                            </div>
+                            {med.isRefrigerated && (
+                              <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                                <ThermometerSnowflake size={8} />
+                                Refrigerated (2-8°C)
+                              </div>
                             )}
                           </div>
                           {med.generic && (
@@ -1052,10 +1065,18 @@ export default function UserHome() {
                         className="flex flex-col cursor-pointer"
                         onClick={() => med.to ? setSelectedMedForLinks(med) : null}
                       >
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-[#141414] leading-tight group-active:text-[#F27D26] transition-colors">{med.itemName}</h3>
-                          {med.to && (
-                            <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-[#141414] leading-tight group-active:text-[#F27D26] transition-colors">{med.itemName}</h3>
+                            {med.to && (
+                              <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
+                            )}
+                          </div>
+                          {med.isRefrigerated && (
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                              <ThermometerSnowflake size={8} />
+                              Refrigerated
+                            </div>
                           )}
                         </div>
                         {med.generic && (

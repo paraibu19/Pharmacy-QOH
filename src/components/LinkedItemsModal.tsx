@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Medication, PHARMACY_NAMES } from '../types';
-import { X, Image as ImageIcon, ExternalLink, ArrowRightLeft } from 'lucide-react';
+import { X, Image as ImageIcon, ExternalLink, ArrowRightLeft, ThermometerSnowflake } from 'lucide-react';
 import { formatNumber } from '../lib/formatters';
 
 interface LinkedItemsModalProps {
@@ -90,6 +90,12 @@ export default function LinkedItemsModal({ medication, allMedications, onClose }
                           <h3 className="font-bold text-[#141414] text-base group-hover:text-[#F27D26] transition-colors line-clamp-1">
                             {item.itemName}
                           </h3>
+                          {item.isRefrigerated && (
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                              <ThermometerSnowflake size={8} />
+                              Refrigerated (2-8°C)
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] font-mono font-bold text-[#141414]/30">
                               {item.itemCode}

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Download, Save, RefreshCw, AlertTriangle, 
   CheckCircle2, ArrowUpRight, History, Loader2, ArrowUpDown, Filter, X, FileSpreadsheet,
-  Sparkles
+  Sparkles, ThermometerSnowflake
 } from 'lucide-react';
 import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
@@ -497,6 +497,12 @@ export default function AdminInventory() {
                       <div className="flex flex-col">
                         <span className="text-[10px] font-mono text-[#141414]/40 mb-0.5">{med.itemCode}</span>
                         <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
+                        {med.isRefrigerated && (
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                            <ThermometerSnowflake size={8} />
+                            Refrigerated (2-8°C)
+                          </div>
+                        )}
                         {med.generic && (
                           <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
                         )}

@@ -28,6 +28,7 @@ export interface Medication {
   isNew?: boolean; // UI helper
   imageUrl?: string;
   to?: string;
+  isRefrigerated?: boolean;
 }
 
 export interface InventoryAudit {

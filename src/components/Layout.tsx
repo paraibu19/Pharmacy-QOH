@@ -14,8 +14,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
-  const [isSynced, setIsSynced] = useState(true);
-  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
+  const [isSynced, setIsSynced] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -24,10 +23,8 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
     // Monitor when Firestore completes a sync operation
     const unsubscribe = onSnapshotsInSync(db, () => {
       setIsSynced(true);
-      setLastSyncTime(new Date());
-      
       // Flash the synced state briefly
-      const timer = setTimeout(() => setIsSynced(false), 2000);
+      const timer = setTimeout(() => setIsSynced(false), 3000);
       return () => clearTimeout(timer);
     });
 
@@ -111,18 +108,18 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 </div>
               </Link>
               
-              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#141414]/10 rounded-full shadow-sm">
+              <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#141414]/10 rounded-full shadow-sm select-none">
                 <div className="flex items-center gap-2">
                   <div className={`relative flex h-2 w-2`}>
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isSynced ? 'bg-emerald-400' : 'bg-blue-400'} opacity-75`}></span>
-                    <span className={`relative inline-flex rounded-full h-2 w-2 ${isSynced ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>
+                    <span className={`absolute inline-flex h-full w-full rounded-full bg-emerald-400 ${isSynced ? 'animate-ping' : 'animate-pulse'} opacity-75`}></span>
+                    <span className={`relative inline-flex rounded-full h-2 w-2 bg-emerald-500`}></span>
                   </div>
                   <div className="flex flex-col -space-y-1">
-                    <span className={`text-[9px] font-bold uppercase tracking-wider ${isSynced ? 'text-emerald-600' : 'text-blue-600'}`}>
-                      {isSynced ? 'Synchronizing...' : 'Shared Instance'}
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/60">
+                      Live Portal
                     </span>
-                    <span className="text-[7px] text-[#141414]/40 font-mono uppercase tracking-tighter">
-                      Live Production Link
+                    <span className="text-[7px] text-[#141414]/30 font-mono uppercase tracking-tighter">
+                      Instance Connected
                     </span>
                   </div>
                 </div>
@@ -182,14 +179,14 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 <div className="flex lg:hidden items-center justify-between px-4 py-2 border border-[#141414]/10 rounded-xl bg-white shadow-sm">
                   <div className="flex items-center gap-3">
                     <div className="relative flex h-2 w-2">
-                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isSynced ? 'bg-emerald-400' : 'bg-blue-400'} opacity-75`}></span>
-                      <span className={`relative inline-flex rounded-full h-2 w-2 ${isSynced ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>
+                      <span className={`absolute inline-flex h-full w-full rounded-full bg-emerald-400 ${isSynced ? 'animate-ping' : 'animate-pulse'} opacity-75`}></span>
+                      <span className={`relative inline-flex rounded-full h-2 w-2 bg-emerald-500`}></span>
                     </div>
                     <div className="flex flex-col -space-y-0.5">
-                      <span className={`text-[10px] font-bold uppercase tracking-[0.1em] ${isSynced ? 'text-emerald-600' : 'text-blue-600'}`}>
-                        {isSynced ? 'Cloud Synced' : 'Shared Portal Active'}
+                      <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#141414]/60">
+                        Live Portal
                       </span>
-                      <span className="text-[8px] text-[#141414]/40 font-mono font-bold">Live Instance Connected</span>
+                      <span className="text-[8px] text-[#141414]/40 font-mono font-bold uppercase tracking-widest">Instance Connected</span>
                     </div>
                   </div>
                   <RefreshCw className={`w-3.5 h-3.5 text-[#141414]/20 ${isSynced ? 'animate-spin' : ''}`} />

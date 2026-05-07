@@ -3,7 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
-  Camera, Image as ImageIcon, CheckCircle2
+  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -17,7 +17,8 @@ import { medicationOps, systemOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
 import { formatNumber } from '../lib/formatters';
 
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 
 import LinkedItemsModal from '../components/LinkedItemsModal';
@@ -168,7 +169,8 @@ export default function AdminDashboard() {
     expiration1: '',
     expiration2: '',
     expiration3: '',
-    to: ''
+    to: '',
+    isRefrigerated: false
   });
 
   // Check for draft on mount
@@ -289,7 +291,7 @@ export default function AdminDashboard() {
     }
 
     return result.sort((a, b) => (a.daysLeft || 0) - (b.daysLeft || 0));
-  }, [medications, alertThreshold, expSearchQuery]);
+  }, [medications, alertThreshold, expSearchQuery, expSearchMonth]);
 
   const expirationStats = useMemo(() => {
     const today = new Date();
@@ -375,7 +377,7 @@ export default function AdminDashboard() {
       if (valA > valB) return 1 * multiplier;
       return 0;
     });
-  }, [medications, sortField, sortOrder, stockFilter]);
+  }, [medications, sortField, sortOrder, stockFilter, searchQuery]);
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -483,6 +485,15 @@ export default function AdminDashboard() {
             const generic = String(getRowValue(row, ['generic', 'Generic Name', 'GenericName', 'Generic', 'GenericName']) || '');
             const to = String(getRowValue(row, ['to', 'Linked', 'Cross Reference', 'BrandItem', 'GenericItem']) || '');
             
+            const refridgeRaw = getRowValue(row, ['isRefrigerated', 'Refridge', 'Refrig', 'Fridge', 'Cold', 'Refrigerator']);
+            const isRefrigerated = refridgeRaw === true || 
+                                  String(refridgeRaw || '').toLowerCase().includes('yes') ||
+                                  String(refridgeRaw || '').toLowerCase().includes('keep') ||
+                                  String(refridgeRaw || '').toLowerCase().includes('refrig') ||
+                                  itemName.toLowerCase().includes('refridge') ||
+                                  itemName.toLowerCase().includes('(ref)') ||
+                                  generic.toLowerCase().includes('refridge');
+            
             if (!itemName) return null;
 
             return {
@@ -490,6 +501,7 @@ export default function AdminDashboard() {
               itemName,
               generic,
               to,
+              isRefrigerated: !!isRefrigerated,
               qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total', 'Available']) || 0),
               minQty: Number(getRowValue(row, ['minQty', 'Min', 'Order Min', 'Minimum']) || 0),
               maxQty: Number(getRowValue(row, ['maxQty', 'Max', 'Order Max', 'Maximum']) || 0),
@@ -661,11 +673,13 @@ export default function AdminDashboard() {
           itemCode: parts[0]?.trim(),
           itemName: parts[1]?.trim(),
           qoh: Number(parts[2]?.trim()) || 0,
+          generic: parts[3]?.trim() || '',
           minQty: Number(parts[4]?.trim()) || 0,
           maxQty: Number(parts[5]?.trim()) || 0,
           expiration1: parts[6]?.trim() || '',
           expiration2: parts[7]?.trim() || '',
           expiration3: parts[8]?.trim() || '',
+          isRefrigerated: parts[9]?.trim()?.toLowerCase() === 'yes' || parts[9]?.trim()?.toLowerCase() === 'true',
           locationId: selectedLocation,
         };
       }).filter(m => m !== null) as any[];
@@ -711,7 +725,7 @@ export default function AdminDashboard() {
       await refresh();
       setEditingId(null);
       setIsAdding(false);
-      setForm({ itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '', imageUrl: '' });
+      setForm({ itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false });
       clearDraft();
     } catch (error: any) {
       setError(error.message);
@@ -744,7 +758,8 @@ export default function AdminDashboard() {
       expiration1: med.expiration1,
       expiration2: med.expiration2,
       expiration3: med.expiration3,
-      imageUrl: med.imageUrl || ''
+      imageUrl: med.imageUrl || '',
+      isRefrigerated: med.isRefrigerated || false
     });
   };
 
@@ -754,6 +769,15 @@ export default function AdminDashboard() {
     if (resetPassword !== currentAdminPassword) {
       setResetError('Incorrect password. Reset aborted.');
       return;
+    }
+
+    if (auth && !auth.currentUser) {
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        console.warn('Anonymous sign-in failed during reset, proceeding as guest:', err);
+        // We don't return here anymore, we'll let Firestore decide if permissions are sufficient
+      }
     }
 
     try {
@@ -1088,7 +1112,12 @@ export default function AdminDashboard() {
                   {expiringItems.map(item => item && (
                     <div key={item.id} className="p-4 flex items-center justify-between hover:bg-[#F27D26]/[0.02] transition-colors">
                       <div className="flex flex-col">
-                        <span className="text-xs font-bold text-[#141414]">{item.itemName}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-[#141414]">{item.itemName}</span>
+                          {item.isRefrigerated && (
+                            <ThermometerSnowflake size={10} className="text-blue-500" />
+                          )}
+                        </div>
                         <span className="text-[10px] font-mono text-[#141414]/40">{item.itemCode}</span>
                       </div>
                       <div className="flex items-center gap-6">
@@ -1403,6 +1432,19 @@ export default function AdminDashboard() {
                         onChange={e => setForm({...form, to: e.target.value})}
                       />
                     </div>
+                    <div className="flex items-center gap-2 mt-2">
+                       <input 
+                         type="checkbox" 
+                         id="isRefrigerated"
+                         checked={form.isRefrigerated}
+                         onChange={e => setForm({...form, isRefrigerated: e.target.checked})}
+                         className="w-4 h-4 rounded border-[#141414]/10 text-[#F27D26] focus:ring-[#F27D26]/20"
+                       />
+                       <label htmlFor="isRefrigerated" className="text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest flex items-center gap-1">
+                          <ThermometerSnowflake size={12} className="text-blue-500" />
+                          Refrigerated (2-8°C)
+                       </label>
+                    </div>
                   </div>
                 </td>
                 <td className="px-6 py-4">
@@ -1498,6 +1540,12 @@ export default function AdminDashboard() {
                         className="flex flex-col items-start gap-0.5 group/name"
                       >
                         <span className="text-sm font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                        {med.isRefrigerated && (
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                            <ThermometerSnowflake size={8} />
+                            Refrigerated (2-8°C)
+                          </div>
+                        )}
                         {med.generic && (
                           <span className="text-[10px] italic text-[#141414]/40 leading-tight group-hover/name:text-[#F27D26]/60 transition-colors">
                             {med.generic}
@@ -1649,6 +1697,19 @@ export default function AdminDashboard() {
               value={form.generic}
               onChange={e => setForm({...form, generic: e.target.value})}
             />
+            <div className="flex items-center gap-3 p-3 bg-white border rounded-xl">
+               <input 
+                 type="checkbox" 
+                 id="isRefrigeratedMobile"
+                 checked={form.isRefrigerated}
+                 onChange={e => setForm({...form, isRefrigerated: e.target.checked})}
+                 className="w-5 h-5 rounded border-[#141414]/10 text-[#F27D26] focus:ring-[#F27D26]/20"
+               />
+               <label htmlFor="isRefrigeratedMobile" className="text-xs font-bold text-[#141414]/60 flex items-center gap-2">
+                  <ThermometerSnowflake size={16} className="text-blue-500" />
+                  Refrigerated (2-8°C)
+               </label>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex items-center gap-2 bg-white p-2 rounded-xl border">
                 <span className="text-[10px] font-bold text-[#141414]/40">Min:</span>
@@ -1707,9 +1768,15 @@ export default function AdminDashboard() {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => med.to ? setSelectedMedForLinks(med) : startEdit(med)}
-                          className="font-bold text-[#141414] leading-tight text-left hover:text-[#F27D26] transition-colors"
+                          className="font-bold text-[#141414] leading-tight text-left hover:text-[#F27D26] transition-colors flex flex-col items-start gap-1"
                         >
                           {med.itemName}
+                          {med.isRefrigerated && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter">
+                              <ThermometerSnowflake size={8} />
+                              Refrigerated
+                            </span>
+                          )}
                         </button>
                       {isNew && (
                         <span className="px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] rounded text-[8px] font-black uppercase tracking-widest whitespace-nowrap">

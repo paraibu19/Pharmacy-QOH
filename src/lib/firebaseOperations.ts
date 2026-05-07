@@ -185,30 +185,34 @@ export const systemOps = {
     // Reset Firestore Collections
     const collections = ['medications', 'inventory_audits'];
     
-    for (const colName of collections) {
-      const colRef = collection(db, colName);
-      const snapshot = await getDocs(colRef);
-      
-      if (snapshot.empty) continue;
-
-      // Delete in batches of 500 (Firestore limit)
-      let batch = writeBatch(db);
-      let count = 0;
-
-      for (const d of snapshot.docs) {
-        batch.delete(d.ref);
-        count++;
+    try {
+      for (const colName of collections) {
+        const colRef = collection(db, colName);
+        const snapshot = await getDocs(colRef);
         
-        if (count >= 500) {
+        if (snapshot.empty) continue;
+
+        // Delete in batches of 500 (Firestore limit)
+        let batch = writeBatch(db);
+        let count = 0;
+
+        for (const d of snapshot.docs) {
+          batch.delete(d.ref);
+          count++;
+          
+          if (count >= 500) {
+            await batch.commit();
+            batch = writeBatch(db);
+            count = 0;
+          }
+        }
+
+        if (count > 0) {
           await batch.commit();
-          batch = writeBatch(db);
-          count = 0;
         }
       }
-
-      if (count > 0) {
-        await batch.commit();
-      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'system/reset');
     }
   }
 };

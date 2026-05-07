@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check, ArrowRightLeft } from 'lucide-react';
+import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check, ArrowRightLeft, ThermometerSnowflake } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
@@ -70,6 +70,7 @@ export default function GeneralView() {
       id: crypto.randomUUID(),
       itemName: selectedMedicationForReminder.itemName,
       generic: selectedMedicationForReminder.generic,
+      isRefrigerated: selectedMedicationForReminder.isRefrigerated || false,
       frequency: reminderFrequency,
       intervalHours: reminderIntervalHours,
       durationValue: reminderDurationValue,
@@ -107,14 +108,23 @@ export default function GeneralView() {
     while (isBefore(current, untilDate) && safetyCounter < 365) {
       safetyCounter++;
       const eventUid = `med-rem-${reminder.id}-${current.getTime()}@medreminder.app`;
+      
+      // Clean up storage instructions for ICS (no markdown)
+      const cleanStorageInfo = t.storageInstructions.replace(/\*\*/g, '');
+      const description = `Medication Reminder: ${reminder.itemName}${reminder.generic ? ' (' + reminder.generic + ')' : ''}${reminder.isRefrigerated ? '\n\n' + cleanStorageInfo : ''}`;
+      
       occurrences.push({
         uid: eventUid,
         title: `Reminder: ${reminder.itemName}`,
-        description: `Medication Reminder: ${reminder.itemName}${reminder.generic ? ' (' + reminder.generic + ')' : ''}`,
+        description: description,
         start: [current.getFullYear(), current.getMonth() + 1, current.getDate(), current.getHours(), current.getMinutes()],
         duration: { minutes: 15 },
         categories: ['Medication', 'Health'],
-        alarms: [{ action: 'display', description: `Take ${reminder.itemName}`, trigger: { minutes: 0, before: true } }]
+        alarms: [{ 
+          action: 'display', 
+          description: `Take ${reminder.itemName}${reminder.isRefrigerated ? ' - REFRIGERATED' : ''}`, 
+          trigger: { minutes: 0, before: true } 
+        }]
       });
 
       if (reminder.frequency === 'daily') current = addDays(current, 1);
@@ -132,15 +142,27 @@ export default function GeneralView() {
 
     const { error, value } = ics.createEvents(occurrences);
     if (!error && value) {
+      // Inject METHOD:PUBLISH and calendar name for better app compatibility
       let modified = value;
-      const calTitle = reminder.itemName.replace(/[^\w\s]/gi, '');
+      const calTitle = (reminder.itemName + ' Schedule').replace(/[^\w\s]/gi, '');
+      
       if (!modified.includes('METHOD:PUBLISH')) {
-        modified = modified.replace('BEGIN:VCALENDAR', 'BEGIN:VCALENDAR\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:' + calTitle + ' Schedule\r\nX-WR-TIMEZONE:UTC');
+        modified = modified.replace(
+          'BEGIN:VCALENDAR', 
+          `BEGIN:VCALENDAR\r\nMETHOD:PUBLISH\r\nX-WR-CALNAME:${calTitle}\r\nX-WR-TIMEZONE:UTC`
+        );
       }
-      modified = modified.replace(/BEGIN:VEVENT([\s\S]*?)SUMMARY:(.*)([\s\S]*?)END:VEVENT/g, (match, p1, summary, p2) => {
-        const cleanP1 = p1.replace(/BEGIN:VALARM[\s\S]*?END:VALARM/g, '');
-        const cleanP2 = p2.replace(/BEGIN:VALARM[\s\S]*?END:VALARM/g, '');
-        return 'BEGIN:VEVENT' + cleanP1 + 'SUMMARY:' + summary + cleanP2 + 'BEGIN:VALARM\r\nTRIGGER:PT0M\r\nACTION:DISPLAY\r\nDESCRIPTION:Reminder\r\nEND:VALARM\r\nEND:VEVENT';
+
+      // Ensure VALARM blocks have specific properties that some mobile calendars require
+      // We do a safer replacement that doesn't risk stripping DESCRIPTION
+      modified = modified.replace(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/g, (vevent) => {
+        // If it already has a VALARM, we'll refine it, otherwise the library adds one
+        if (vevent.includes('BEGIN:VALARM')) {
+          return vevent.replace(/BEGIN:VALARM[\s\S]*?END:VALARM/g, (valarm) => {
+            return `BEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:Medication Reminder\r\nTRIGGER:PT0M\r\nEND:VALARM`;
+          });
+        }
+        return vevent;
       });
 
       const blob = new Blob([modified], { type: 'text/calendar;charset=utf-8' });
@@ -340,7 +362,12 @@ export default function GeneralView() {
                         className={`w-full px-4 py-3 ${isRtl ? 'text-right' : 'text-left'} hover:bg-[#141414]/5 flex items-center justify-between transition-colors border-b border-[#141414]/5 last:border-0`}
                       >
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-[#141414]">{s.itemName}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-[#141414]">{s.itemName}</span>
+                            {s.isRefrigerated && (
+                              <ThermometerSnowflake size={10} className="text-blue-500" />
+                            )}
+                          </div>
                           {s.generic && <span className="text-[10px] text-[#141414]/40">{s.generic}</span>}
                         </div>
                         <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.qoh > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
@@ -448,6 +475,12 @@ export default function GeneralView() {
                         onClick={() => setSelectedMedicationForReminder(med)}
                       >
                         <span className="text-sm font-bold text-[#141414] group-hover:text-[#F27D26] transition-colors">{med.itemName}</span>
+                        {med.isRefrigerated && (
+                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                            <ThermometerSnowflake size={8} />
+                            {t.refrigerated}
+                          </div>
+                        )}
                         {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
                       </div>
                     </div>
@@ -497,6 +530,12 @@ export default function GeneralView() {
                   >
                     {med.itemName}
                   </h3>
+                  {med.isRefrigerated && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter">
+                      <ThermometerSnowflake size={8} />
+                      Ref
+                    </span>
+                  )}
                   {med.to && (
                     <button 
                       onClick={() => setSelectedMedForLinks(med)}
@@ -570,6 +609,21 @@ export default function GeneralView() {
 
               {/* Modal Body */}
               <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+                {/* Refrigerated Warning */}
+                {selectedMedicationForReminder.isRefrigerated && (
+                  <section className="p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 bg-blue-500 rounded-lg text-white">
+                      <ThermometerSnowflake size={16} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-blue-600">Refrigeration Required</span>
+                      <p className="text-xs font-bold text-blue-800 leading-normal">
+                        {t.storageInstructions.replace(/\*\*/g, '')}
+                      </p>
+                    </div>
+                  </section>
+                )}
+
                 {/* 1. Frequency Selection */}
                 <section className="space-y-3">
                   <div className="flex items-center gap-2 text-[#141414]/40">
@@ -762,17 +816,31 @@ export default function GeneralView() {
                 ) : (
                   savedReminders.map((r) => (
                     <div key={r.id} className="p-4 bg-[#141414]/[0.02] border border-[#141414]/5 rounded-2xl space-y-4">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="font-bold text-sm text-[#141414]">{r.itemName}</h4>
-                          {r.generic && <p className="text-[10px] text-[#141414]/40 italic">{r.generic}</p>}
+                      <div className="flex flex-col gap-2">
+                        <div className="flex justify-between items-start">
+                          <div className="flex flex-col gap-0.5">
+                            <h4 className="font-bold text-sm text-[#141414]">{r.itemName}</h4>
+                            {r.generic && <p className="text-[10px] text-[#141414]/40 italic">{r.generic}</p>}
+                            {r.isRefrigerated && (
+                              <div className="flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter w-fit">
+                                <ThermometerSnowflake size={8} />
+                                Refrigerated (2-8°C)
+                              </div>
+                            )}
+                          </div>
+                          <button 
+                            onClick={() => handleDeleteReminder(r.id)}
+                            className="p-2 hover:bg-red-50 text-red-400 rounded-lg transition-colors"
+                          >
+                            <XIcon size={16} />
+                          </button>
                         </div>
-                        <button 
-                          onClick={() => handleDeleteReminder(r.id)}
-                          className="p-2 hover:bg-red-50 text-red-400 rounded-lg transition-colors"
-                        >
-                          <XIcon size={16} />
-                        </button>
+
+                        {r.isRefrigerated && (
+                          <div className="p-3 bg-blue-50/50 border border-blue-100/50 rounded-xl text-[9px] font-bold text-blue-700 leading-tight">
+                            {t.storageInstructions}
+                          </div>
+                        )}
                       </div>
                       
                       <div className="flex flex-wrap gap-2">

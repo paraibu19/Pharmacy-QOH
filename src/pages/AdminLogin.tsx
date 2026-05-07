@@ -31,9 +31,13 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
       if (res.ok) {
         if (auth) {
           // Sign in anonymously to Firebase to allow database writes
-          await signInAnonymously(auth).catch(err => {
-             console.warn('Anonymous sign-in failed (ensure it is enabled in Firebase Console):', err);
-          });
+          try {
+            await signInAnonymously(auth);
+          } catch (err) {
+            console.warn('Anonymous sign-in failed (ensure it is enabled in Firebase Console):', err);
+            // We don't block access to the dashboard if the backend said OK, 
+            // but we'll likely hit permission errors later if writes are needed.
+          }
         }
         onLogin();
         navigate('/admin/dashboard');
