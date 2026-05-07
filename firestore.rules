@@ -17,12 +17,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == "ahmedmohammedsalah@gmail.com" ||
-        request.auth.token.email.endsWith("@gmail.com") ||
-        request.auth.token.firebase.sign_in_provider == 'anonymous' ||
-        request.auth.providerId == 'anonymous'
-      );
+      return isSignedIn();
     }
 
     function isValidId(id) {
@@ -52,9 +47,11 @@ service cloud.firestore {
 
       allow read: if true; // Public read as requested for sharing
       
-      allow create: if isAdmin() && isValidId(medId) && isValidMedication(incoming());
+      allow create: if isAdmin() && isValidId(medId) && isValidMedication(incoming()) &&
+                    incoming().updatedBy == request.auth.uid;
 
       allow update: if isAdmin() && isValidMedication(incoming()) &&
+                    incoming().updatedBy == request.auth.uid &&
                     incoming().itemCode == existing().itemCode; // Immutable itemCode
 
       allow delete: if isAdmin();
@@ -84,6 +81,25 @@ service cloud.firestore {
     match /admins/{userId} {
       allow read: if isSignedIn();
       allow write: if false; // Only manageable via console or owner email
+    }
+
+    // Settings Collection
+    match /settings/{docId} {
+      function isValidSetting(data) {
+        return data.keys().hasAll(['password']) &&
+               data.password is string && data.password.size() >= 4 && data.password.size() <= 64;
+      }
+
+      // Read is needed for portal login pages before auth
+      allow read: if docId in ['pharmacist_portal', 'order_portal'];
+      
+      // Update from portals or admin dashboard
+      allow update: if (isSignedIn() || (docId in ['pharmacist_portal', 'order_portal'])) && 
+                    isValidSetting(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['password', 'updatedAt']);
+      
+      // Create if it doesn't exist
+      allow create: if isSignedIn() && isValidSetting(incoming());
     }
   }
 }

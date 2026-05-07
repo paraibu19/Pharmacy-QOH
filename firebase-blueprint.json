@@ -33,6 +33,16 @@
         "auditedBy": { "type": "string" }
       },
       "required": ["itemCode", "locationId", "physicalCount", "auditedAt"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "System settings and portal passwords",
+      "type": "object",
+      "properties": {
+        "password": { "type": "string", "description": "Access password for the portal" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["password"]
     }
   },
   "firestore": {
@@ -43,6 +53,10 @@
     "inventory_audits": {
       "schema": "InventoryAudit",
       "description": "Log of periodic physical inventory checks"
+    },
+    "settings": {
+      "schema": "Setting",
+      "description": "Portal passwords and system configuration"
     }
   }
 }

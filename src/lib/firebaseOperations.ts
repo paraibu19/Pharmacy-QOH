@@ -1,6 +1,6 @@
 import { 
   collection, doc, addDoc, updateDoc, deleteDoc, 
-  serverTimestamp, writeBatch, query, where, getDocs 
+  serverTimestamp, writeBatch, query, where, getDocs, getDoc 
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { Medication, PharmacyLocation } from '../types';
@@ -70,15 +70,6 @@ export const medicationOps = {
     }
 
     if (meds.length === 0) return;
-
-    // Ensure we have a valid auth session before proceeding
-    if (!auth?.currentUser) {
-      // Small wait to see if it's just a sync delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      if (!auth?.currentUser) {
-        throw new Error("You must be signed in to perform bulk operations. Please refresh and log in again.");
-      }
-    }
     
     // Group meds by locationId
     const medsByLocation = meds.reduce((acc, med) => {
@@ -229,18 +220,23 @@ export const technicianAuthOps = {
     
     try {
       const docRef = doc(db, 'settings', `${portal}_portal`);
-      const snapshot = await getDocs(query(collection(db, 'settings'), where('__name__', '==', `${portal}_portal`)));
+      const docSnap = await getDoc(docRef);
       
-      if (snapshot.empty) {
+      if (!docSnap.exists()) {
         // Initialize with default if not exists
         try {
-          await writeBatch(db).set(docRef, { password: defaultPass }).commit();
+          await updateDoc(docRef, { password: defaultPass, updatedAt: serverTimestamp() }).catch(async (e) => {
+             // If update fails because it doesn't exist, try set
+             const batch = writeBatch(db);
+             batch.set(docRef, { password: defaultPass, updatedAt: serverTimestamp() });
+             await batch.commit();
+          });
         } catch (e) {
           console.warn(`Could not initialize ${portal} password in Firestore, using default.`);
         }
         return defaultPass;
       }
-      return snapshot.docs[0].data().password;
+      return docSnap.data().password;
     } catch (error) {
       console.error(`Error getting ${portal} password:`, error);
       return defaultPass;
