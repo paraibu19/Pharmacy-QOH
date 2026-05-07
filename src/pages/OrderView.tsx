@@ -13,6 +13,8 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
+import { auth } from '../lib/firebase';
+import { signOut } from 'firebase/auth';
 import { formatNumber } from '../lib/formatters';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 
@@ -20,7 +22,9 @@ type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQ
 type SortOrder = 'asc' | 'desc';
 
 export default function OrderView() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('admin_session') === 'true';
+  });
   const [password, setPassword] = useState('');
   const [persistedPassword, setPersistedPassword] = useState('pharmacist123');
   const [showPassword, setShowPassword] = useState(false);
@@ -67,6 +71,13 @@ export default function OrderView() {
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
+
+  useEffect(() => {
+    const isAdmin = localStorage.getItem('admin_session') === 'true';
+    if (isAdmin) {
+      setIsAuthenticated(true);
+    }
+  }, []);
 
   React.useEffect(() => {
     technicianAuthOps.getPassword('order').then(setPersistedPassword);
@@ -464,7 +475,13 @@ export default function OrderView() {
         
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <button 
-            onClick={() => setIsAuthenticated(false)}
+            onClick={() => {
+              setIsAuthenticated(false);
+              localStorage.removeItem('admin_session');
+              if (auth) {
+                signOut(auth).catch(() => {});
+              }
+            }}
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-red-100 rounded-full text-[10px] font-bold uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all shadow-sm"
           >
             <LogOut className="w-3 h-3" />

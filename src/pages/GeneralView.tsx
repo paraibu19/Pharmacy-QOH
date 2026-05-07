@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { translations, LANGUAGES, Language, TranslationStrings } from '../lib/translations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import * as ics from 'ics';
+import { db } from '../lib/firebase';
 
 export default function GeneralView() {
   const navigate = useNavigate();

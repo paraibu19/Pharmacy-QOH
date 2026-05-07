@@ -14,13 +14,17 @@ import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { formatNumber } from '../lib/formatters';
 import { technicianAuthOps } from '../lib/firebaseOperations';
+import { auth } from '../lib/firebase';
+import { signOut } from 'firebase/auth';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3';
 type SortOrder = 'asc' | 'desc';
 
 export default function UserHome() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('admin_session') === 'true';
+  });
   const [password, setPassword] = useState('');
   const [persistedPassword, setPersistedPassword] = useState('pharmacist123');
   const [authError, setAuthError] = useState('');
@@ -68,6 +72,13 @@ export default function UserHome() {
     const timer = setTimeout(() => setShowSyncPulse(false), 2000);
     return () => clearTimeout(timer);
   }, [lastSynced]);
+
+  useEffect(() => {
+    const isAdmin = localStorage.getItem('admin_session') === 'true';
+    if (isAdmin) {
+      setIsAuthenticated(true);
+    }
+  }, []);
 
   useEffect(() => {
     technicianAuthOps.getPassword('pharmacist')
@@ -417,7 +428,13 @@ export default function UserHome() {
           
           <div className="flex flex-wrap gap-2 w-full md:w-auto">
             <button 
-              onClick={() => setIsAuthenticated(false)}
+              onClick={() => {
+                setIsAuthenticated(false);
+                localStorage.removeItem('admin_session');
+                if (auth) {
+                  signOut(auth).catch(() => {});
+                }
+              }}
               className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-red-100 rounded-full text-[10px] font-bold uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all shadow-sm"
             >
               <LogOut className="w-3 h-3" />

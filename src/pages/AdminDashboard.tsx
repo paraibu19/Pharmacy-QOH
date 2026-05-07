@@ -3,7 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
-  Camera, Image as ImageIcon, CheckCircle2
+  Camera, Image as ImageIcon, CheckCircle2, Users, ShoppingCart, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -798,22 +798,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6 md:space-y-8 pb-20 px-4 md:px-0">
-      {!isFirebaseConnected && (
-        <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 shadow-sm">
-          <AlertCircle className="text-red-500 w-5 h-5 mt-0.5 flex-shrink-0" />
-          <div className="flex-1 space-y-1">
-            <p className="text-sm font-bold text-red-800">Critical: Firebase Setup Incomplete</p>
-            <p className="text-[10px] text-red-700/70 leading-relaxed font-medium">
-              You are running in <span className="font-bold underline">Offline Mode</span>. Data and photos you upload to the shared link <span className="text-red-900 font-bold italic">will be PERMANENTLY LOST</span> whenever the browser reloads or the server restarts.
-            </p>
-            <div className="pt-2">
-              <p className="text-[9px] font-bold text-red-800 uppercase tracking-widest">How to fix:</p>
-              <p className="text-[10px] text-red-700/60 leading-tight mt-1">Open the <span className="font-bold">Firebase</span> tab in the AI Studio side panel, click "Setup Firebase", and accept the terms to enable permanent cloud storage.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {skippedUploads.length > 0 && (
         <div className="bg-red-50 border border-red-200 p-4 rounded-2xl animate-in fade-in zoom-in-95">
           <div className="flex items-center justify-between mb-2">
@@ -979,7 +963,7 @@ export default function AdminDashboard() {
       {/* Expiration Alerts Widget */}
       <div className="flex flex-col gap-6 md:gap-8">
         {/* Top Horizontal Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Inventory Stats Mini Card */}
           <div className="bg-[#141414] text-white p-5 rounded-3xl shadow-xl flex flex-col justify-between border border-white/5">
             <div className="flex justify-between items-start mb-4">
@@ -1005,6 +989,37 @@ export default function AdminDashboard() {
                   {formatNumber(medications.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length)}
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Access Portals Card */}
+          <div className="bg-white p-5 rounded-3xl border border-[#141414]/10 shadow-sm flex flex-col justify-between">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+                <Sparkles size={18} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#141414]">Logged-in Portals</h3>
+                <p className="text-[9px] text-[#141414]/40 font-bold uppercase tracking-tight">Admin Override Active</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Link 
+                to="/pharmacist"
+                className="flex items-center justify-center gap-2 py-2.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-xl text-[10px] font-bold transition-all"
+              >
+                <Users size={12} className="text-[#F27D26]" />
+                Pharmacist
+                <ExternalLink size={10} className="opacity-30" />
+              </Link>
+              <Link 
+                to="/order"
+                className="flex items-center justify-center gap-2 py-2.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-xl text-[10px] font-bold transition-all"
+              >
+                <ShoppingCart size={12} className="text-[#F27D26]" />
+                Order
+                <ExternalLink size={10} className="opacity-30" />
+              </Link>
             </div>
           </div>
 

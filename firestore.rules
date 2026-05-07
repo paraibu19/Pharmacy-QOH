@@ -1,49 +1,92 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // 0. Global Safety Net
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helper functions
+    // --- Helpers ---
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn();
+    }
+
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    function isValidMedication(data) {
-      return data.itemCode is string && data.itemCode.size() <= 100 &&
-             data.itemName is string && data.itemName.size() <= 200 &&
-             data.qoh is number &&
-             data.locationId in ['adult-emergency', 'pediatric', 'mesaieed-opd'];
+    function incoming() {
+      return request.resource.data;
     }
 
-    // Medications Collection
-    match /medications/{medicationId} {
-      // Users can view medications (even without login as per request)
-      // Actually, standard users "without login" can view.
-      allow read: if true; 
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Collections ---
+
+    // Medication Collection
+    match /medications/{medId} {
+      function isValidMedication(data) {
+        return data.keys().hasAll(['itemCode', 'itemName', 'qoh', 'locationId']) &&
+               data.itemCode is string && data.itemCode.size() <= 100 &&
+               data.itemName is string && data.itemName.size() <= 200 &&
+               data.qoh is number &&
+               data.locationId in ['adult-emergency', 'pediatric', 'mesaieed-opd'] &&
+               (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000000)); // Allow large for base64
+      }
+
+      allow read: if true; // Public read as requested for sharing
       
-      // Admin only writes
-      allow create: if isSignedIn() && isValidMedication(request.resource.data) &&
-                      request.resource.data.addedAt == request.time;
-                      
-      allow update: if isSignedIn() && isValidMedication(request.resource.data) &&
-                      request.resource.data.itemCode == resource.data.itemCode &&
-                      request.resource.data.addedAt == resource.data.addedAt &&
-                      request.resource.data.lastUpdatedAt == request.time;
-                      
-      allow delete: if isSignedIn();
+      allow create: if isAdmin() && isValidId(medId) && isValidMedication(incoming()) &&
+                    incoming().updatedBy == request.auth.uid;
+
+      allow update: if isAdmin() && isValidMedication(incoming()) &&
+                    incoming().updatedBy == request.auth.uid &&
+                    incoming().itemCode == existing().itemCode; // Immutable itemCode
+
+      allow delete: if isAdmin();
     }
 
-    // Inventory Audits
+    // Inventory Audit Collection
     match /inventory_audits/{auditId} {
+      function isValidAudit(data) {
+        return data.keys().hasAll(['itemCode', 'locationId', 'physicalCount', 'auditedAt']) &&
+               data.itemCode is string && data.itemCode.size() <= 100 &&
+               data.locationId is string &&
+               data.physicalCount is number &&
+               data.auditedAt is timestamp;
+      }
+
+      allow read: if isAdmin();
+      
+      allow create: if isAdmin() && isValidId(auditId) && isValidAudit(incoming()) &&
+                    incoming().auditedBy == request.auth.uid &&
+                    exists(/databases/$(database)/documents/medications/$(incoming().itemCode)); // Relational check
+
+      // Audits are usually immutable logs
+      allow update, delete: if false;
+    }
+
+    // Admins Collection (Only if needed to add more admins manually)
+    match /admins/{userId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.auditedAt == request.time;
+      allow write: if false; // Only manageable via console or owner email
+    }
+
+    // Settings Collection (Passwords for portals)
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
   }
 }

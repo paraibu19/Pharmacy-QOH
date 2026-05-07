@@ -1,8 +1,9 @@
 import { 
   collection, doc, addDoc, updateDoc, deleteDoc, 
-  serverTimestamp, writeBatch, query, where, getDocs 
+  serverTimestamp, writeBatch, query, where, getDocs, getDoc, setDoc
 } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { signInAnonymously } from 'firebase/auth';
+import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from './sharedDb';
 
@@ -29,6 +30,7 @@ export const medicationOps = {
         ...med,
         addedAt: serverTimestamp(),
         lastUpdatedAt: serverTimestamp(),
+        updatedBy: auth?.currentUser?.uid || 'system',
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
@@ -44,6 +46,7 @@ export const medicationOps = {
       return await updateDoc(doc(db, 'medications', id), {
         ...data,
         lastUpdatedAt: serverTimestamp(),
+        updatedBy: auth?.currentUser?.uid || 'system',
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
@@ -107,6 +110,7 @@ export const medicationOps = {
             batch.update(medRef, {
               ...m,
               lastUpdatedAt: serverTimestamp(),
+              updatedBy: auth?.currentUser?.uid || 'system',
             });
           } else {
             // Create - Genuinely new item, will show "NEW" for 10 days
@@ -115,6 +119,7 @@ export const medicationOps = {
               ...m,
               addedAt: serverTimestamp(),
               lastUpdatedAt: serverTimestamp(),
+              updatedBy: auth?.currentUser?.uid || 'system',
             });
           }
         });
@@ -161,7 +166,7 @@ export const auditOps = {
       recordedQoh,
       variance: physicalCount - recordedQoh,
       auditedAt: serverTimestamp(),
-      auditedBy,
+      auditedBy: auth?.currentUser?.uid || auditedBy,
     });
 
     try {
@@ -215,19 +220,25 @@ export const technicianAuthOps = {
     if (!db) return defaultPass;
     
     try {
+      // Ensure we are at least anonymously signed in for metrics/logging if possible, 
+      // though rules now allow public read for settings.
+      if (auth && !auth.currentUser) {
+        await signInAnonymously(auth).catch(() => {});
+      }
+
       const docRef = doc(db, 'settings', `${portal}_portal`);
-      const snapshot = await getDocs(query(collection(db, 'settings'), where('__name__', '==', `${portal}_portal`)));
+      const snapshot = await getDoc(docRef);
       
-      if (snapshot.empty) {
+      if (!snapshot.exists()) {
         // Initialize with default if not exists
         try {
-          await writeBatch(db).set(docRef, { password: defaultPass }).commit();
+          await setDoc(docRef, { password: defaultPass, updatedAt: serverTimestamp() });
         } catch (e) {
           console.warn(`Could not initialize ${portal} password in Firestore, using default.`);
         }
         return defaultPass;
       }
-      return snapshot.docs[0].data().password;
+      return snapshot.data().password;
     } catch (error) {
       console.error(`Error getting ${portal} password:`, error);
       return defaultPass;

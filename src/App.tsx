@@ -7,31 +7,54 @@ import OrderView from './pages/OrderView';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminInventory from './pages/AdminInventory';
-
-// Simple auth simulation until Firebase is ready
-const useAuth = (key: string) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  
-  useEffect(() => {
-    const loggedIn = localStorage.getItem(key) === 'true';
-    setIsAuthenticated(loggedIn);
-  }, [key]);
-
-  const login = () => {
-    localStorage.setItem(key, 'true');
-    setIsAuthenticated(true);
-  };
-
-  const logout = () => {
-    localStorage.removeItem(key);
-    setIsAuthenticated(false);
-  };
-
-  return { isAuthenticated, login, logout };
-};
+import { auth } from './lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 export default function App() {
-  const { isAuthenticated: isAdmin, login: adminLogin, logout: adminLogout } = useAuth('admin_session');
+  const [isAdmin, setIsAdmin] = useState(() => {
+    return localStorage.getItem('admin_session') === 'true';
+  });
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    if (!auth) {
+      setAuthLoading(false);
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      // If signed in via Google, also set isAdmin to true automatically
+      const isGoogleAdmin = !!user && (user.email === 'ahmedmohammedsalah@gmail.com' || user.email?.endsWith('@gmail.com'));
+      if (isGoogleAdmin) {
+        setIsAdmin(true);
+        localStorage.setItem('admin_session', 'true');
+      }
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const adminLogout = async () => {
+    if (auth) {
+      await signOut(auth).catch(() => {});
+    }
+    localStorage.removeItem('admin_session');
+    setIsAdmin(false);
+  };
+
+  const adminLogin = () => {
+    localStorage.setItem('admin_session', 'true');
+    setIsAdmin(true);
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="w-12 h-12 border-4 border-[#141414]/5 border-t-[#F27D26] rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <BrowserRouter>
