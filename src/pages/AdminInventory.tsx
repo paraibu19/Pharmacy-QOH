@@ -362,15 +362,23 @@ export default function AdminInventory() {
           </button>
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30" />
+        <div className="relative group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30 group-focus-within:text-[#F27D26] transition-colors" />
           <input
             type="text"
             placeholder="Search by code or name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-11 pr-4 py-3 bg-[#141414]/[0.03] border-none rounded-xl focus:ring-2 focus:ring-[#141414]/5 transition-all text-sm"
+            className="w-full pl-11 pr-10 py-3 bg-[#141414]/[0.03] border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-[#141414]/5 rounded-lg text-[#141414]/40 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         {showFilters && (
@@ -501,8 +509,8 @@ export default function AdminInventory() {
                         <span className="text-[10px] font-mono text-[#141414]/40 mb-0.5">{med.itemCode}</span>
                         <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
                         {med.isRefrigerated && (
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100/50 text-blue-700 rounded-md text-[9px] font-black uppercase tracking-tighter w-fit border border-blue-200/50 shadow-sm mt-0.5">
-                            <ThermometerSnowflake size={10} className="text-blue-500" />
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
+                            <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
                             REFRIGERATED
                           </div>
                         )}

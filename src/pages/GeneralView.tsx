@@ -347,8 +347,16 @@ export default function GeneralView() {
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={`w-full ${isRtl ? 'pr-11 pl-4' : 'pl-11 pr-4'} py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all placeholder:text-[#141414]/30 text-sm font-medium`}
+                className={`w-full ${isRtl ? 'pr-11 pl-10' : 'pl-11 pr-10'} py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all placeholder:text-[#141414]/30 text-sm font-medium`}
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className={`absolute ${isRtl ? 'left-3' : 'right-3'} top-1/2 -translate-y-1/2 p-1.5 hover:bg-[#141414]/5 rounded-lg text-[#141414]/40 transition-colors z-10`}
+                >
+                  <XIcon size={16} />
+                </button>
+              )}
 
               <AnimatePresence>
                 {showSuggestions && suggestions.length > 0 && (
@@ -482,8 +490,8 @@ export default function GeneralView() {
                       >
                         <span className="text-sm font-bold text-[#141414] group-hover:text-[#F27D26] transition-colors">{med.itemName}</span>
                         {med.isRefrigerated && (
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100/50 text-blue-700 rounded-md text-[9px] font-black uppercase tracking-tighter w-fit border border-blue-200/50 shadow-sm mt-0.5">
-                            <ThermometerSnowflake size={10} className="text-blue-500" />
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
+                            <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
                             {t.refrigerated}
                           </div>
                         )}
@@ -537,8 +545,8 @@ export default function GeneralView() {
                     {med.itemName}
                   </h3>
                   {med.isRefrigerated && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 text-white rounded-full text-[8px] font-black uppercase tracking-tighter shadow-sm">
-                      <ThermometerSnowflake size={8} />
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 text-white rounded-full text-[9px] font-black uppercase tracking-tight shadow-md border border-white/20">
+                      <ThermometerSnowflake size={10} />
                       REF
                     </span>
                   )}

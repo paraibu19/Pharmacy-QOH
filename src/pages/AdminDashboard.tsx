@@ -498,23 +498,45 @@ export default function AdminDashboard() {
             const generic = String(getRowValue(row, ['generic', 'Generic Name', 'GenericName', 'Generic', 'GenericName']) || '');
             const to = String(getRowValue(row, ['to', 'Linked', 'Cross Reference', 'BrandItem', 'GenericItem']) || '');
             
-            const refridgeRaw = getRowValue(row, ['isRefrigerated', 'Refridge', 'Refrig', 'Fridge', 'Cold', 'Refrigerator', 'Temp', 'Temperature', 'Storage']);
-            const isRefrigerated = refridgeRaw === true || 
-                                  String(refridgeRaw || '').toLowerCase().includes('yes') ||
-                                  String(refridgeRaw || '').toLowerCase().includes('keep') ||
-                                  String(refridgeRaw || '').toLowerCase().includes('refrig') ||
-                                  String(refridgeRaw || '').toLowerCase().includes('*') ||
-                                  String(refridgeRaw || '').toLowerCase().includes('2-8') ||
-                                  itemName.toLowerCase().includes('refridge') ||
-                                  itemName.toLowerCase().includes('refrig') ||
-                                  itemName.toLowerCase().includes('fridge') ||
-                                  itemName.toLowerCase().includes('2-8') ||
-                                  itemName.toLowerCase().includes('(ref)') ||
-                                  itemName.toLowerCase().includes('cold') ||
-                                  generic.toLowerCase().includes('refridge') ||
-                                  generic.toLowerCase().includes('fridge') ||
-                                  generic.toLowerCase().includes('2-8') ||
-                                  generic.toLowerCase().includes('cold');
+            // Comprehensive Refrigerated Detection
+            let isRefrigerated = false;
+            
+            // 1. Check specific columns first
+            const refridgeRaw = getRowValue(row, ['isRefrigerated', 'Refridge', 'Refrig', 'Fridge', 'Cold', 'Refrigerator', 'Temp', 'Temperature', 'Storage', 'Notes', 'Instructions', 'Remarks', 'Comment']);
+            if (refridgeRaw === true || 
+                (typeof refridgeRaw === 'string' && (
+                  refridgeRaw.toLowerCase().includes('yes') || 
+                  refridgeRaw.toLowerCase().includes('keep') || 
+                  refridgeRaw.toLowerCase().includes('refrig') ||
+                  refridgeRaw.toLowerCase().includes('fridge') ||
+                  refridgeRaw.toLowerCase().includes('cold') ||
+                  refridgeRaw.toLowerCase().includes('2-8') ||
+                  refridgeRaw.toLowerCase().includes('*')
+                ))
+            ) {
+              isRefrigerated = true;
+            }
+            
+            // 2. Check Item Name, Generic, and Linked fields
+            if (!isRefrigerated) {
+              const combinedText = `${itemName} ${generic} ${to}`.toLowerCase();
+              if (combinedText.includes('refrig') || 
+                  combinedText.includes('fridge') || 
+                  combinedText.includes('2-8') || 
+                  combinedText.includes('(ref)') || 
+                  combinedText.includes('cold') || 
+                  combinedText.includes('*')) {
+                isRefrigerated = true;
+              }
+            }
+
+            // 3. Last resort: Scan EVERY single value in the row if still not identified as refrigerated
+            if (!isRefrigerated) {
+              isRefrigerated = Object.values(row).some(val => {
+                const s = String(val || '').toLowerCase();
+                return s.includes('refrig') || s.includes('2-8') || s.includes('fridge') || (s.includes('cold') && !s.includes('cold flu'));
+              });
+            }
             
             if (!itemName) return null;
 
@@ -701,7 +723,12 @@ export default function AdminDashboard() {
           expiration1: parts[6]?.trim() || '',
           expiration2: parts[7]?.trim() || '',
           expiration3: parts[8]?.trim() || '',
-          isRefrigerated: parts[9]?.trim()?.toLowerCase() === 'yes' || parts[9]?.trim()?.toLowerCase() === 'true',
+          isRefrigerated: 
+            row.toLowerCase().includes('refrig') || 
+            row.toLowerCase().includes('fridge') || 
+            row.toLowerCase().includes('cold') || 
+            row.toLowerCase().includes('2-8') ||
+            (parts[9]?.trim()?.toLowerCase() === 'yes' || parts[9]?.trim()?.toLowerCase() === 'true'),
           locationId: selectedLocation,
         };
       }).filter(m => m !== null) as any[];
@@ -961,6 +988,28 @@ export default function AdminDashboard() {
           >
             <Plus className="w-4 h-4" />
             Add New
+          </button>
+        </div>
+      </div>
+
+      {/* Danger Zone */}
+      <div className="p-6 bg-red-50/30 border border-red-100 rounded-3xl animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-red-600">
+              <AlertCircle size={18} />
+              <h3 className="text-base font-bold uppercase tracking-tight">Danger Zone</h3>
+            </div>
+            <p className="text-xs text-red-600/60 max-w-xl leading-relaxed">
+              Resetting will permanently delete all medications across all locations and clear the entire audit history. This action cannot be undone.
+            </p>
+          </div>
+          <button 
+            onClick={() => setIsResetModalOpen(true)}
+            className="w-full md:w-auto px-5 py-3 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-200 flex items-center justify-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Reset Application Data
           </button>
         </div>
       </div>
@@ -1591,8 +1640,8 @@ export default function AdminDashboard() {
                       >
                         <span className="text-sm font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
                         {med.isRefrigerated && (
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100/50 text-blue-700 rounded-md text-[9px] font-black uppercase tracking-tighter w-fit border border-blue-200/50 shadow-sm mt-0.5">
-                            <ThermometerSnowflake size={10} className="text-blue-500" />
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
+                            <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
                             REFRIGERATED
                           </div>
                         )}
@@ -1837,8 +1886,8 @@ export default function AdminDashboard() {
                         >
                           {med.itemName}
                           {med.isRefrigerated && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500 text-white rounded-full text-[8px] font-black uppercase tracking-tighter shadow-sm">
-                              <ThermometerSnowflake size={8} />
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 text-white rounded-full text-[9px] font-black uppercase tracking-tight shadow-md border border-white/20">
+                              <ThermometerSnowflake size={10} />
                               REF
                             </span>
                           )}
@@ -1915,28 +1964,6 @@ export default function AdminDashboard() {
         })}
       </div>
     </div>
-
-      {/* Danger Zone */}
-      <div className="mt-12 p-8 bg-red-50/30 border border-red-100 rounded-3xl">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-red-600">
-              <AlertCircle size={20} />
-              <h3 className="text-lg font-bold uppercase tracking-tight">Danger Zone</h3>
-            </div>
-            <p className="text-sm text-red-600/60 max-w-md">
-              Resetting will permanently delete all medications across all locations and clear the entire audit history. This action cannot be undone.
-            </p>
-          </div>
-          <button 
-            onClick={() => setIsResetModalOpen(true)}
-            className="px-6 py-4 bg-red-600 text-white rounded-2xl text-sm font-bold hover:bg-red-700 transition-all shadow-xl shadow-red-200 flex items-center gap-2"
-          >
-            <RotateCcw className="w-5 h-5" />
-            Reset Application Data
-          </button>
-        </div>
-      </div>
 
       {/* Quantity Correction Window */}
       <AnimatePresence>

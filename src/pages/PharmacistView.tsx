@@ -573,13 +573,15 @@ export default function UserHome() {
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all placeholder:text-[#141414]/30 text-sm font-medium"
+                className="w-full pl-11 pr-10 py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] transition-all placeholder:text-[#141414]/30 text-sm font-medium"
               />
               {searchQuery && (
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-[#141414]/5 rounded text-[10px] font-bold text-[#141414]/40">
-                  <Filter className="w-3 h-3" />
-                  {formatNumber(filteredMeds.length)} Match
-                </div>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-[#141414]/5 rounded-lg text-[#141414]/40 transition-colors z-10"
+                >
+                  <XIcon size={16} />
+                </button>
               )}
 
               <AnimatePresence>
@@ -994,8 +996,8 @@ export default function UserHome() {
                               )}
                             </div>
                             {med.isRefrigerated && (
-                              <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-100/50 text-blue-700 rounded-md text-[9px] font-black uppercase tracking-tighter w-fit border border-blue-200/50 shadow-sm">
-                                <ThermometerSnowflake size={10} className="text-blue-500" />
+                              <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
+                                <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
                                 REFRIGERATED
                               </div>
                             )}
@@ -1076,8 +1078,8 @@ export default function UserHome() {
                             )}
                           </div>
                           {med.isRefrigerated && (
-                            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-blue-500 text-white rounded-full text-[8px] font-black uppercase tracking-tighter shadow-sm w-fit">
-                              <ThermometerSnowflake size={8} />
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-600 text-white rounded-full text-[9px] font-black uppercase tracking-tight shadow-md border border-white/20 w-fit mt-1">
+                              <ThermometerSnowflake size={10} />
                               REF
                             </div>
                           )}
