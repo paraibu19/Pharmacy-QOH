@@ -491,18 +491,30 @@ export default function GeneralView() {
                           <ImageIcon size={18} className="text-[#141414]/10" />
                         </div>
                       )}
-                      <div 
-                        className={`flex flex-col cursor-pointer hover:opacity-70 transition-all ${isRtl ? 'group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`}
-                        onClick={() => setSelectedMedicationForReminder(med)}
-                      >
-                        <span className="text-sm font-bold text-[#141414] group-hover:text-[#F27D26] transition-colors">{med.itemName}</span>
-                        {med.isRefrigerated && (
-                          <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
-                            <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
-                            {t.refrigerated}
-                          </div>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className={`flex flex-col cursor-pointer hover:opacity-70 transition-all ${isRtl ? 'group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`}
+                          onClick={() => setSelectedMedicationForReminder(med)}
+                        >
+                          <span className="text-sm font-bold text-[#141414] group-hover:text-[#F27D26] transition-colors">{med.itemName}</span>
+                          {med.isRefrigerated && (
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
+                              <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
+                              {t.refrigerated}
+                            </div>
+                          )}
+                          {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
+                        </div>
+                        {med.to && (
+                          <button 
+                            onClick={() => setSelectedMedForLinks(med)}
+                            className="p-1 px-2 bg-[#F27D26]/10 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/btn shadow-sm"
+                            title="View Linked Brand/Generic Items"
+                          >
+                            <ArrowRightLeft size={10} className="group-hover/btn:rotate-180 transition-transform duration-500" />
+                            <span className="text-[8px] font-black uppercase tracking-tighter">Linked Info</span>
+                          </button>
                         )}
-                        {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
                       </div>
                     </div>
                   </td>

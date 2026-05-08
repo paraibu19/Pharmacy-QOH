@@ -87,6 +87,7 @@ export default function LinkedItemsModal({ medication, allMedications, onClose }
                     <div className="flex-1 space-y-4">
                       <div className="flex justify-between items-start">
                         <div>
+                          <span className="text-[8px] font-black uppercase text-[#F27D26]/60 block mb-0.5">Brand</span>
                           <h3 className="font-bold text-[#141414] text-base group-hover:text-[#F27D26] transition-colors line-clamp-1">
                             {item.itemName}
                           </h3>
@@ -101,9 +102,12 @@ export default function LinkedItemsModal({ medication, allMedications, onClose }
                               {item.itemCode}
                             </span>
                             {item.generic && (
-                              <span className="text-[10px] italic text-[#141414]/40">
-                                ({item.generic})
-                              </span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[8px] font-black uppercase text-[#141414]/20">Generic:</span>
+                                <span className="text-[10px] italic text-[#141414]/40 font-medium">
+                                  {item.generic}
+                                </span>
+                              </div>
                             )}
                           </div>
                         </div>
