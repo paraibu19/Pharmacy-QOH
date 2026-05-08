@@ -235,6 +235,7 @@ export const systemOps = {
           await batch.commit();
         }
       }
+      await systemOps.syncGlobalMetadata();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'system/reset');
     }

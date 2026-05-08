@@ -19,14 +19,23 @@ export function useSystemMetadata() {
     const metaRef = doc(db, 'system', 'metadata');
     const unsubscribe = onSnapshot(metaRef, (snapshot) => {
       if (snapshot.exists()) {
-        const data = snapshot.data();
+        const data = snapshot.data({ serverTimestamps: 'estimate' });
         if (data.lastDataUpdate) {
-          const timestamp = data.lastDataUpdate.toDate().toISOString();
-          // Sync to local storage if it's newer
-          const localTime = localDb.getLastUpdateTime();
-          if (!localTime || new Date(timestamp) > new Date(localTime)) {
-             localStorage.setItem('last_data_update', timestamp);
-             setLastUpdate(timestamp);
+          try {
+            const dateObj = (data.lastDataUpdate as any).toDate ? data.lastDataUpdate.toDate() : new Date(data.lastDataUpdate);
+            const timestamp = dateObj.toISOString();
+            
+            // For cloud updates, we generally want to reflect them
+            // especially to sync between different browser tabs/sessions
+            const localTime = localDb.getLastUpdateTime();
+            
+            // If it's newer than local or if we don't have local, update it
+            if (!localTime || new Date(timestamp) >= new Date(localTime)) {
+              localStorage.setItem('aw_pharmacy_last_update', timestamp);
+              setLastUpdate(timestamp);
+            }
+          } catch (e) {
+            console.error('Error parsing metadata timestamp:', e);
           }
         }
       }
