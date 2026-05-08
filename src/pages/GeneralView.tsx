@@ -245,7 +245,7 @@ export default function GeneralView() {
               <UploadCloud className="w-3 h-3" />
               <span className="opacity-60 text-[#141414]">Last Update:</span>
               <span className="text-[#F27D26]">
-                {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data'}
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data'}
               </span>
             </div>
             

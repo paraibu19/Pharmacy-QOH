@@ -34,6 +34,7 @@ export const localDb = {
     } as Medication;
     meds.push(newMed);
     this.saveMedications(meds);
+    this.updateLastUpdateTime();
     return newMed;
   },
 
@@ -43,6 +44,7 @@ export const localDb = {
     if (index !== -1) {
       meds[index] = { ...meds[index], ...data, lastUpdatedAt: new Date().toISOString() };
       this.saveMedications(meds);
+      this.updateLastUpdateTime();
     }
   },
 
@@ -50,6 +52,7 @@ export const localDb = {
     const meds = this.getMedications();
     const filtered = meds.filter(m => m.id !== id);
     this.saveMedications(filtered);
+    this.updateLastUpdateTime();
   },
 
   bulkAdd(newMeds: Omit<Medication, 'id'>[]) {

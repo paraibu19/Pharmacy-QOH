@@ -291,7 +291,7 @@ export default function UserHome() {
   const downloadPDF = () => {
     const doc = new jsPDF();
     const locationName = PHARMACY_NAMES[selectedLocation];
-    const displayDate = format(new Date(), "eeee, dd-MM-yyyy, hh:mm a");
+    const displayDate = format(new Date(), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase();
 
     doc.setFontSize(18);
     doc.text(locationName, 14, 15);
@@ -423,7 +423,7 @@ export default function UserHome() {
                   <UploadCloud className="w-3 h-3" />
                   <span className="opacity-60 text-[#141414]">Last Update:</span>
                   <span className="text-[#F27D26]">
-                    {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data'}
+                    {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data'}
                   </span>
                 </div>
               </div>

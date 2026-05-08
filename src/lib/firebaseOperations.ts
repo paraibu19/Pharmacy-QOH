@@ -5,6 +5,7 @@ import {
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from './sharedDb';
+import { localDb } from './localStorageDb';
 
 export const medicationOps = {
   async add(med: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>) {
@@ -25,12 +26,14 @@ export const medicationOps = {
         throw new Error(`Item code ${med.itemCode} already exists in this location.`);
       }
 
-      return await addDoc(collection(db, path), {
+      const result = await addDoc(collection(db, path), {
         ...med,
         addedAt: serverTimestamp(),
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
       });
+      localDb.updateLastUpdateTime();
+      return result;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
     }
@@ -42,11 +45,13 @@ export const medicationOps = {
     }
     const path = `medications/${id}`;
     try {
-      return await updateDoc(doc(db, 'medications', id), {
+      const result = await updateDoc(doc(db, 'medications', id), {
         ...data,
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
       });
+      localDb.updateLastUpdateTime();
+      return result;
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
@@ -58,7 +63,9 @@ export const medicationOps = {
     }
     const path = `medications/${id}`;
     try {
-      return await deleteDoc(doc(db, 'medications', id));
+      const result = await deleteDoc(doc(db, 'medications', id));
+      localDb.updateLastUpdateTime();
+      return result;
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, path);
     }
@@ -125,6 +132,7 @@ export const medicationOps = {
       }
 
       await batch.commit();
+      localDb.updateLastUpdateTime();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'medications/bulk');
     }

@@ -139,7 +139,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
               <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
                 <UploadCloud className="w-3 h-3" />
                 <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
-                {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data Uploaded'}
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data Uploaded'}
               </div>
             </div>
             
@@ -207,7 +207,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 <div className="flex lg:hidden items-center gap-2 px-4 py-2 bg-[#F27D26]/5 rounded-xl text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
                   <UploadCloud className="w-3 h-3" />
                   <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
-                  {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data Uploaded'}
+                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data Uploaded'}
                 </div>
                 
                 <NavLinks />

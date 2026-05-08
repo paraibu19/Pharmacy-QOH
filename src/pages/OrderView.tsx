@@ -327,7 +327,7 @@ export default function OrderView() {
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Location: ${PHARMACY_NAMES[selectedLocation]}`, 14, 30);
-    doc.text(`Generated: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 14, 35);
+    doc.text(`Generated: ${format(new Date(), 'EEEE, dd-MM-yyyy, hh:mm a').toUpperCase()}`, 14, 35);
     doc.text(`Total Items to Order: ${orderItems.length}`, 14, 40);
 
     const headers = [['S.No', 'Item Code', 'Item Name', 'Order Qty', 'Exp 1']];
@@ -467,7 +467,7 @@ export default function OrderView() {
                 <UploadCloud className="w-3 h-3" />
                 <span className="opacity-60 text-[#141414]">Last Update:</span>
                 <span className="text-[#F27D26]">
-                  {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data'}
+                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data'}
                 </span>
               </div>
             </div>
