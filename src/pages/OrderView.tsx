@@ -658,8 +658,16 @@ export default function OrderView() {
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-4 bg-[#141414]/[0.03] border border-transparent rounded-2xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium"
+            className="w-full pl-12 pr-12 py-4 bg-[#141414]/[0.03] border border-transparent rounded-2xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 hover:bg-[#141414]/5 rounded-xl text-[#141414]/40 transition-colors z-10"
+            >
+              <XIcon size={18} />
+            </button>
+          )}
 
           <AnimatePresence>
             {showSuggestions && suggestions.length > 0 && (

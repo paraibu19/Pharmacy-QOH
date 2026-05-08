@@ -59,7 +59,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public General View */}
+        {/* Homepage */}
         <Route path="/" element={
           <Layout>
             <GeneralView />

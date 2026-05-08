@@ -65,7 +65,7 @@ export const LANGUAGES: { id: Language; label: string; dir: 'ltr' | 'rtl' }[] = 
 
 export const translations: Record<Language, TranslationStrings> = {
   en: {
-    title: 'General View',
+    title: 'Homepage',
     description: 'Public availability status of medications at Alwakra Emergency and Mesaieed pharmacies.',
     lastSynced: 'Synced',
     syncing: 'Syncing',
@@ -116,7 +116,7 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'Refrigerated (2-8°C)',
   },
   ar: {
-    title: 'العرض العام',
+    title: 'الصفحة الرئيسية',
     description: 'حالة توفر الأدوية في صيدليات طوارئ الوكرة ومسيعيد.',
     lastSynced: 'تم التحديث',
     syncing: 'جاري التحديث',
@@ -167,7 +167,7 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'مبرّد (2-8 درجة مئوية)',
   },
   hi: {
-    title: 'सामान्य दृश्य',
+    title: 'होमपेज',
     description: 'अल वखरा इमरजेंसी और मेसईद फार्मेसियों में दवाओं की उपलब्धता की स्थिति।',
     lastSynced: 'सिंक किया गया',
     syncing: 'सिंक हो रहा है',
@@ -218,7 +218,7 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'रेफ्रिजरेटेड (2-8°C)',
   },
   ur: {
-    title: 'عمومی منظر',
+    title: 'ہوم پیج',
     description: 'الوکرہ ایمرجنسی اور مسعید فارمیسیوں میں ادویات کی دستیابی کی صورتحال۔',
     lastSynced: 'مطابقت پذیر',
     syncing: 'ہو رہا ہے',
@@ -269,7 +269,7 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'ریفریجریٹڈ (2-8°C)',
   },
   ml: {
-    title: 'പൊതുവായ കാഴ്ച',
+    title: 'ഹോംപേജ്',
     description: 'അൽ വക്ര എമർജൻസി, മെസയീദ് ഫാർമസികളിലെ മരുന്നുകളുടെ ലഭ്യത.',
     lastSynced: 'അവസാനം പുതുക്കിയത്',
     syncing: 'പുതുക്കുന്നു',
@@ -320,7 +320,7 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'റെഫ്രിജറേറ്ററിൽ സൂക്ഷിക്കേണ്ടവ (2-8°C)',
   },
   bn: {
-    title: 'সাধারণ দৃশ্য',
+    title: 'হোমপেজ',
     description: 'আল ওয়াকরা ইমার্জেন্সি এবং মেসাইদ ফার্মাসিতে ওষুধের উপলব্ধতার অবস্থা।',
     lastSynced: 'সিঙ্ক করা হয়েছে',
     syncing: 'সিঙ্ক হচ্ছে',
@@ -371,7 +371,7 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'রেফ্রিজারেটরে রাখতে হবে (2-8°C)',
   },
   tl: {
-    title: 'Pangkalahatang Tanawin',
+    title: 'Homepage',
     description: 'Katayuan ng pagkakaroon ng mga gamot sa Alwakra Emergency at Mesaieed pharmacies.',
     lastSynced: 'Nai-sync na',
     syncing: 'Nag-sync...',

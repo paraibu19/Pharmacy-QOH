@@ -40,7 +40,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
           `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
         }
       >
-        General View
+        Homepage
       </NavLink>
 
       <NavLink 
@@ -103,8 +103,8 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                   <Pill className="w-6 h-6 text-[#F27D26] group-hover:rotate-12 transition-transform" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="font-bold text-lg tracking-tight leading-none">Aw-Pharmacy</span>
-                  <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-[#141414]/30">Inventory System</span>
+                  <span className="font-bold text-lg tracking-tight leading-none text-[#141414]">AW-PharmaStock</span>
+                  <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-[#F27D26]">Pro Edition</span>
                 </div>
               </Link>
               
@@ -236,10 +236,10 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
         <div className="max-w-7xl mx-auto px-4 text-center">
           <Link to="/" className="inline-flex items-center gap-2 group mb-6">
             <Pill className="w-5 h-5 text-[#F27D26]/40" />
-            <span className="font-bold text-sm tracking-tight text-[#141414]/40">Aw-Pharmacy</span>
+            <span className="font-bold text-sm tracking-tight text-[#141414]/40">AW-PharmaStock Pro</span>
           </Link>
           <p className="text-[10px] text-[#141414]/30 uppercase tracking-[0.3em] font-bold mb-2">
-            Inventory Management System
+            Advanced Inventory System
           </p>
           <p className="text-[10px] text-[#141414]/20 font-mono">
             &copy; 2026 Al Wakra & Mesaieed Pharmacy Portals. Protected by IT Security.

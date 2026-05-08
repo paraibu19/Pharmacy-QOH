@@ -68,7 +68,7 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
         
         <h1 className="text-2xl font-bold text-center mb-2">Admin Access</h1>
         <p className="text-center text-[#141414]/60 text-sm mb-8">
-          Sign in with your authorized password to manage the inventory system.
+          Sign in with your authorized password to manage AW-PharmaStock Pro.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
