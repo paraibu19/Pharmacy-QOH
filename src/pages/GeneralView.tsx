@@ -11,18 +11,11 @@ import LinkedItemsModal from '../components/LinkedItemsModal';
 import * as ics from 'ics';
 import { db } from '../lib/firebase';
 import { localDb } from '../lib/localStorageDb';
+import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 export default function GeneralView() {
   const navigate = useNavigate();
-  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
-
-  useEffect(() => {
-    const handleUpdate = () => {
-      setLastUpdate(localDb.getLastUpdateTime());
-    };
-    window.addEventListener('local-storage-update', handleUpdate);
-    return () => window.removeEventListener('local-storage-update', handleUpdate);
-  }, []);
+  const { lastUpdate } = useSystemMetadata();
   
   // Language State
   const [language, setLanguage] = useState<Language>(() => {
@@ -245,7 +238,7 @@ export default function GeneralView() {
               <UploadCloud className="w-3 h-3" />
               <span className="opacity-60 text-[#141414]">Last Update:</span>
               <span className="text-[#F27D26]">
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data'}
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
               </span>
             </div>
             

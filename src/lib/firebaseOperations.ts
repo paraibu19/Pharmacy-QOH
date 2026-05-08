@@ -1,6 +1,6 @@
 import { 
   collection, doc, addDoc, updateDoc, deleteDoc, 
-  serverTimestamp, writeBatch, query, where, getDocs, getDoc 
+  serverTimestamp, writeBatch, query, where, getDocs, getDoc, setDoc 
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { Medication, PharmacyLocation } from '../types';
@@ -32,7 +32,7 @@ export const medicationOps = {
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
       });
-      localDb.updateLastUpdateTime();
+      await systemOps.syncGlobalMetadata();
       return result;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);
@@ -50,7 +50,7 @@ export const medicationOps = {
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
       });
-      localDb.updateLastUpdateTime();
+      await systemOps.syncGlobalMetadata();
       return result;
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
@@ -64,7 +64,7 @@ export const medicationOps = {
     const path = `medications/${id}`;
     try {
       const result = await deleteDoc(doc(db, 'medications', id));
-      localDb.updateLastUpdateTime();
+      await systemOps.syncGlobalMetadata();
       return result;
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, path);
@@ -132,7 +132,7 @@ export const medicationOps = {
       }
 
       await batch.commit();
-      localDb.updateLastUpdateTime();
+      await systemOps.syncGlobalMetadata();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'medications/bulk');
     }
@@ -178,6 +178,7 @@ export const auditOps = {
 
     try {
       await batch.commit();
+      await systemOps.syncGlobalMetadata();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'audit_reconciliation');
     }
@@ -185,6 +186,21 @@ export const auditOps = {
 };
 
 export const systemOps = {
+  async syncGlobalMetadata() {
+    if (!db) return;
+    try {
+      const metaRef = doc(db, 'system', 'metadata');
+      await setDoc(metaRef, {
+        lastDataUpdate: serverTimestamp(),
+        updatedBy: auth?.currentUser?.uid || 'system'
+      }, { merge: true });
+      // Also update local for immediate feedback
+      localDb.updateLastUpdateTime();
+    } catch (e) {
+      console.warn('Failed to sync global metadata', e);
+    }
+  },
+
   async resetAll() {
     if (!db) {
       return sharedDb.reset();

@@ -16,20 +16,13 @@ import { formatNumber } from '../lib/formatters';
 import { technicianAuthOps } from '../lib/firebaseOperations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import { localDb } from '../lib/localStorageDb';
+import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3';
 type SortOrder = 'asc' | 'desc';
 
 export default function UserHome() {
-  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
-
-  useEffect(() => {
-    const handleUpdate = () => {
-      setLastUpdate(localDb.getLastUpdateTime());
-    };
-    window.addEventListener('local-storage-update', handleUpdate);
-    return () => window.removeEventListener('local-storage-update', handleUpdate);
-  }, []);
+  const { lastUpdate } = useSystemMetadata();
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
@@ -423,7 +416,7 @@ export default function UserHome() {
                   <UploadCloud className="w-3 h-3" />
                   <span className="opacity-60 text-[#141414]">Last Update:</span>
                   <span className="text-[#F27D26]">
-                    {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data'}
+                    {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
                   </span>
                 </div>
               </div>

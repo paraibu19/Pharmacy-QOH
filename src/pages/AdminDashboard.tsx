@@ -17,6 +17,7 @@ import { medicationOps, systemOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
 import { formatNumber } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
+import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 import { db, auth } from '../lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
@@ -27,15 +28,7 @@ import LinkedItemsModal from '../components/LinkedItemsModal';
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
 export default function AdminDashboard() {
-  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
-
-  useEffect(() => {
-    const handleUpdate = () => {
-      setLastUpdate(localDb.getLastUpdateTime());
-    };
-    window.addEventListener('local-storage-update', handleUpdate);
-    return () => window.removeEventListener('local-storage-update', handleUpdate);
-  }, []);
+  const { lastUpdate } = useSystemMetadata();
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
@@ -936,7 +929,7 @@ export default function AdminDashboard() {
               <UploadCloud className="w-3 h-3" />
               <span className="opacity-60 text-[#141414]">Last Update:</span>
               <span className="text-[#F27D26]">
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data'}
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
               </span>
             </div>
             <button 

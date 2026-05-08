@@ -13,20 +13,13 @@ import { useMedications } from '../hooks/useMedications';
 import { auditOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
+import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'minQty' | 'physical' | 'variance';
 type SortOrder = 'asc' | 'desc';
 
 export default function AdminInventory() {
-  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
-
-  useEffect(() => {
-    const handleUpdate = () => {
-      setLastUpdate(localDb.getLastUpdateTime());
-    };
-    window.addEventListener('local-storage-update', handleUpdate);
-    return () => window.removeEventListener('local-storage-update', handleUpdate);
-  }, []);
+  const { lastUpdate } = useSystemMetadata();
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
@@ -252,7 +245,7 @@ export default function AdminInventory() {
               <UploadCloud className="w-3 h-3" />
               <span className="opacity-60 text-[#141414]">Last Update:</span>
               <span className="text-[#F27D26]">
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data'}
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
               </span>
             </div>
           </div>

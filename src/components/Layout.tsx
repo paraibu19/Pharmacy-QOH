@@ -6,7 +6,7 @@ import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onSnapshotsInSync } from 'firebase/firestore';
-import { localDb } from '../lib/localStorageDb';
+import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 interface LayoutProps {
   children: ReactNode;
@@ -17,16 +17,7 @@ interface LayoutProps {
 export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
   const [isSynced, setIsSynced] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
-
-  useEffect(() => {
-    const handleUpdate = () => {
-      setLastUpdate(localDb.getLastUpdateTime());
-    };
-
-    window.addEventListener('local-storage-update', handleUpdate);
-    return () => window.removeEventListener('local-storage-update', handleUpdate);
-  }, []);
+  const { lastUpdate } = useSystemMetadata();
 
   useEffect(() => {
     if (!db) return;
@@ -139,7 +130,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
               <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
                 <UploadCloud className="w-3 h-3" />
                 <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data Uploaded'}
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data Uploaded'}
               </div>
             </div>
             
@@ -207,7 +198,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 <div className="flex lg:hidden items-center gap-2 px-4 py-2 bg-[#F27D26]/5 rounded-xl text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
                   <UploadCloud className="w-3 h-3" />
                   <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
-                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a') : 'No Data Uploaded'}
+                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data Uploaded'}
                 </div>
                 
                 <NavLinks />
