@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, FileSpreadsheet, KeyRound, 
-  Key, Eye, EyeOff, Lock, LogOut, ThermometerSnowflake
+  Key, Eye, EyeOff, Lock, LogOut, ThermometerSnowflake, UploadCloud
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -15,11 +15,22 @@ import { useMedications } from '../hooks/useMedications';
 import { formatNumber } from '../lib/formatters';
 import { technicianAuthOps } from '../lib/firebaseOperations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
+import { localDb } from '../lib/localStorageDb';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3';
 type SortOrder = 'asc' | 'desc';
 
 export default function UserHome() {
+  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setLastUpdate(localDb.getLastUpdateTime());
+    };
+    window.addEventListener('local-storage-update', handleUpdate);
+    return () => window.removeEventListener('local-storage-update', handleUpdate);
+  }, []);
+
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [persistedPassword, setPersistedPassword] = useState('pharmacist123');
@@ -408,8 +419,12 @@ export default function UserHome() {
             <div className="flex flex-col">
               <div className="flex items-center gap-3 mb-1">
                 <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Pharmacist View</h1>
-                <div className="px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5">
-                  {format(new Date(), 'eeee, dd-MM-yyyy')}
+                <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
+                  <UploadCloud className="w-3 h-3" />
+                  <span className="opacity-60 text-[#141414]">Last Update:</span>
+                  <span className="text-[#F27D26]">
+                    {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data'}
+                  </span>
                 </div>
               </div>
               <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">

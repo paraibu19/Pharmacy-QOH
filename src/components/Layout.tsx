@@ -1,11 +1,12 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud } from 'lucide-react';
 import { format } from 'date-fns';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onSnapshotsInSync } from 'firebase/firestore';
+import { localDb } from '../lib/localStorageDb';
 
 interface LayoutProps {
   children: ReactNode;
@@ -16,6 +17,16 @@ interface LayoutProps {
 export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
   const [isSynced, setIsSynced] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setLastUpdate(localDb.getLastUpdateTime());
+    };
+
+    window.addEventListener('local-storage-update', handleUpdate);
+    return () => window.removeEventListener('local-storage-update', handleUpdate);
+  }, []);
 
   useEffect(() => {
     if (!db) return;
@@ -125,9 +136,10 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 </div>
               </div>
 
-              <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest border border-[#141414]/5">
-                <CalendarDays className="w-3 h-3 text-[#F27D26]" />
-                {format(new Date(), 'eeee, dd-MM-yyyy')}
+              <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
+                <UploadCloud className="w-3 h-3" />
+                <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
+                {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data Uploaded'}
               </div>
             </div>
             
@@ -192,9 +204,10 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                   <RefreshCw className={`w-3.5 h-3.5 text-[#141414]/20 ${isSynced ? 'animate-spin' : ''}`} />
                 </div>
 
-                <div className="flex lg:hidden items-center gap-2 px-4 py-2 bg-[#141414]/5 rounded-xl text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest border border-[#141414]/5">
-                  <CalendarDays className="w-3 h-3 text-[#F27D26]" />
-                  {format(new Date(), 'eeee, dd-MM-yyyy')}
+                <div className="flex lg:hidden items-center gap-2 px-4 py-2 bg-[#F27D26]/5 rounded-xl text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
+                  <UploadCloud className="w-3 h-3" />
+                  <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
+                  {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data Uploaded'}
                 </div>
                 
                 <NavLinks />

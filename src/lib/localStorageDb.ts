@@ -62,6 +62,17 @@ export const localDb = {
     })) as Medication[];
     meds.push(...added);
     this.saveMedications(meds);
+    this.updateLastUpdateTime();
+  },
+
+  getLastUpdateTime(): string | null {
+    return localStorage.getItem('aw_pharmacy_last_update');
+  },
+
+  updateLastUpdateTime() {
+    const now = new Date().toISOString();
+    localStorage.setItem('aw_pharmacy_last_update', now);
+    window.dispatchEvent(new Event('local-storage-update'));
   }
 
 };

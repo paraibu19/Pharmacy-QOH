@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check, ArrowRightLeft, ThermometerSnowflake } from 'lucide-react';
+import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check, ArrowRightLeft, ThermometerSnowflake, UploadCloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
@@ -10,9 +10,19 @@ import { translations, LANGUAGES, Language, TranslationStrings } from '../lib/tr
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import * as ics from 'ics';
 import { db } from '../lib/firebase';
+import { localDb } from '../lib/localStorageDb';
 
 export default function GeneralView() {
   const navigate = useNavigate();
+  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setLastUpdate(localDb.getLastUpdateTime());
+    };
+    window.addEventListener('local-storage-update', handleUpdate);
+    return () => window.removeEventListener('local-storage-update', handleUpdate);
+  }, []);
   
   // Language State
   const [language, setLanguage] = useState<Language>(() => {
@@ -231,8 +241,12 @@ export default function GeneralView() {
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">{t.title}</h1>
-            <div className={`px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5`}>
-              {format(new Date(), 'eeee, dd-MM-yyyy')}
+            <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
+              <UploadCloud className="w-3 h-3" />
+              <span className="opacity-60 text-[#141414]">Last Update:</span>
+              <span className="text-[#F27D26]">
+                {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data'}
+              </span>
             </div>
             
             {/* Language Selector Dropdown */}

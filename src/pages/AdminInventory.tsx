@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Download, Save, RefreshCw, AlertTriangle, 
   CheckCircle2, ArrowUpRight, History, Loader2, ArrowUpDown, Filter, X, FileSpreadsheet,
-  Sparkles, ThermometerSnowflake
+  Sparkles, ThermometerSnowflake, UploadCloud
 } from 'lucide-react';
 import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
@@ -12,11 +12,22 @@ import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { auditOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
+import { localDb } from '../lib/localStorageDb';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'minQty' | 'physical' | 'variance';
 type SortOrder = 'asc' | 'desc';
 
 export default function AdminInventory() {
+  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setLastUpdate(localDb.getLastUpdateTime());
+    };
+    window.addEventListener('local-storage-update', handleUpdate);
+    return () => window.removeEventListener('local-storage-update', handleUpdate);
+  }, []);
+
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
@@ -237,8 +248,12 @@ export default function AdminInventory() {
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-3xl font-bold tracking-tight">Inventory Audit</h1>
-            <div className="px-3 py-1 bg-[#141414]/5 rounded-full text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest border border-[#141414]/5">
-              {format(new Date(), 'eeee, dd-MM-yyyy')}
+            <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
+              <UploadCloud className="w-3 h-3" />
+              <span className="opacity-60 text-[#141414]">Last Update:</span>
+              <span className="text-[#F27D26]">
+                {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a') : 'No Data'}
+              </span>
             </div>
           </div>
           <p className="text-[#141414]/50">Perform physical stock verification and reconcile variances.</p>
