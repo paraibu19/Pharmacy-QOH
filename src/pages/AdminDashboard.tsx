@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
+import { useAudits } from '../hooks/useAudits';
 import { medicationOps, systemOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
 import { formatNumber } from '../lib/formatters';
@@ -31,8 +32,9 @@ export default function AdminDashboard() {
   const { lastUpdate } = useSystemMetadata();
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
-  const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
-  const [searchQuery, setSearchQuery] = useState('');
+    const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+    const { audits, loading: auditsLoading } = useAudits(10);
+    const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -955,16 +957,17 @@ export default function AdminDashboard() {
               disabled={isSyncing}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all relative ${
                 showSyncPulse
-                ? 'bg-[#141414]/10 text-[#141414] border border-[#141414]/20 shadow-sm'
-                : 'bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10'
+                ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm'
+                : 'bg-emerald-50/30 text-emerald-600/60 border border-emerald-100'
               } disabled:opacity-50 shadow-sm`}
             >
+              <div className={`w-1.5 h-1.5 rounded-full ${showSyncPulse ? 'bg-emerald-500 animate-ping' : 'bg-emerald-400 opacity-50'}`} />
               {isSyncing ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
               ) : (
-                <RefreshCw className="w-3 h-3" />
+                <Cloud className="w-3 h-3" />
               )}
-              {showSyncPulse ? 'Live Updated' : `Synced ${format(lastSynced, 'HH:mm:ss')}`}
+              {showSyncPulse ? 'Live Update' : `Sync Logged ${format(lastSynced, 'HH:mm')}`}
             </button>
           </div>
           <p className="text-[#141414]/50 text-sm md:text-base">Stock inventory control panel</p>
@@ -1087,7 +1090,7 @@ export default function AdminDashboard() {
       {/* Expiration Alerts Widget */}
       <div className="flex flex-col gap-6 md:gap-8">
         {/* Top Horizontal Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Inventory Stats Mini Card */}
           <div className="bg-[#141414] text-white p-5 rounded-3xl shadow-xl flex flex-col justify-between border border-white/5">
             <div className="flex justify-between items-start mb-4">
@@ -1116,8 +1119,37 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* Activity Feed Card */}
+          <div className="bg-white rounded-3xl p-5 border border-[#141414]/10 shadow-sm flex flex-col h-[180px]">
+             <div className="flex items-center gap-2 mb-3">
+               <History size={16} className="text-[#F27D26]" />
+               <p className="text-[10px] font-black uppercase tracking-widest text-[#141414]/40">Live Activity</p>
+             </div>
+             <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-hide">
+               {auditsLoading ? (
+                 <div className="flex justify-center py-4">
+                    <Loader2 className="animate-spin w-4 h-4 text-[#F27D26]/40" />
+                 </div>
+               ) : audits.length > 0 ? (
+                 audits.map((audit) => (
+                   <div key={audit.id} className="flex flex-col gap-1 border-l-2 border-[#F27D26]/10 pl-2">
+                      <p className="text-[10px] font-bold text-[#141414] truncate">{audit.itemName}</p>
+                      <div className="flex items-center justify-between text-[8px]">
+                        <span className={`font-black uppercase tracking-widest ${audit.variance !== 0 ? 'text-[#F27D26]' : 'text-emerald-600'}`}>
+                          {audit.variance > 0 ? `+${audit.variance}` : audit.variance < 0 ? audit.variance : 'MATCH'}
+                        </span>
+                        <span className="text-[#141414]/30">{audit.auditedAt ? format(audit.auditedAt.toDate ? audit.auditedAt.toDate() : new Date(audit.auditedAt), 'HH:mm') : 'Now'}</span>
+                      </div>
+                   </div>
+                 ))
+               ) : (
+                 <p className="text-[10px] text-center text-[#141414]/20 italic py-4">No recent edits</p>
+               )}
+             </div>
+          </div>
+
           {/* System Status Mini Card */}
-          <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col justify-between">
+          <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col justify-between shadow-sm">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600">
                 <RefreshCw size={18} className="animate-spin-slow" />

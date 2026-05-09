@@ -22,7 +22,7 @@ export function useMedications(locationId?: PharmacyLocation) {
         }
         items.sort((a, b) => a.itemName.localeCompare(b.itemName));
         setMedications(items);
-        if (hasInitialData.current) setLastSynced(new Date());
+        setLastSynced(new Date());
         hasInitialData.current = true;
       } catch (err: any) {
         setError(err.message);
@@ -30,10 +30,13 @@ export function useMedications(locationId?: PharmacyLocation) {
         if (showLoading) setIsSyncing(false);
       }
     } else {
-      // For items with DB, we just update the timestamp to show intent
-      setLastSynced(new Date());
+      // For Cloud DB, onSnapshot handles updates. 
+      // Manual refresh just triggers a visual "checking" state
       if (showLoading) {
-        setTimeout(() => setIsSyncing(false), 500);
+        setTimeout(() => {
+          setLastSynced(new Date());
+          setIsSyncing(false);
+        }, 600);
       }
     }
   };

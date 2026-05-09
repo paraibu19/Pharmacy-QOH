@@ -439,12 +439,13 @@ export default function UserHome() {
             disabled={isSyncing}
             className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
               showSyncPulse 
-                ? 'bg-[#141414]/10 text-[#141414] border border-[#141414]/20 shadow-sm' 
-                : 'bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10'
+                ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm' 
+                : 'bg-emerald-50/30 text-emerald-600/50 border border-emerald-100'
             }`}
           >
+            <div className={`w-1.5 h-1.5 rounded-full ${showSyncPulse ? 'bg-emerald-500 animate-ping' : 'bg-emerald-400 opacity-50'}`} />
             {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            {showSyncPulse ? 'Live Updated' : `Synced ${format(lastSynced, 'HH:mm:ss')}`}
+            {showSyncPulse ? 'Live Update' : `Synced ${format(lastSynced, 'HH:mm')}`}
           </button>
 
           <button 

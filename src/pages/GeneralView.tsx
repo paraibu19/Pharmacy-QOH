@@ -296,10 +296,13 @@ export default function GeneralView() {
           <button 
             onClick={() => refresh(true)}
             disabled={isSyncing}
-            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10 disabled:opacity-50"
+            className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all relative ${
+              isSyncing ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-emerald-50/30 text-emerald-600/50 border border-emerald-100'
+            } disabled:opacity-50 shadow-sm`}
           >
+            <div className={`w-1.5 h-1.5 rounded-full ${!isSyncing ? 'bg-emerald-500' : 'bg-emerald-400 animate-ping'}`} />
             {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-            {isSyncing ? t.syncing : t.lastSynced} {format(lastSynced, 'HH:mm:ss')}
+            {isSyncing ? t.syncing : t.lastSynced} {format(lastSynced, 'HH:mm')}
           </button>
 
           <button 
