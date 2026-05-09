@@ -28,11 +28,11 @@ export const sharedDb = {
     await fetch(`/api/medications/${id}`, { method: 'DELETE' });
   },
 
-  async bulkAdd(meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[]): Promise<void> {
+  async bulkAdd(meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[], options: { photoStrategy: 'keep' | 'remove' } = { photoStrategy: 'keep' }): Promise<void> {
     await fetch('/api/medications/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(meds)
+      body: JSON.stringify({ items: meds, options })
     });
   },
 

@@ -140,20 +140,39 @@ app.delete('/api/medications/:id', (req, res) => {
 app.post('/api/medications/bulk', (req, res) => {
   try {
     const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
-    const items = req.body;
+    const { items, options } = req.body;
     
-    if (!Array.isArray(items)) {
-      return res.status(400).json({ error: 'Body must be an array of medications' });
+    const itemsToProcess = Array.isArray(items) ? items : req.body; // fallback for old format
+    
+    if (!Array.isArray(itemsToProcess)) {
+      return res.status(400).json({ error: 'Body must contain an array of medications' });
     }
 
-    const newMeds = items.map((m: any) => {
+    const newMeds = itemsToProcess.map((m: any) => {
       const existingIndex = meds.findIndex((em: any) => em.locationId === m.locationId && em.itemCode === m.itemCode);
+      
+      let imageUrl = m.imageUrl;
+      if (options?.photoStrategy === 'keep') {
+        if (!imageUrl) {
+          const globalMatch = meds.find((em: any) => em.itemCode === m.itemCode && em.imageUrl);
+          if (globalMatch) imageUrl = globalMatch.imageUrl;
+        }
+      } else if (options?.photoStrategy === 'remove') {
+        imageUrl = null;
+      }
+
       if (existingIndex !== -1) {
-        meds[existingIndex] = { ...meds[existingIndex], ...m, lastUpdatedAt: new Date().toISOString() };
+        meds[existingIndex] = { 
+          ...meds[existingIndex], 
+          ...m, 
+          imageUrl: options?.photoStrategy === 'remove' ? null : (imageUrl || meds[existingIndex].imageUrl),
+          lastUpdatedAt: new Date().toISOString() 
+        };
         return meds[existingIndex];
       } else {
         const nm = {
           ...m,
+          imageUrl: imageUrl || null,
           id: Math.random().toString(36).substring(2, 11),
           addedAt: new Date().toISOString(),
           lastUpdatedAt: new Date().toISOString()
@@ -164,7 +183,6 @@ app.post('/api/medications/bulk', (req, res) => {
     });
 
     fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
-    console.log(`Successfully processed bulk import of ${newMeds.length} items.`);
     res.json({ count: newMeds.length });
   } catch (err: any) {
     console.error('Bulk import error:', err);

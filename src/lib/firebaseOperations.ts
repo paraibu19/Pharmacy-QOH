@@ -71,7 +71,7 @@ export const medicationOps = {
     }
   },
 
-  async bulkAdd(meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[]) {
+  async bulkAdd(meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[], options: { photoStrategy: 'keep' | 'remove' } = { photoStrategy: 'keep' }) {
     if (!db) {
       return sharedDb.bulkAdd(meds);
     }
@@ -86,15 +86,35 @@ export const medicationOps = {
     }, {} as Record<string, typeof meds>);
 
     try {
-      const batch = writeBatch(db);
       const colRef = collection(db, 'medications');
+
+      // 1. If strategy is 'keep', try to find existing photos for all item codes globally
+      const globalPhotoMap: Record<string, string> = {};
+      if (options.photoStrategy === 'keep') {
+        const uniqueCodes = [...new Set(meds.map(m => m.itemCode))];
+        const chunkSize = 30; // Firestore 'in' limit is actually 30 now, used to be 10
+
+        for (let i = 0; i < uniqueCodes.length; i += chunkSize) {
+          const chunk = uniqueCodes.slice(i, i + chunkSize);
+          const q = query(colRef, where('itemCode', 'in', chunk));
+          const snapshot = await getDocs(q);
+          snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.imageUrl && !globalPhotoMap[data.itemCode]) {
+              globalPhotoMap[data.itemCode] = data.imageUrl;
+            }
+          });
+        }
+      }
+
+      const batch = writeBatch(db);
 
       for (const [locationId, locationMeds] of Object.entries(medsByLocation)) {
         const itemCodes = locationMeds.map(m => m.itemCode);
         
-        // chunk 30 for 'in' query
+        // chunk for 'in' query to find existing items in THIS location
         const chunkSize = 30;
-        const existingMeds: Record<string, string> = {}; // itemCode -> docId
+        const existingEntries: Record<string, { id: string, hasPhoto: boolean }> = {}; 
         
         for (let i = 0; i < itemCodes.length; i += chunkSize) {
           const chunk = itemCodes.slice(i, i + chunkSize);
@@ -105,28 +125,47 @@ export const medicationOps = {
           );
           const snapshot = await getDocs(q);
           snapshot.docs.forEach(doc => {
-            existingMeds[doc.data().itemCode] = doc.id;
+            existingEntries[doc.data().itemCode] = {
+              id: doc.id,
+              hasPhoto: !!doc.data().imageUrl
+            };
           });
         }
 
         locationMeds.forEach(m => {
-          if (existingMeds[m.itemCode]) {
-            // Update - Preserve original addedAt so status naturally changes to '-' after 10 days
-            const medRef = doc(db, 'medications', existingMeds[m.itemCode]);
-            batch.update(medRef, {
+          const globalPhoto = globalPhotoMap[m.itemCode];
+          
+          if (existingEntries[m.itemCode]) {
+            const entry = existingEntries[m.itemCode];
+            const medRef = doc(db, 'medications', entry.id);
+            const updateData: any = {
               ...m,
               lastUpdatedAt: serverTimestamp(),
               updatedBy: auth?.currentUser?.uid || 'system',
-            });
+            };
+
+            if (options.photoStrategy === 'remove') {
+              updateData.imageUrl = null;
+            } else if (options.photoStrategy === 'keep' && !entry.hasPhoto && globalPhoto) {
+              // If it doesn't have a photo but we found one elsewhere, sync it
+              updateData.imageUrl = globalPhoto;
+            }
+
+            batch.update(medRef, updateData);
           } else {
-            // Create - Genuinely new item, will show "NEW" for 10 days
             const newDoc = doc(colRef);
-            batch.set(newDoc, {
+            const createData: any = {
               ...m,
               addedAt: serverTimestamp(),
               lastUpdatedAt: serverTimestamp(),
               updatedBy: auth?.currentUser?.uid || 'system',
-            });
+            };
+
+            if (options.photoStrategy === 'keep' && globalPhoto) {
+              createData.imageUrl = globalPhoto;
+            }
+
+            batch.set(newDoc, createData);
           }
         });
       }

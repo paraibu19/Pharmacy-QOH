@@ -3,7 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
-  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud
+  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud, Cloud, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -37,6 +37,7 @@ export default function AdminDashboard() {
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
+  const [importPhotoStrategy, setImportPhotoStrategy] = useState<'keep' | 'remove'>('keep');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [alertThreshold, setAlertThreshold] = useState<number>(90);
   const [hasDraft, setHasDraft] = useState(false);
@@ -570,7 +571,7 @@ export default function AdminDashboard() {
           throw new Error("No valid medication data found in the matched sheets.");
         }
 
-        await medicationOps.bulkAdd(allMedsList);
+        await medicationOps.bulkAdd(allMedsList, { photoStrategy: importPhotoStrategy });
         await refresh();
         setSuccess(`Success: Imported/Updated ${allMedsList.length} items to ${sheetsFound} locations.`);
         setIsBulkMode(false);
@@ -1284,14 +1285,47 @@ export default function AdminDashboard() {
                       Columns: itemCode, itemName, QOH, Min, Max, Exp1, Exp2, Exp3
                     </p>
                     
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isImporting}
-                      className="w-full py-4 bg-white text-black hover:bg-white/90 rounded-2xl text-sm font-bold transition-all shadow-xl shadow-white/5 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {isImporting ? <Loader2 className="animate-spin w-4 h-4" /> : null}
-                      Browse Excel File
-                    </button>
+                    <div className="w-full space-y-4">
+                      <button 
+                        onClick={() => { setImportPhotoStrategy('keep'); fileInputRef.current?.click(); }}
+                        disabled={isImporting}
+                        className="w-full p-4 bg-white text-black hover:bg-white/90 rounded-2xl text-sm font-bold transition-all shadow-xl shadow-white/5 disabled:opacity-50 flex items-center justify-between group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+                            <Cloud size={18} />
+                          </div>
+                          <div className="text-left">
+                            <p className="font-bold">Keep items photos</p>
+                            <p className="text-[10px] text-black/40 font-medium">Auto-sync photos from cloud by code</p>
+                          </div>
+                        </div>
+                        <ChevronRight size={18} className="opacity-20 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                      </button>
+
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/5"></span></div>
+                        <div className="relative flex justify-center text-[8px] uppercase tracking-widest"><span className="bg-[#141414] px-2 text-white/20 font-black tracking-[0.2em]">or</span></div>
+                      </div>
+
+                      <button 
+                        onClick={() => { setImportPhotoStrategy('remove'); fileInputRef.current?.click(); }}
+                        disabled={isImporting}
+                        className="w-full p-4 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl text-sm font-bold transition-all disabled:opacity-50 flex items-center justify-between group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-red-500/20 rounded-xl">
+                            <Trash2 size={18} />
+                          </div>
+                          <div className="text-left">
+                            <p className="font-bold">Remove items photos</p>
+                            <p className="text-[10px] opacity-60 font-medium">Wipe all photos for these items</p>
+                          </div>
+                        </div>
+                        <ChevronRight size={18} className="opacity-20 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                      </button>
+                    </div>
+
                     <input 
                       type="file"
                       ref={fileInputRef}
