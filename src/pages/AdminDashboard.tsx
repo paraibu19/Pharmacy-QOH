@@ -3,7 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
-  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud, Cloud, ChevronRight
+  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud, Cloud, ChevronRight, Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -14,11 +14,13 @@ import JSZip from 'jszip';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { useAudits } from '../hooks/useAudits';
-import { medicationOps, systemOps } from '../lib/firebaseOperations';
+import { medicationOps, systemOps, settingsOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
 import { formatNumber } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
+import { useSystemConfig } from '../hooks/useSystemConfig';
+import { TopBanner } from '../components/TopBanner';
 
 import { db, auth } from '../lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
@@ -60,6 +62,41 @@ export default function AdminDashboard() {
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  
+  // System Config State
+  const { config, loading: configLoading } = useSystemConfig();
+  const [announcementInput, setAnnouncementInput] = useState('');
+  const [posterUrlInput, setPosterUrlInput] = useState('');
+  const [isUpdatingConfig, setIsUpdatingConfig] = useState(false);
+
+  useEffect(() => {
+    if (config) {
+      setAnnouncementInput(config.announcement || '');
+      setPosterUrlInput(config.topPosterUrl || '');
+    }
+  }, [config]);
+
+  const handleUpdateConfig = async () => {
+    try {
+      setIsUpdatingConfig(true);
+      setError(null);
+      setSuccess(null);
+      await settingsOps.updateSystemConfig({
+        announcement: announcementInput,
+        topPosterUrl: posterUrlInput
+      });
+      setSuccess('Storefront configuration updated successfully!');
+    } catch (err: any) {
+      let msg = err.message;
+      try {
+        const parsed = JSON.parse(err.message);
+        msg = parsed.error || err.message;
+      } catch { }
+      setError(`Failed to update configuration: ${msg}`);
+    } finally {
+      setIsUpdatingConfig(false);
+    }
+  };
   
   const [isCapturing, setIsCapturing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -885,6 +922,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6 md:space-y-8 pb-20 px-4 md:px-0">
+      {/* Top Banner Preview */}
+      <div className="space-y-2">
+        <label className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Live Storefront Preview (Top Banner)</label>
+        <TopBanner />
+      </div>
+
       {skippedUploads.length > 0 && (
         <div className="bg-red-50 border border-red-200 p-4 rounded-2xl animate-in fade-in zoom-in-95">
           <div className="flex items-center justify-between mb-2">
@@ -1021,6 +1064,56 @@ export default function AdminDashboard() {
             <Plus className="w-4 h-4" />
             Add New
           </button>
+        </div>
+      </div>
+
+      {/* Storefront Configuration */}
+      <div className="bg-white p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-6">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+            <Settings2 size={20} />
+          </div>
+          <div>
+            <h3 className="text-base font-bold uppercase tracking-tight">Storefront Configuration</h3>
+            <p className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest">Global Announcements & Banner</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/60 ml-1">
+              Top Banner Announcement
+            </label>
+            <input 
+              type="text" 
+              placeholder="Enter announcement text (e.g. Welcome to Our Pharmacy!)"
+              value={announcementInput}
+              onChange={(e) => setAnnouncementInput(e.target.value)}
+              className="w-full px-4 py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:border-[#F27D26] transition-all text-sm font-medium"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/60 ml-1">
+              Top Poster URL
+            </label>
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                placeholder="https://example.com/poster.jpg"
+                value={posterUrlInput}
+                onChange={(e) => setPosterUrlInput(e.target.value)}
+                className="flex-1 px-4 py-3 bg-[#141414]/5 border border-transparent rounded-xl focus:outline-none focus:border-[#F27D26] transition-all text-sm font-medium"
+              />
+              <button 
+                onClick={handleUpdateConfig}
+                disabled={isUpdatingConfig || configLoading}
+                className="px-6 py-3 bg-[#141414] text-white rounded-xl text-xs font-bold hover:bg-[#F27D26] transition-all whitespace-nowrap disabled:opacity-50 flex items-center gap-2"
+              >
+                {isUpdatingConfig ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Update
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

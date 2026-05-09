@@ -313,6 +313,35 @@ export const systemOps = {
   }
 };
 
+export const settingsOps = {
+  async getSystemConfig() {
+    if (!db) return null;
+    try {
+      const docRef = doc(db, 'settings', 'global_config');
+      const docSnap = await getDoc(docRef);
+      return docSnap.exists() ? docSnap.data() : null;
+    } catch (e) {
+      console.error('Error fetching global config', e);
+      return null;
+    }
+  },
+
+  async updateSystemConfig(data: { topPosterUrl?: string; announcement?: string }) {
+    if (!db) return;
+    const path = 'settings/global_config';
+    try {
+      const docRef = doc(db, 'settings', 'global_config');
+      await setDoc(docRef, {
+        ...data,
+        updatedAt: serverTimestamp(),
+        updatedBy: auth?.currentUser?.uid || 'system'
+      }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  }
+};
+
 export const technicianAuthOps = {
   async getPassword(portal: 'pharmacist' | 'order'): Promise<string> {
     const defaultPass = portal === 'pharmacist' ? 'pharmacist123' : 'order123';
