@@ -626,37 +626,44 @@ export default function AdminDashboard() {
       // Process in small batches to avoid blocking UI too much
       for (let i = 0; i < imageFiles.length; i++) {
         const fileName = imageFiles[i];
-        const baseName = fileName.split('/').pop() || '';
-        const itemCode = baseName.replace(/\.[^/.]+$/, "").trim();
+        
+        // Parse location from folder name if present
+        // Expected structure: "Adult/itemcode.jpg" or just "itemcode.jpg"
+        const pathParts = fileName.split('/');
+        let targetLocationId: PharmacyLocation | null = null;
+        let itemCode = '';
+
+        if (pathParts.length >= 2) {
+          const folderName = pathParts[pathParts.length - 2].toLowerCase();
+          itemCode = pathParts[pathParts.length - 1].replace(/\.[^/.]+$/, "").trim();
+          
+          if (folderName.includes('adult') || folderName.includes('male') || folderName.includes('main')) targetLocationId = PharmacyLocation.ADULT;
+          else if (folderName.includes('pediatric') || folderName.includes('peds') || folderName.includes('child')) targetLocationId = PharmacyLocation.PEDIATRIC;
+          else if (folderName.includes('mesaieed') || folderName.includes('msd') || folderName.includes('mes')) targetLocationId = PharmacyLocation.MESAIEED;
+        } else {
+          itemCode = pathParts[0].replace(/\.[^/.]+$/, "").trim();
+        }
         
         if (!itemCode) continue;
 
-        // 1. Try matching in CURRENT location first
-        let matchingMeds = allMeds.filter(m => 
-          m.itemCode.trim().toLowerCase() === itemCode.toLowerCase() && 
-          m.locationId === selectedLocation
-        );
-        
-        // 2. If not found, try matching across ANY location
-        if (matchingMeds.length === 0) {
+        // MATCHING LOGIC
+        let matchingMeds: Medication[] = [];
+
+        if (targetLocationId) {
+          // 1. If folder specified, strictly match that location first
+          matchingMeds = allMeds.filter(m => 
+            m.itemCode.trim().toLowerCase() === itemCode.toLowerCase() && 
+            m.locationId === targetLocationId
+          );
+        } else {
+          // 2. If no folder, match in ALL locations (global photo)
           matchingMeds = allMeds.filter(m => 
             m.itemCode.trim().toLowerCase() === itemCode.toLowerCase()
           );
         }
-
-        // 3. If still not found and we have Firebase, search the cloud database globally
-        if (matchingMeds.length === 0 && db) {
-          try {
-            const q = query(
-              collection(db, 'medications'), 
-              where('itemCode', '==', itemCode)
-            );
-            const snapshot = await getDocs(q);
-            matchingMeds = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Medication));
-          } catch (e) {
-            console.warn(`Error searching cloud for ${itemCode}:`, e);
-          }
-        }
+        
+        // 3. Fallback search (only if not found yet and targetLocation was specified but item doesn't exist there, maybe it's miscategorized in zip?)
+        // Actually, the user's intent is likely strict if they have folders.
         
         if (matchingMeds.length > 0) {
           const fileData = await content.files[fileName].async('blob');
@@ -892,7 +899,17 @@ export default function AdminDashboard() {
                 <span key={code} className="px-2 py-0.5 bg-white/50 border border-red-100 rounded text-[9px] font-mono font-medium text-red-600">{code}</span>
               ))}
             </div>
-            <p className="font-bold text-red-700/80 italic">Tip: Ensure your file names exactly match the "Item Code" column (e.g., 1001.jpg).</p>
+            <div className="bg-amber-50 p-4 rounded-xl border border-amber-200">
+               <div className="flex items-center gap-2 text-amber-800 mb-1">
+                 <Info size={14} />
+                 <p className="font-bold text-[10px] uppercase tracking-wider">Pro Tip: Location-Specific Photos</p>
+               </div>
+               <p className="text-amber-700/80 text-[10px] leading-relaxed italic">
+                 To upload different photos for the same item in different stores, place images in folders named: <br/>
+                 <span className="font-bold">"Adult/"</span>, <span className="font-bold">"Pediatric/"</span>, or <span className="font-bold">"Mesaieed/"</span> inside your ZIP. <br/>
+                 Files in the root folder will be applied globally to all locations.
+               </p>
+            </div>
           </div>
         </div>
       )}

@@ -89,23 +89,26 @@ export const medicationOps = {
       const colRef = collection(db, 'medications');
 
       // 1. Parallelize Global Photo Search if strategy is 'keep'
-      const globalPhotoMap: Record<string, string> = {};
+      // We'll build a map: itemCode -> { [locationId]: imageUrl, fallback: string | undefined }
+      const photoRegistry: Record<string, { [locId: string]: string; fallback?: string }> = {};
       if (options.photoStrategy === 'keep') {
         const uniqueCodes = [...new Set(meds.map(m => m.itemCode))];
         const chunkSize = 30;
         const photoSearchPromises = [];
 
         for (let i = 0; i < uniqueCodes.length; i += chunkSize) {
-          const chunk = uniqueCodes.slice(i, i + chunkSize);
-          photoSearchPromises.push(getDocs(query(colRef, where('itemCode', 'in', chunk))));
+          photoSearchPromises.push(getDocs(query(colRef, where('itemCode', 'in', uniqueCodes.slice(i, i + chunkSize)))));
         }
 
         const snapshots = await Promise.all(photoSearchPromises);
         snapshots.forEach(snapshot => {
           snapshot.docs.forEach(doc => {
             const data = doc.data();
-            if (data.imageUrl && !globalPhotoMap[data.itemCode]) {
-              globalPhotoMap[data.itemCode] = data.imageUrl;
+            if (data.imageUrl) {
+              if (!photoRegistry[data.itemCode]) photoRegistry[data.itemCode] = {};
+              photoRegistry[data.itemCode][data.locationId] = data.imageUrl;
+              // First one found becomes global fallback if none set
+              if (!photoRegistry[data.itemCode].fallback) photoRegistry[data.itemCode].fallback = data.imageUrl;
             }
           });
         });
@@ -150,7 +153,10 @@ export const medicationOps = {
       let opCount = 0;
 
       for (const m of meds) {
-        const globalPhoto = globalPhotoMap[m.itemCode];
+        const registry = photoRegistry[m.itemCode];
+        // Priority: 1. Photo in THIS location, 2. Global fallback from other locations
+        const bestPhoto = registry?.[m.locationId] || registry?.fallback;
+
         const locationExisting = existingEntries[m.locationId] || {};
         
         if (locationExisting[m.itemCode]) {
@@ -164,8 +170,8 @@ export const medicationOps = {
 
           if (options.photoStrategy === 'remove') {
             updateData.imageUrl = null;
-          } else if (options.photoStrategy === 'keep' && !entry.hasPhoto && globalPhoto) {
-            updateData.imageUrl = globalPhoto;
+          } else if (options.photoStrategy === 'keep' && !entry.hasPhoto && bestPhoto) {
+            updateData.imageUrl = bestPhoto;
           }
 
           currentBatch.update(medRef, updateData);
@@ -178,8 +184,8 @@ export const medicationOps = {
             updatedBy: auth?.currentUser?.uid || 'system',
           };
 
-          if (options.photoStrategy === 'keep' && globalPhoto) {
-            createData.imageUrl = globalPhoto;
+          if (options.photoStrategy === 'keep' && bestPhoto) {
+            createData.imageUrl = bestPhoto;
           }
 
           currentBatch.set(newDoc, createData);
