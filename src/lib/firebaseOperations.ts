@@ -88,89 +88,115 @@ export const medicationOps = {
     try {
       const colRef = collection(db, 'medications');
 
-      // 1. If strategy is 'keep', try to find existing photos for all item codes globally
+      // 1. Parallelize Global Photo Search if strategy is 'keep'
       const globalPhotoMap: Record<string, string> = {};
       if (options.photoStrategy === 'keep') {
         const uniqueCodes = [...new Set(meds.map(m => m.itemCode))];
-        const chunkSize = 30; // Firestore 'in' limit is actually 30 now, used to be 10
+        const chunkSize = 30;
+        const photoSearchPromises = [];
 
         for (let i = 0; i < uniqueCodes.length; i += chunkSize) {
           const chunk = uniqueCodes.slice(i, i + chunkSize);
-          const q = query(colRef, where('itemCode', 'in', chunk));
-          const snapshot = await getDocs(q);
+          photoSearchPromises.push(getDocs(query(colRef, where('itemCode', 'in', chunk))));
+        }
+
+        const snapshots = await Promise.all(photoSearchPromises);
+        snapshots.forEach(snapshot => {
           snapshot.docs.forEach(doc => {
             const data = doc.data();
             if (data.imageUrl && !globalPhotoMap[data.itemCode]) {
               globalPhotoMap[data.itemCode] = data.imageUrl;
             }
           });
-        }
-      }
-
-      const batch = writeBatch(db);
-
-      for (const [locationId, locationMeds] of Object.entries(medsByLocation)) {
-        const itemCodes = locationMeds.map(m => m.itemCode);
-        
-        // chunk for 'in' query to find existing items in THIS location
-        const chunkSize = 30;
-        const existingEntries: Record<string, { id: string, hasPhoto: boolean }> = {}; 
-        
-        for (let i = 0; i < itemCodes.length; i += chunkSize) {
-          const chunk = itemCodes.slice(i, i + chunkSize);
-          const q = query(
-            colRef,
-            where('locationId', '==', locationId),
-            where('itemCode', 'in', chunk)
-          );
-          const snapshot = await getDocs(q);
-          snapshot.docs.forEach(doc => {
-            existingEntries[doc.data().itemCode] = {
-              id: doc.id,
-              hasPhoto: !!doc.data().imageUrl
-            };
-          });
-        }
-
-        locationMeds.forEach(m => {
-          const globalPhoto = globalPhotoMap[m.itemCode];
-          
-          if (existingEntries[m.itemCode]) {
-            const entry = existingEntries[m.itemCode];
-            const medRef = doc(db, 'medications', entry.id);
-            const updateData: any = {
-              ...m,
-              lastUpdatedAt: serverTimestamp(),
-              updatedBy: auth?.currentUser?.uid || 'system',
-            };
-
-            if (options.photoStrategy === 'remove') {
-              updateData.imageUrl = null;
-            } else if (options.photoStrategy === 'keep' && !entry.hasPhoto && globalPhoto) {
-              // If it doesn't have a photo but we found one elsewhere, sync it
-              updateData.imageUrl = globalPhoto;
-            }
-
-            batch.update(medRef, updateData);
-          } else {
-            const newDoc = doc(colRef);
-            const createData: any = {
-              ...m,
-              addedAt: serverTimestamp(),
-              lastUpdatedAt: serverTimestamp(),
-              updatedBy: auth?.currentUser?.uid || 'system',
-            };
-
-            if (options.photoStrategy === 'keep' && globalPhoto) {
-              createData.imageUrl = globalPhoto;
-            }
-
-            batch.set(newDoc, createData);
-          }
         });
       }
 
-      await batch.commit();
+      // 2. Parallelize existence check for ALL items in their respective locations
+      const existingEntries: Record<string, Record<string, { id: string; hasPhoto: boolean }>> = {};
+      const searchPromises: Promise<any>[] = [];
+      const searchMeta: { locationId: string }[] = [];
+
+      Object.entries(medsByLocation).forEach(([locationId, locationMeds]) => {
+        const itemCodes = [...new Set(locationMeds.map(m => m.itemCode))];
+        const chunkSize = 30;
+        
+        for (let i = 0; i < itemCodes.length; i += chunkSize) {
+          const chunk = itemCodes.slice(i, i + chunkSize);
+          searchMeta.push({ locationId });
+          searchPromises.push(getDocs(query(
+            colRef,
+            where('locationId', '==', locationId),
+            where('itemCode', 'in', chunk)
+          )));
+        }
+      });
+
+      const searchSnapshots = await Promise.all(searchPromises);
+      searchSnapshots.forEach((snapshot, idx) => {
+        const { locationId } = searchMeta[idx];
+        if (!existingEntries[locationId]) existingEntries[locationId] = {};
+        
+        snapshot.docs.forEach(doc => {
+          const data = doc.data();
+          existingEntries[locationId][data.itemCode] = {
+            id: doc.id,
+            hasPhoto: !!data.imageUrl
+          };
+        });
+      });
+
+      // 3. Process writes in batches of 500 (Firestore limit)
+      let currentBatch = writeBatch(db);
+      let opCount = 0;
+
+      for (const m of meds) {
+        const globalPhoto = globalPhotoMap[m.itemCode];
+        const locationExisting = existingEntries[m.locationId] || {};
+        
+        if (locationExisting[m.itemCode]) {
+          const entry = locationExisting[m.itemCode];
+          const medRef = doc(db, 'medications', entry.id);
+          const updateData: any = {
+            ...m,
+            lastUpdatedAt: serverTimestamp(),
+            updatedBy: auth?.currentUser?.uid || 'system',
+          };
+
+          if (options.photoStrategy === 'remove') {
+            updateData.imageUrl = null;
+          } else if (options.photoStrategy === 'keep' && !entry.hasPhoto && globalPhoto) {
+            updateData.imageUrl = globalPhoto;
+          }
+
+          currentBatch.update(medRef, updateData);
+        } else {
+          const newDoc = doc(colRef);
+          const createData: any = {
+            ...m,
+            addedAt: serverTimestamp(),
+            lastUpdatedAt: serverTimestamp(),
+            updatedBy: auth?.currentUser?.uid || 'system',
+          };
+
+          if (options.photoStrategy === 'keep' && globalPhoto) {
+            createData.imageUrl = globalPhoto;
+          }
+
+          currentBatch.set(newDoc, createData);
+        }
+
+        opCount++;
+        if (opCount >= 500) {
+          await currentBatch.commit();
+          currentBatch = writeBatch(db);
+          opCount = 0;
+        }
+      }
+
+      if (opCount > 0) {
+        await currentBatch.commit();
+      }
+      
       await systemOps.syncGlobalMetadata();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'medications/bulk');

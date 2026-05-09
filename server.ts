@@ -148,14 +148,21 @@ app.post('/api/medications/bulk', (req, res) => {
       return res.status(400).json({ error: 'Body must contain an array of medications' });
     }
 
+    // Pre-calculate photo map for efficiency
+    const globalPhotoMap: Record<string, string> = {};
+    if (options?.photoStrategy === 'keep') {
+      meds.forEach((m: any) => {
+        if (m.imageUrl) globalPhotoMap[m.itemCode] = m.imageUrl;
+      });
+    }
+
     const newMeds = itemsToProcess.map((m: any) => {
       const existingIndex = meds.findIndex((em: any) => em.locationId === m.locationId && em.itemCode === m.itemCode);
       
       let imageUrl = m.imageUrl;
       if (options?.photoStrategy === 'keep') {
         if (!imageUrl) {
-          const globalMatch = meds.find((em: any) => em.itemCode === m.itemCode && em.imageUrl);
-          if (globalMatch) imageUrl = globalMatch.imageUrl;
+          imageUrl = globalPhotoMap[m.itemCode];
         }
       } else if (options?.photoStrategy === 'remove') {
         imageUrl = null;
