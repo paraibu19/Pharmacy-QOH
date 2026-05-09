@@ -206,11 +206,17 @@ export default function OrderView() {
 
     const mapped = result.map(m => ({
       ...m,
-      orderQty: calculateOrder(m, orderTarget),
+      orderQty: calculateOrder(m, orderTarget || 1),
       isNew: m.addedAt ? differenceInDays(new Date(), (m.addedAt as any).toDate?.() || new Date(m.addedAt)) < 10 : false
     }));
 
-    return mapped.sort((a, b) => {
+    // Filter by order quantity if a specific target is selected (not 'All')
+    let displayResult = mapped;
+    if (orderTarget !== 0) {
+      displayResult = displayResult.filter(m => m.orderQty > 0);
+    }
+
+    return displayResult.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       
       if (['qoh', 'orderQty', 'minQty', 'maxQty'].includes(sortField)) {
@@ -544,7 +550,7 @@ export default function OrderView() {
           )}
           {orderTarget !== 1 && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Target: <span className="text-[#F27D26]">{orderTarget * 100}%</span>
+              Target: <span className="text-[#F27D26]">{orderTarget === 0 ? 'ALL' : `${orderTarget * 100}%`}</span>
             </span>
           )}
           {availableGenericsOnly && (
@@ -618,6 +624,7 @@ export default function OrderView() {
               <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 whitespace-nowrap ml-1">Order Target:</span>
               <div className="flex bg-[#141414]/5 p-1 rounded-2xl border border-[#141414]/5 overflow-x-auto no-scrollbar">
                 {[
+                  { label: 'All', value: 0, count: medications.length },
                   { label: 'Full', value: 1, count: targetCounts.full },
                   { label: '70%', value: 0.7, count: targetCounts.seventy },
                   { label: '50%', value: 0.5, count: targetCounts.fifty }
