@@ -135,9 +135,13 @@ export default function AdminDashboard() {
         if (videoRef.current) {
           const video = videoRef.current;
           console.log("Found video element, attaching stream");
+          video.muted = true;
+          video.setAttribute('playsinline', 'true');
           video.srcObject = stream;
           
           const handlePlay = () => {
+            console.log("Attempting to play video");
+            // srcObject assignment already triggers load algorithm, manual load() can sometimes clear it
             video.play()
               .then(() => {
                 setIsStreamActive(true);
@@ -146,8 +150,10 @@ export default function AdminDashboard() {
               .catch(e => {
                 console.warn("Autoplay failed initially, setting active anyway:", e);
                 setIsStreamActive(true);
-                // Try playing again after 500ms
-                setTimeout(() => video.play().catch(() => {}), 500);
+                // Try playing again after 500ms - common pattern for Safari/iOS
+                setTimeout(() => {
+                   if (video) video.play().catch(err => console.log("Second play attempt failed:", err));
+                }, 500);
               });
           };
 
@@ -155,10 +161,11 @@ export default function AdminDashboard() {
             handlePlay();
           } else {
             video.onloadedmetadata = handlePlay;
+            video.onloadeddata = handlePlay; // Backup event
           }
-        } else if (attempts < 150) {
+        } else if (attempts < 200) {
           attempts++;
-          requestAnimationFrame(attachStreamToVideo);
+          setTimeout(() => requestAnimationFrame(attachStreamToVideo), 50); // Small delay can help Safari mount the element
         } else {
           setError("Video preview element failed to initialize. Please try restarting the camera.");
           setIsCapturing(false);
@@ -2344,12 +2351,31 @@ export default function AdminDashboard() {
 
                  <video 
                    ref={videoRef}
-                   autoPlay 
-                   playsInline 
+                   autoPlay
+                   playsInline
                    muted
+                   onPlay={() => setIsStreamActive(true)}
+                   onPlaying={() => setIsStreamActive(true)}
                    className={`w-full h-full object-cover transition-opacity duration-300 ${isStreamActive ? 'opacity-100' : 'opacity-0'}`}
                  />
                  <canvas ref={canvasRef} className="hidden" />
+                 
+                 {/* Safari Play Button Overlay */}
+                 {isCapturing && !isStreamActive && !error && (
+                   <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/40 backdrop-blur-sm">
+                     <button 
+                       onClick={() => {
+                         if (videoRef.current) {
+                           videoRef.current.play().then(() => setIsStreamActive(true)).catch(e => console.error(e));
+                         }
+                       }}
+                       className="px-8 py-4 bg-[#F27D26] text-white rounded-full font-bold text-xs shadow-2xl active:scale-95 transition-all flex items-center gap-2 border border-white/20"
+                     >
+                       <Camera size={16} />
+                       TAP TO START CAMERA
+                     </button>
+                   </div>
+                 )}
                  
                  {isCapturing && isStreamActive && (
                     <div className="absolute top-4 right-4 z-20">
