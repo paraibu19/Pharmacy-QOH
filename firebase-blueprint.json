@@ -37,14 +37,13 @@
     },
     "Setting": {
       "title": "Setting",
-      "description": "System settings, portal passwords, and visual configuration",
+      "description": "System settings and portal passwords",
       "type": "object",
       "properties": {
         "password": { "type": "string", "description": "Access password for the portal" },
-        "topPosterUrl": { "type": "string", "description": "URL of the top banner image" },
-        "announcement": { "type": "string", "description": "Announcement text to display below banner" },
         "updatedAt": { "type": "string", "format": "date-time" }
-      }
+      },
+      "required": ["password"]
     }
   },
   "firestore": {

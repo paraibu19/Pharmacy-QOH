@@ -8,7 +8,6 @@ import { useMedications } from '../hooks/useMedications';
 import { useNavigate } from 'react-router-dom';
 import { translations, LANGUAGES, Language, TranslationStrings } from '../lib/translations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
-import { TopBanner } from '../components/TopBanner';
 import * as ics from 'ics';
 import { db } from '../lib/firebase';
 import { localDb } from '../lib/localStorageDb';
@@ -230,9 +229,6 @@ export default function GeneralView() {
 
   return (
     <div className="space-y-6 md:space-y-8" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Top Banner */}
-      <TopBanner />
-
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
         <div>

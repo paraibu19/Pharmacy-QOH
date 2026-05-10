@@ -15,7 +15,6 @@ import { useMedications } from '../hooks/useMedications';
 import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
 import LinkedItemsModal from '../components/LinkedItemsModal';
-import { TopBanner } from '../components/TopBanner';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
@@ -454,9 +453,6 @@ export default function OrderView() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6 md:space-y-8">
-      {/* Top Banner */}
-      <TopBanner />
-
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
         <div>

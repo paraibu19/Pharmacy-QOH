@@ -15,7 +15,6 @@ import { useMedications } from '../hooks/useMedications';
 import { formatNumber } from '../lib/formatters';
 import { technicianAuthOps } from '../lib/firebaseOperations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
-import { TopBanner } from '../components/TopBanner';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
@@ -407,9 +406,6 @@ export default function UserHome() {
 
   return (
     <div className="space-y-6 md:space-y-8">
-      {/* Top Poster & Announcements */}
-      <TopBanner />
-
       {/* Hero / Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
           <div className="flex items-center gap-3">

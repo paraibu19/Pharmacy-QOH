@@ -103,15 +103,21 @@ service cloud.firestore {
 
     // Settings Collection
     match /settings/{docId} {
-      // Read access
-      allow read: if docId == 'global_config' || docId == 'pharmacist_portal' || docId == 'order_portal';
-      
-      // Write access for portals
-      allow write: if (docId == 'pharmacist_portal' || docId == 'order_portal') && 
-                     (request.resource.data.keys().hasAll(['password']));
+      function isValidSetting(data) {
+        return data.keys().hasAll(['password']) &&
+               data.password is string && data.password.size() >= 4 && data.password.size() <= 64;
+      }
 
-      // Write access for global config - allowed for now to facilitate setup
-      allow write: if docId == 'global_config';
+      // Read is needed for portal login pages before auth
+      allow read: if docId in ['pharmacist_portal', 'order_portal'];
+      
+      // Update from portals or admin dashboard
+      allow update: if (isSignedIn() || (docId in ['pharmacist_portal', 'order_portal'])) && 
+                    isValidSetting(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['password', 'updatedAt']);
+      
+      // Create if it doesn't exist
+      allow create: if isSignedIn() && isValidSetting(incoming());
     }
   }
 }
