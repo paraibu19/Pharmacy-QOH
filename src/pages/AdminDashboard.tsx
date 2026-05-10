@@ -135,25 +135,21 @@ export default function AdminDashboard() {
         if (videoRef.current) {
           const video = videoRef.current;
           console.log("Found video element, attaching stream");
-          video.muted = true;
           video.setAttribute('playsinline', 'true');
+          video.setAttribute('webkit-playsinline', 'true');
+          video.muted = true;
           video.srcObject = stream;
           
           const handlePlay = () => {
             console.log("Attempting to play video");
-            // srcObject assignment already triggers load algorithm, manual load() can sometimes clear it
             video.play()
               .then(() => {
                 setIsStreamActive(true);
                 console.log("Camera stream active and playing");
               })
               .catch(e => {
-                console.warn("Autoplay failed initially, setting active anyway:", e);
-                setIsStreamActive(true);
-                // Try playing again after 500ms - common pattern for Safari/iOS
-                setTimeout(() => {
-                   if (video) video.play().catch(err => console.log("Second play attempt failed:", err));
-                }, 500);
+                console.warn("Autoplay blocked:", e);
+                // Allow the TAP TO START button overlay to handle manual play
               });
           };
 
@@ -2356,28 +2352,49 @@ export default function AdminDashboard() {
                    muted
                    onPlay={() => setIsStreamActive(true)}
                    onPlaying={() => setIsStreamActive(true)}
-                   className={`w-full h-full object-cover transition-opacity duration-300 ${isStreamActive ? 'opacity-100' : 'opacity-0'}`}
+                   className="w-full h-full object-cover transition-opacity duration-300"
                  />
                  <canvas ref={canvasRef} className="hidden" />
                  
                  {/* Safari Play Button Overlay */}
-                 {isCapturing && !isStreamActive && !error && (
-                   <div className="absolute inset-0 flex items-center justify-center z-30 bg-black/40 backdrop-blur-sm">
-                     <button 
-                       onClick={() => {
-                         if (videoRef.current) {
-                           videoRef.current.play().then(() => setIsStreamActive(true)).catch(e => console.error(e));
-                         }
-                       }}
-                       className="px-8 py-4 bg-[#F27D26] text-white rounded-full font-bold text-xs shadow-2xl active:scale-95 transition-all flex items-center gap-2 border border-white/20"
-                     >
-                       <Camera size={16} />
-                       TAP TO START CAMERA
-                     </button>
-                   </div>
-                 )}
-                 
-                 {isCapturing && isStreamActive && (
+                  {/* UI Overlays: Loading & Safari Kickstart */}
+                  {!isStreamActive && !error && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-black/60 backdrop-blur-md z-30 text-center">
+                      <div className="flex flex-col items-center gap-3">
+                         <Loader2 className="w-8 h-8 text-[#F27D26] animate-spin" />
+                         <div className="space-y-1">
+                           <p className="text-[10px] font-bold text-white/60 uppercase tracking-widest animate-pulse">Initializing Lens...</p>
+                           <p className="text-[9px] text-white/30 uppercase tracking-widest">Connect cloud stream</p>
+                         </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-center gap-4 mt-2">
+                        <button 
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (videoRef.current) {
+                              videoRef.current.play()
+                                .then(() => setIsStreamActive(true))
+                                .catch(err => {
+                                  console.error("Manual play failed:", err);
+                                  startCamera();
+                                });
+                            }
+                          }}
+                          className="px-8 py-4 bg-[#F27D26] text-white rounded-full font-bold text-xs shadow-2xl active:scale-95 transition-all flex items-center gap-3 border border-white/20"
+                        >
+                          <Camera size={16} />
+                          TAP TO START CAMERA
+                        </button>
+                        <p className="text-[9px] text-white/20 uppercase tracking-widest max-w-[200px] leading-relaxed">
+                          Safari/iOS requires a manual touch if autoplay is blocked
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {isCapturing && isStreamActive && (
                     <div className="absolute top-4 right-4 z-20">
                       <a 
                         href={window.location.href}
@@ -2394,13 +2411,6 @@ export default function AdminDashboard() {
                  
                  {/* Safe zone overlay */}
                  <div className="absolute inset-8 border-2 border-[#F27D26]/50 rounded-2xl pointer-events-none after:content-[''] after:absolute after:inset-0 after:border after:border-[#F27D26]/20 after:rounded-2xl after:scale-95" />
-                 
-                 {!isStreamActive && !error && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/40">
-                       <Loader2 className="w-8 h-8 text-[#F27D26] animate-spin" />
-                       <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest animate-pulse">Initializing Lens...</p>
-                    </div>
-                 )}
               </div>
 
               <div className="p-8 flex flex-col items-center gap-6 bg-[#141414]">
