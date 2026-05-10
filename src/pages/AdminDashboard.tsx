@@ -100,12 +100,7 @@ export default function AdminDashboard() {
     setError(null);
     
     try {
-      // Warm up device enumeration - sometimes helps trigger permission prompt in iframes
-      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-        await navigator.mediaDevices.enumerateDevices().catch(() => []);
-      }
-
-      // First ensure the UI state reflects capturing mode so video element is rendered
+      // Warm up state but DONT await enumeration before getUserMedia on Safari
       setIsCapturing(true);
 
       const constraints: MediaStreamConstraints = {
@@ -113,7 +108,8 @@ export default function AdminDashboard() {
           facingMode: { ideal: 'environment' },
           width: { ideal: 1280 },
           height: { ideal: 720 }
-        } 
+        },
+        audio: false // Explicitly disable audio for faster/more reliable prompt
       };
 
       let stream: MediaStream;
@@ -123,7 +119,8 @@ export default function AdminDashboard() {
         console.warn("Initial camera request failed, trying fallback:", err.name);
         // Fallback to any camera
         stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true 
+          video: true,
+          audio: false
         });
       }
 
@@ -179,7 +176,7 @@ export default function AdminDashboard() {
       const errorMessage = (err.message || '').toLowerCase();
 
       if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError' || errorMessage.includes('denied') || errorMessage.includes('not allowed')) {
-        msg = "Camera access BLOCKED. In the AI Studio preview, browsers block camera access inside iframes. SOLUTION: Use the 'Open in New Tab' button provided below or the icon in the top-right corner of the editor.";
+        msg = "Camera access BLOCKED. In Safari, you may need to: 1. Click the AA icon in address bar -> 'Settings for This Website' -> Camera -> 'Allow'. 2. Refresh the page. 3. Ensure you are using the app in a 'New Tab'.";
       } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
         msg = "No camera hardware detected. If on mobile, check your privacy settings.";
       } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError' || errorMessage.includes('could not start')) {
@@ -2374,12 +2371,18 @@ export default function AdminDashboard() {
                             e.preventDefault();
                             e.stopPropagation();
                             if (videoRef.current) {
-                              videoRef.current.play()
-                                .then(() => setIsStreamActive(true))
-                                .catch(err => {
-                                  console.error("Manual play failed:", err);
-                                  startCamera();
-                                });
+                              if (!cameraStreamRef.current) {
+                                startCamera();
+                              } else {
+                                videoRef.current.play()
+                                  .then(() => setIsStreamActive(true))
+                                  .catch(err => {
+                                    console.error("Manual play failed:", err);
+                                    startCamera();
+                                  });
+                              }
+                            } else {
+                              startCamera();
                             }
                           }}
                           className="px-8 py-4 bg-[#F27D26] text-white rounded-full font-bold text-xs shadow-2xl active:scale-95 transition-all flex items-center gap-3 border border-white/20"
