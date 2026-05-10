@@ -62,10 +62,10 @@ export default function AdminDashboard() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   const [isCapturing, setIsCapturing] = useState(false);
-  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
-  const userActivatedRef = useRef(false);
+  const [isStreamActive, setIsStreamActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -93,35 +93,128 @@ export default function AdminDashboard() {
   };
 
   const startCamera = async () => {
-    if (!userActivatedRef.current) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setError("Your browser does not support camera access or you are in an insecure context. IMPORTANT: In the AI Studio preview, browsers block camera access inside iframes. You MUST click 'Open in New Tab' (top right icon) for the camera to work.");
+      return;
+    }
+    setError(null);
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
-      });
-      setActiveStream(stream);
+      // Warm up device enumeration - sometimes helps trigger permission prompt in iframes
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      }
+
+      // First ensure the UI state reflects capturing mode so video element is rendered
       setIsCapturing(true);
-      userActivatedRef.current = false;
-    } catch (err) {
-      console.error("Camera error:", err);
-      setError("Could not access camera.");
+
+      const constraints: MediaStreamConstraints = {
+        video: { 
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        } 
+      };
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err: any) {
+        console.warn("Initial camera request failed, trying fallback:", err.name);
+        // Fallback to any camera
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true 
+        });
+      }
+
+      cameraStreamRef.current = stream;
+
+      // Use a more reliable way to wait for the video element and attach stream
+      let attempts = 0;
+      const attachStreamToVideo = () => {
+        if (videoRef.current) {
+          const video = videoRef.current;
+          console.log("Found video element, attaching stream");
+          video.srcObject = stream;
+          
+          const handlePlay = () => {
+            video.play()
+              .then(() => {
+                setIsStreamActive(true);
+                console.log("Camera stream active and playing");
+              })
+              .catch(e => {
+                console.warn("Autoplay failed initially, setting active anyway:", e);
+                setIsStreamActive(true);
+                // Try playing again after 500ms
+                setTimeout(() => video.play().catch(() => {}), 500);
+              });
+          };
+
+          if (video.readyState >= 2) {
+            handlePlay();
+          } else {
+            video.onloadedmetadata = handlePlay;
+          }
+        } else if (attempts < 150) {
+          attempts++;
+          requestAnimationFrame(attachStreamToVideo);
+        } else {
+          setError("Video preview element failed to initialize. Please try restarting the camera.");
+          setIsCapturing(false);
+          stopCamera();
+        }
+      };
+      
+      requestAnimationFrame(attachStreamToVideo);
+
+    } catch (err: any) {
+      console.error("Camera Error details:", err);
+      let msg = "Could not access camera.";
+      
+      const errorName = err.name || '';
+      const errorMessage = (err.message || '').toLowerCase();
+
+      if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError' || errorMessage.includes('denied') || errorMessage.includes('not allowed')) {
+        msg = "Camera access BLOCKED. In the AI Studio preview, browsers block camera access inside iframes. SOLUTION: Use the 'Open in New Tab' button provided below or the icon in the top-right corner of the editor.";
+      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+        msg = "No camera hardware detected. If on mobile, check your privacy settings.";
+      } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError' || errorMessage.includes('could not start')) {
+        msg = "Camera is likely in use by another tab or app.";
+      } else {
+        msg = `Camera Error: ${err.message || 'Initialization failed'}`;
+      }
+      
+      setError(msg);
       setIsCapturing(false);
-      userActivatedRef.current = false;
+      
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(t => t.stop());
+        cameraStreamRef.current = null;
+      }
     }
   };
 
-  useEffect(() => {
-    if (isCapturing && activeStream && videoRef.current) {
-      videoRef.current.srcObject = activeStream;
-    }
-  }, [isCapturing, activeStream]);
-
   const stopCamera = () => {
-    if (activeStream) {
-      activeStream.getTracks().forEach(track => track.stop());
-      setActiveStream(null);
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    setIsStreamActive(false);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     setIsCapturing(false);
   };
+
+  useEffect(() => {
+    return () => {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        cameraStreamRef.current = null;
+      }
+    };
+  }, []);
 
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
@@ -928,7 +1021,34 @@ export default function AdminDashboard() {
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-6">
           <div className="flex flex-col w-full md:w-auto">
-            <div className="flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar pb-2">
+            <div className="flex items-center flex-wrap gap-2 mb-4">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-[#141414]/10 rounded-full shadow-sm">
+                <div className={`w-2 h-2 rounded-full ${isFirebaseConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-400 animate-pulse'}`} />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/60">
+                  Cloud Status: {isFirebaseConnected ? 'Online (Firebase)' : 'Local Mode (Fallback)'}
+                </span>
+                {!isFirebaseConnected && (
+                  <div className="group relative ml-1">
+                    <AlertCircle size={12} className="text-amber-500 cursor-help" />
+                    <div className="absolute left-0 top-full pt-2 z-50 hidden group-hover:block w-48">
+                      <div className="bg-[#141414] text-white text-[10px] p-3 rounded-xl shadow-xl leading-relaxed">
+                        Firebase not configured or disabled. App is using local storage and API routes.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10 shadow-sm">
+                <UploadCloud className="w-3 h-3" />
+                <span className="opacity-60 text-[#141414]">Inventory Updated:</span>
+                <span className="text-[#F27D26]">
+                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
               {[
                 { id: 'all', label: 'All', icon: Filter },
                 { id: 'in', label: 'In Stock', icon: Check },
@@ -1564,7 +1684,7 @@ export default function AdminDashboard() {
                        </div>
                        <div className="flex gap-1">
                          <button 
-                           onClick={() => { userActivatedRef.current = true; startCamera(); }}
+                           onClick={() => startCamera()}
                            className="p-1.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-lg text-[#141414]/40 hover:text-[#F27D26] transition-all"
                            title="Take Photo"
                          >
@@ -1870,10 +1990,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex gap-2">
                     <button 
-                      onClick={() => {
-                        userActivatedRef.current = true;
-                        startCamera();
-                      }}
+                      onClick={() => startCamera()}
                       className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl text-[10px] font-bold text-[#141414] shadow-sm border border-[#141414]/5"
                     >
                       <Camera size={14} className="text-[#F27D26]" />
@@ -2186,16 +2303,78 @@ export default function AdminDashboard() {
               </div>
               
               <div className="relative aspect-square bg-black overflow-hidden flex items-center justify-center">
+                  {isCapturing && error && (
+                    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center p-8 text-center bg-black/90 animate-in fade-in zoom-in duration-300">
+                      <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center text-red-500 mb-4 animate-pulse">
+                        <AlertCircle size={32} />
+                      </div>
+                      <p className="text-white text-sm font-bold leading-relaxed mb-6 max-w-xs">{error}</p>
+                      
+                      <div className="flex flex-col gap-3 w-full max-w-xs">
+                        <button 
+                          onClick={() => {
+                            setError(null);
+                            startCamera();
+                          }} 
+                          className="w-full py-4 bg-[#F27D26] text-white rounded-2xl text-xs font-bold hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-[#F27D26]/20 flex items-center justify-center gap-2"
+                        >
+                          <RefreshCw size={14} />
+                          TRY AGAIN
+                        </button>
+                        
+                        <a 
+                          href={window.location.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-4 bg-white/10 text-white/60 rounded-2xl text-xs font-bold hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2"
+                        >
+                          <Cloud className="w-4 h-4" />
+                          OPEN IN NEW TAB
+                        </a>
+
+                        <button 
+                          onClick={stopCamera} 
+                          className="w-full py-2 text-white/40 text-[10px] font-bold hover:text-white transition-colors"
+                        >
+                          CLOSE CAMERA
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                  <video 
                    ref={videoRef}
                    autoPlay 
                    playsInline 
-                   className="w-full h-full object-cover"
+                   muted
+                   className={`w-full h-full object-cover transition-opacity duration-300 ${isStreamActive ? 'opacity-100' : 'opacity-0'}`}
                  />
                  <canvas ref={canvasRef} className="hidden" />
                  
+                 {isCapturing && isStreamActive && (
+                    <div className="absolute top-4 right-4 z-20">
+                      <a 
+                        href={window.location.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 p-2 bg-black/40 hover:bg-black/60 rounded-lg text-[10px] font-bold text-white/60 hover:text-white transition-all backdrop-blur-md border border-white/10"
+                        title="If camera is black, open in new tab"
+                      >
+                        <Cloud size={14} />
+                        NEW TAB
+                      </a>
+                    </div>
+                 )}
+                 
                  {/* Safe zone overlay */}
                  <div className="absolute inset-8 border-2 border-[#F27D26]/50 rounded-2xl pointer-events-none after:content-[''] after:absolute after:inset-0 after:border after:border-[#F27D26]/20 after:rounded-2xl after:scale-95" />
+                 
+                 {!isStreamActive && !error && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/40">
+                       <Loader2 className="w-8 h-8 text-[#F27D26] animate-spin" />
+                       <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest animate-pulse">Initializing Lens...</p>
+                    </div>
+                 )}
               </div>
 
               <div className="p-8 flex flex-col items-center gap-6 bg-[#141414]">

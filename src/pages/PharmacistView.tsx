@@ -881,6 +881,24 @@ export default function UserHome() {
 
       {/* Main Content View - Table on desktop, Cards on mobile */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
+        {fetchError && (
+          <div className="p-6 m-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-4">
+            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-red-800">Firestore Authorization Error</h3>
+              <p className="text-xs text-red-600 leading-relaxed font-medium">
+                We're having trouble connecting to the cloud database. If you've just set up Firebase, please ensure you've deployed the security rules and enabled Anonymous Auth.
+              </p>
+              <p className="text-[10px] text-red-500/60 font-mono mt-1">{fetchError}</p>
+              <button 
+                onClick={() => refresh(true)}
+                className="text-[10px] font-bold text-red-700 underline mt-2 uppercase tracking-widest"
+              >
+                Retry Sync
+              </button>
+            </div>
+          </div>
+        )}
         {/* Desktop View Table */}
         <div className="hidden md:block overflow-x-auto max-h-[75vh]">
           <table className="w-full text-left border-collapse">

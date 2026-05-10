@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { db, handleFirestoreError, OperationType, auth } from '../lib/firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from '../lib/sharedDb';
 
@@ -82,9 +82,20 @@ export function useMedications(locationId?: PharmacyLocation) {
         setLoading(false);
       },
       (err) => {
+        console.error("Firestore onSnapshot error:", err);
         setError(err.message);
         setLoading(false);
-        handleFirestoreError(err, OperationType.LIST, 'medications');
+        // We log it robustly but don't throw to avoid crashing the entire React tree
+        const errInfo = {
+          error: err.message,
+          operationType: OperationType.LIST,
+          path: 'medications',
+          authInfo: {
+            userId: auth?.currentUser?.uid,
+            email: auth?.currentUser?.email,
+          }
+        };
+        console.error('Firestore Error Details: ', JSON.stringify(errInfo));
       }
     );
 

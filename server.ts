@@ -27,7 +27,7 @@ if (!fs.existsSync(MEDS_FILE) || fs.readFileSync(MEDS_FILE, 'utf8') === '[]') {
       minQty: 100,
       maxQty: 500,
       expiration1: "15-12-2026",
-      locationId: "adult",
+      locationId: "adult-emergency",
       addedAt: new Date().toISOString(),
       lastUpdatedAt: new Date().toISOString()
     },
@@ -53,7 +53,7 @@ if (!fs.existsSync(MEDS_FILE) || fs.readFileSync(MEDS_FILE, 'utf8') === '[]') {
       minQty: 50,
       maxQty: 200,
       expiration1: "10-10-2027",
-      locationId: "mesaieed",
+      locationId: "mesaieed-opd",
       addedAt: new Date().toISOString(),
       lastUpdatedAt: new Date().toISOString()
     }

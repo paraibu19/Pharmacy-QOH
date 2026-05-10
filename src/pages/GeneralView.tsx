@@ -460,6 +460,26 @@ export default function GeneralView() {
 
       {/* Main Content */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
+        {fetchError && (
+          <div className="p-6 m-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-4">
+            <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-red-800">Database Connection Error</h3>
+              <p className="text-xs text-red-600 leading-relaxed font-medium">
+                {fetchError.includes('permission') 
+                  ? "Access denied. please ensure you have 'Accepted' the database terms in the AI Studio Firebase setup panel."
+                  : fetchError}
+              </p>
+              <button 
+                onClick={() => refresh(true)}
+                className="text-[10px] font-bold text-red-700 underline mt-2 uppercase tracking-widest"
+              >
+                Retry Connection
+              </button>
+            </div>
+          </div>
+        )}
+        
         {/* Desktop View */}
         <div className="hidden md:block overflow-x-auto">
           <table className={`w-full ${isRtl ? 'text-right' : 'text-left'} border-collapse`}>
