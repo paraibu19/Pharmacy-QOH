@@ -29,6 +29,13 @@ export interface Medication {
   imageUrl?: string;
   to?: string;
   isRefrigerated?: boolean;
+  enIndications?: string;
+  arIndications?: string;
+  hiIndications?: string;
+  urIndications?: string;
+  mlIndications?: string;
+  bnIndications?: string;
+  tlIndications?: string;
 }
 
 export interface InventoryAudit {

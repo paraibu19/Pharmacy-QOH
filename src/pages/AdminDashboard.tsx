@@ -16,6 +16,7 @@ import { useMedications } from '../hooks/useMedications';
 import { useAudits } from '../hooks/useAudits';
 import { medicationOps, systemOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
+import { translateIndications } from '../services/translationService';
 import { formatNumber } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
@@ -100,16 +101,15 @@ export default function AdminDashboard() {
     setError(null);
     
     try {
-      // Warm up state but DONT await enumeration before getUserMedia on Safari
-      setIsCapturing(true);
-
+      // In Safari, it's CRITICAL to call getUserMedia as close to the user gesture as possible
+      // and before any major DOM changes that might trip its "security context" checks.
       const constraints: MediaStreamConstraints = {
         video: { 
           facingMode: { ideal: 'environment' },
           width: { ideal: 1280 },
           height: { ideal: 720 }
         },
-        audio: false // Explicitly disable audio for faster/more reliable prompt
+        audio: false
       };
 
       let stream: MediaStream;
@@ -117,81 +117,54 @@ export default function AdminDashboard() {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (err: any) {
         console.warn("Initial camera request failed, trying fallback:", err.name);
-        // Fallback to any camera
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true,
-          audio: false
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
 
       cameraStreamRef.current = stream;
+      setIsCapturing(true);
 
-      // Use a more reliable way to wait for the video element and attach stream
-      let attempts = 0;
-      const attachStreamToVideo = () => {
-        if (videoRef.current) {
+      // Attachment logic moved to a more reliable pattern using requestAnimationFrame
+      const tryAttach = () => {
+        if (videoRef.current && cameraStreamRef.current) {
           const video = videoRef.current;
-          console.log("Found video element, attaching stream");
+          video.srcObject = cameraStreamRef.current;
+          
+          // Force attributes for Safari
           video.setAttribute('playsinline', 'true');
           video.setAttribute('webkit-playsinline', 'true');
           video.muted = true;
-          video.srcObject = stream;
           
-          const handlePlay = () => {
-            console.log("Attempting to play video");
-            video.play()
-              .then(() => {
-                setIsStreamActive(true);
-                console.log("Camera stream active and playing");
-              })
-              .catch(e => {
-                console.warn("Autoplay blocked:", e);
-                // Allow the TAP TO START button overlay to handle manual play
-              });
-          };
-
-          if (video.readyState >= 2) {
-            handlePlay();
-          } else {
-            video.onloadedmetadata = handlePlay;
-            video.onloadeddata = handlePlay; // Backup event
-          }
-        } else if (attempts < 200) {
-          attempts++;
-          setTimeout(() => requestAnimationFrame(attachStreamToVideo), 50); // Small delay can help Safari mount the element
-        } else {
-          setError("Video preview element failed to initialize. Please try restarting the camera.");
-          setIsCapturing(false);
-          stopCamera();
+          video.play()
+            .then(() => {
+              setIsStreamActive(true);
+              console.log("Safari: Native play success");
+            })
+            .catch(e => {
+              console.warn("Safari: Autoplay blocked, showing overlay:", e);
+              // The "TAP TO START" overlay is already handled by state
+            });
+        } else if (isCapturing) {
+          requestAnimationFrame(tryAttach);
         }
       };
       
-      requestAnimationFrame(attachStreamToVideo);
+      requestAnimationFrame(tryAttach);
 
     } catch (err: any) {
       console.error("Camera Error details:", err);
       let msg = "Could not access camera.";
-      
       const errorName = err.name || '';
       const errorMessage = (err.message || '').toLowerCase();
 
       if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError' || errorMessage.includes('denied') || errorMessage.includes('not allowed')) {
-        msg = "Camera access BLOCKED. In Safari, you may need to: 1. Click the AA icon in address bar -> 'Settings for This Website' -> Camera -> 'Allow'. 2. Refresh the page. 3. Ensure you are using the app in a 'New Tab'.";
-      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
-        msg = "No camera hardware detected. If on mobile, check your privacy settings.";
-      } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError' || errorMessage.includes('could not start')) {
-        msg = "Camera is likely in use by another tab or app.";
+        msg = "Camera access BLOCKED. In Safari, you may need to: 1. Click 'Open in New Tab' (top right icon). 2. Click the AA icon in address bar -> 'Settings for This Website' -> Camera -> 'Allow'. 3. Refresh.";
       } else {
         msg = `Camera Error: ${err.message || 'Initialization failed'}`;
       }
       
       setError(msg);
       setIsCapturing(false);
-      
-      if (cameraStreamRef.current) {
-        cameraStreamRef.current.getTracks().forEach(t => t.stop());
-        cameraStreamRef.current = null;
-      }
+      stopCamera();
     }
   };
 
@@ -289,7 +262,9 @@ export default function AdminDashboard() {
     expiration2: '',
     expiration3: '',
     to: '',
-    isRefrigerated: false
+    isRefrigerated: false,
+    enIndications: '',
+    arIndications: ''
   });
 
   // Check for draft on mount
@@ -607,6 +582,8 @@ export default function AdminDashboard() {
             const itemName = String(getRowValue(row, ['itemName', 'Name', 'Description', 'ItemName', 'Item Name', 'Product']) || '');
             const generic = String(getRowValue(row, ['generic', 'Generic Name', 'GenericName', 'Generic', 'GenericName']) || '');
             const to = String(getRowValue(row, ['to', 'Linked', 'Cross Reference', 'BrandItem', 'GenericItem']) || '');
+            const enIndications = String(getRowValue(row, ['enIndications', 'EN Indications', 'EN_Indications', 'Indications EN', 'Indications (EN)', 'English Indications']) || '');
+            const arIndications = String(getRowValue(row, ['arIndications', 'AR Indications', 'AR_Indications', 'Indications AR', 'Indications (AR)', 'Arabic Indications']) || '');
             
             // Comprehensive Refrigerated Detection
             let isRefrigerated = false;
@@ -662,6 +639,8 @@ export default function AdminDashboard() {
               expiration1: formatExp(getRowValue(row, ['exp1', 'expir1', 'expir_1', 'expiry1', 'primary exp', 'expiration1', 'exp date 1'])),
               expiration2: formatExp(getRowValue(row, ['exp2', 'expir2', 'expir_2', 'expiry2', 'secondary exp', 'expiration2', 'exp date 2'])),
               expiration3: formatExp(getRowValue(row, ['exp3', 'expir3', 'expir_3', 'expiry3', 'final exp', 'expiration3', 'exp date 3'])),
+              enIndications,
+              arIndications,
               locationId: locationId!,
             };
           }).filter(Boolean) as any[];
@@ -674,6 +653,29 @@ export default function AdminDashboard() {
             throw new Error(`Could not identify locations from sheet names: ${wb.SheetNames.join(', ')}. Please rename sheets to 'Adult', 'Pediatric', or 'Mesaieed'.`);
           }
           throw new Error("No valid medication data found in the matched sheets.");
+        }
+
+        // Auto-translate indications for other languages if only EN/AR provided
+        const medsNeedingTranslation = allMedsList.filter(m => m.enIndications && !m.hiIndications);
+        if (medsNeedingTranslation.length > 0) {
+          console.log(`Translating indications for ${medsNeedingTranslation.length} items...`);
+          // Batch translate to save API costs and time
+          const batchSize = 15;
+          for (let i = 0; i < medsNeedingTranslation.length; i += batchSize) {
+            const chunk = medsNeedingTranslation.slice(i, i + batchSize);
+            await Promise.all(chunk.map(async (med) => {
+              try {
+                const translationsMap = await translateIndications(med.enIndications, ['hi', 'ur', 'ml', 'bn', 'tl']);
+                med.hiIndications = translationsMap.hi || '';
+                med.urIndications = translationsMap.ur || '';
+                med.mlIndications = translationsMap.ml || '';
+                med.bnIndications = translationsMap.bn || '';
+                med.tlIndications = translationsMap.tl || '';
+              } catch (e) {
+                console.error(`Failed to translate for ${med.itemName}:`, e);
+              }
+            }));
+          }
         }
 
         await medicationOps.bulkAdd(allMedsList, { photoStrategy: importPhotoStrategy });
@@ -879,11 +881,27 @@ export default function AdminDashboard() {
     
     try {
       setError(null);
+      
+      // Auto-translate if only EN provided
+      const dataToSave = { ...form };
+      if (dataToSave.enIndications && !dataToSave.hiIndications) {
+        try {
+          const trans = await translateIndications(dataToSave.enIndications!, ['hi', 'ur', 'ml', 'bn', 'tl']);
+          dataToSave.hiIndications = trans.hi;
+          dataToSave.urIndications = trans.ur;
+          dataToSave.mlIndications = trans.ml;
+          dataToSave.bnIndications = trans.bn;
+          dataToSave.tlIndications = trans.tl;
+        } catch (e) {
+          console.warn("Manual translation failed", e);
+        }
+      }
+
       if (editingId) {
-        await medicationOps.update(editingId, form);
+        await medicationOps.update(editingId, dataToSave);
       } else {
         await medicationOps.add({
-          ...form,
+          ...dataToSave,
           locationId: selectedLocation,
         } as any);
       }
@@ -891,7 +909,11 @@ export default function AdminDashboard() {
       await refresh();
       setEditingId(null);
       setIsAdding(false);
-      setForm({ itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false });
+      setForm({ 
+        itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
+        expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
+        enIndications: '', arIndications: ''
+      });
       clearDraft();
     } catch (error: any) {
       setError(error.message);
@@ -925,7 +947,9 @@ export default function AdminDashboard() {
       expiration2: med.expiration2,
       expiration3: med.expiration3,
       imageUrl: med.imageUrl || '',
-      isRefrigerated: med.isRefrigerated || false
+      isRefrigerated: med.isRefrigerated || false,
+      enIndications: med.enIndications || '',
+      arIndications: med.arIndications || ''
     });
   };
 
@@ -1692,7 +1716,7 @@ export default function AdminDashboard() {
                          </button>
                          <label className="p-1.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-lg text-[#141414]/40 hover:text-[#F27D26] transition-all cursor-pointer">
                            <ImageIcon size={14} />
-                           <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                           <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
                          </label>
                        </div>
                     </div>
@@ -1726,6 +1750,21 @@ export default function AdminDashboard() {
                         value={form.to}
                         onChange={e => setForm({...form, to: e.target.value})}
                       />
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <textarea 
+                          placeholder="Indications (EN)" 
+                          className="w-full text-[10px] p-1 border rounded h-12 bg-blue-50/30"
+                          value={form.enIndications}
+                          onChange={e => setForm({...form, enIndications: e.target.value})}
+                        />
+                        <textarea 
+                          placeholder="دواعي الاستعمال (AR)" 
+                          className="w-full text-[10px] p-1 border rounded h-12 bg-emerald-50/30 text-right"
+                          dir="rtl"
+                          value={form.arIndications}
+                          onChange={e => setForm({...form, arIndications: e.target.value})}
+                        />
+                      </div>
                       <label className="flex items-center gap-2 cursor-pointer select-none mt-1">
                         <input 
                           type="checkbox" 
@@ -1999,7 +2038,7 @@ export default function AdminDashboard() {
                     <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl text-[10px] font-bold text-[#141414] shadow-sm border border-[#141414]/5 cursor-pointer">
                       <ImageIcon size={14} className="text-[#F27D26]" />
                       UPLOAD
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                      <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
                     </label>
                   </div>
                </div>
@@ -2035,6 +2074,21 @@ export default function AdminDashboard() {
               value={form.generic}
               onChange={e => setForm({...form, generic: e.target.value})}
             />
+            <div className="grid grid-cols-1 gap-3">
+              <textarea 
+                placeholder="Indications (English)" 
+                className="w-full text-xs p-3 bg-white border rounded-xl h-20"
+                value={form.enIndications}
+                onChange={e => setForm({...form, enIndications: e.target.value})}
+              />
+              <textarea 
+                placeholder="دواعي الاستعمال (Arabic)" 
+                className="w-full text-xs p-3 bg-white border rounded-xl h-20 text-right"
+                dir="rtl"
+                value={form.arIndications}
+                onChange={e => setForm({...form, arIndications: e.target.value})}
+              />
+            </div>
             <div className="flex items-center gap-3 p-3 bg-white border rounded-xl">
                <input 
                  type="checkbox" 

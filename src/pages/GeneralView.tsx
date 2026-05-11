@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check, ArrowRightLeft, ThermometerSnowflake, UploadCloud } from 'lucide-react';
+import { Search, MapPin, Sparkles, Filter, Loader2, X as XIcon, RefreshCw, Image as ImageIcon, Bell, Calendar, Clock, ChevronRight, AlertCircle, Save, Globe, Check, ArrowRightLeft, ThermometerSnowflake, UploadCloud, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, Medication } from '../types';
 import { LOCATIONS } from '../constants';
@@ -33,6 +33,7 @@ export default function GeneralView() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
+  const [selectedMedForIndications, setSelectedMedForIndications] = useState<Medication | null>(null);
   
   // Reminder State
   const [selectedMedicationForReminder, setSelectedMedicationForReminder] = useState<Medication | null>(null);
@@ -528,16 +529,28 @@ export default function GeneralView() {
                           )}
                           {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
                         </div>
-                        {med.to && (
-                          <button 
-                            onClick={() => setSelectedMedForLinks(med)}
-                            className="p-1 px-2 bg-[#F27D26]/10 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/btn shadow-sm"
-                            title="View Linked Brand/Generic Items"
-                          >
-                            <ArrowRightLeft size={10} className="group-hover/btn:rotate-180 transition-transform duration-500" />
-                            <span className="text-[8px] font-black uppercase tracking-tighter">Linked Info</span>
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {(med.enIndications || med.arIndications) && (
+                            <button 
+                              onClick={() => setSelectedMedForIndications(med)}
+                              className="p-1 px-2 bg-[#F27D26]/5 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/info shadow-sm"
+                              title={t.indicationsTitle}
+                            >
+                              <Info size={12} className="group-hover/info:scale-110 transition-transform" />
+                              <span className="text-[8px] font-black uppercase tracking-tighter">{t.indicationsInfo}</span>
+                            </button>
+                          )}
+                          {med.to && (
+                            <button 
+                              onClick={() => setSelectedMedForLinks(med)}
+                              className="p-1 px-2 bg-[#F27D26]/10 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/btn shadow-sm"
+                              title="View Linked Brand/Generic Items"
+                            >
+                              <ArrowRightLeft size={10} className="group-hover/btn:rotate-180 transition-transform duration-500" />
+                              <span className="text-[8px] font-black uppercase tracking-tighter">Linked Info</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -591,6 +604,16 @@ export default function GeneralView() {
                       <ThermometerSnowflake size={10} />
                       REF
                     </span>
+                  )}
+                  {(med.enIndications || med.arIndications) && (
+                    <button 
+                      onClick={() => setSelectedMedForIndications(med)}
+                      className="p-1 px-2 bg-[#F27D26]/5 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/info shadow-sm"
+                      title={t.indicationsTitle}
+                    >
+                      <Info size={12} className="group-hover/info:scale-110 transition-transform" />
+                      <span className="text-[8px] font-black uppercase tracking-tighter">{t.indicationsInfo}</span>
+                    </button>
                   )}
                   {med.to && (
                     <button 
@@ -920,6 +943,78 @@ export default function GeneralView() {
                     </div>
                   ))
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Indications Modal */}
+      <AnimatePresence>
+        {selectedMedForIndications && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
+            <motion.div 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 20, opacity: 0 }}
+              className="relative max-w-lg w-full bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+                    <Info size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-[#141414] leading-tight">
+                      {selectedMedForIndications.itemName}
+                    </h2>
+                    <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">
+                      {t.indicationsTitle}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedMedForIndications(null)}
+                  className="p-2 hover:bg-[#141414]/5 rounded-full text-[#141414]/40 transition-colors"
+                >
+                  <XIcon size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                <div className="p-5 bg-[#F27D26]/5 rounded-2xl border border-[#F27D26]/10 min-h-[150px] flex flex-col">
+                  <span className={`text-[10px] font-bold text-[#F27D26] uppercase tracking-widest mb-3 ${isRtl ? 'text-right' : 'text-left'}`}>
+                    {t.indicationsInfo}
+                  </span>
+                  <div className={`text-sm font-medium text-[#141414] leading-relaxed whitespace-pre-wrap ${isRtl ? 'text-right' : 'text-left'}`}>
+                    {(() => {
+                      const med = selectedMedForIndications;
+                      if (language === 'ar' && med.arIndications) return med.arIndications;
+                      if (language === 'hi' && med.hiIndications) return med.hiIndications;
+                      if (language === 'ur' && med.urIndications) return med.urIndications;
+                      if (language === 'ml' && med.mlIndications) return med.mlIndications;
+                      if (language === 'bn' && med.bnIndications) return med.bnIndications;
+                      if (language === 'tl' && med.tlIndications) return med.tlIndications;
+                      
+                      // Fallback to EN if specific translation missing
+                      if (med.enIndications) return med.enIndications;
+                      
+                      // Final fallback if even EN is missing but AR exists
+                      if (med.arIndications) return med.arIndications;
+                      
+                      return t.noIndications;
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 bg-[#141414]/[0.02] border-t border-[#141414]/5">
+                <button 
+                  onClick={() => setSelectedMedForIndications(null)}
+                  className="w-full px-4 py-3 bg-[#141414] text-white rounded-2xl text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-black/10"
+                >
+                  {t.cancel}
+                </button>
               </div>
             </motion.div>
           </div>

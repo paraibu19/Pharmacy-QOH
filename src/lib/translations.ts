@@ -51,6 +51,9 @@ export interface TranslationStrings {
   confirmClear: string;
   storageInstructions: string;
   refrigerated: string;
+  indicationsTitle: string;
+  indicationsInfo: string;
+  noIndications: string;
 }
 
 export const LANGUAGES: { id: Language; label: string; dir: 'ltr' | 'rtl' }[] = [
@@ -114,6 +117,9 @@ export const translations: Record<Language, TranslationStrings> = {
     confirmClear: 'Are you sure you want to clear all saved reminders?',
     storageInstructions: '**STORAGE INSTRUCTIONS:** Store in refrigerator (2-8°C). DO NOT FREEZE.',
     refrigerated: 'Refrigerated (2-8°C)',
+    indicationsTitle: 'Drug Indications',
+    indicationsInfo: 'Indications',
+    noIndications: 'No indications information available'
   },
   ar: {
     title: 'الصفحة الرئيسية',
@@ -165,6 +171,9 @@ export const translations: Record<Language, TranslationStrings> = {
     confirmClear: 'هل أنت متأكد من مسح جميع التذكيرات؟',
     storageInstructions: '**تعليمات التخزين:** يحفظ في الثلاجة (2-8 درجات مئوية). لا يجمد.',
     refrigerated: 'مبرّد (2-8 درجة مئوية)',
+    indicationsTitle: 'دواعي الاستعمال',
+    indicationsInfo: 'معلومات الدواء',
+    noIndications: 'لا توجد معلومات عن دواعي الاستعمال'
   },
   hi: {
     title: 'होमपेज',
@@ -216,6 +225,9 @@ export const translations: Record<Language, TranslationStrings> = {
     confirmClear: 'क्या आप वाकई सभी रिमाइंडर हटाना चाहते हैं?',
     storageInstructions: '**भण्डारण निर्देश:** रेफ्रिजरेटर (2-8°C) में रखें। फ्रीज न करें।',
     refrigerated: 'रेफ्रिजरेटेड (2-8°C)',
+    indicationsTitle: 'दवा के संकेत',
+    indicationsInfo: 'जानकारी',
+    noIndications: 'कोई जानकारी उपलब्ध नहीं'
   },
   ur: {
     title: 'ہوم پیج',
@@ -267,6 +279,9 @@ export const translations: Record<Language, TranslationStrings> = {
     confirmClear: 'کیا آپ واقعی تمام ریمنڈرز ختم کرنا چاہتے ہیں؟',
     storageInstructions: '**سٹوریج کی ہدایات:** ریفریجریٹر (2-8°C) میں رکھیں۔ فریز نہ کریں۔',
     refrigerated: 'ریفریجریٹڈ (2-8°C)',
+    indicationsTitle: 'دوا کے استعمال',
+    indicationsInfo: 'معلومات',
+    noIndications: 'معلومات دستیاب نہیں'
   },
   ml: {
     title: 'ഹോംപേജ്',
@@ -318,6 +333,9 @@ export const translations: Record<Language, TranslationStrings> = {
     confirmClear: 'എല്ലാ ഓർമ്മപ്പെടുത്തലുകളും കളയണോ?',
     storageInstructions: '**സംഭരണ നിർദ്ദേശങ്ങൾ:** റഫ്രിജറേറ്ററിൽ (2-8°C) സൂക്ഷിക്കുക. ഫ്രീസ് ചെയ്യരുത്.',
     refrigerated: 'റെഫ്രിജറേറ്ററിൽ സൂക്ഷിക്കേണ്ടവ (2-8°C)',
+    indicationsTitle: 'മരുന്ന് ഉപയോഗം',
+    indicationsInfo: 'വിവരങ്ങൾ',
+    noIndications: 'വിവരങ്ങൾ ലഭ്യമല്ല'
   },
   bn: {
     title: 'হোমপেজ',
@@ -369,6 +387,9 @@ export const translations: Record<Language, TranslationStrings> = {
     confirmClear: 'আপনি কি সব রিমাইন্ডার মুছতে চান?',
     storageInstructions: '**সংরক্ষণের নির্দেশাবলী:** রেফ্রিজারেটরে (2-8°C) রাখুন। ফ্রিজে রাখবেন না।',
     refrigerated: 'রেফ্রিজারেটরে রাখতে হবে (2-8°C)',
+    indicationsTitle: 'ওষুধের ব্যবহার',
+    indicationsInfo: 'তথ্য',
+    noIndications: 'কোনো তথ্য পাওয়া যায়নি'
   },
   tl: {
     title: 'Homepage',
@@ -420,5 +441,8 @@ export const translations: Record<Language, TranslationStrings> = {
     confirmClear: 'Siguradong i-clear ang lahat ng paalala?',
     storageInstructions: '**MGA INSTRUKSYON SA PAG-IIMBAK:** Itabi sa refrigerator (2-8°C). HUWAG I-FREEZE.',
     refrigerated: 'Naka-refrigerator (2-8°C)',
+    indicationsTitle: 'Mga Indikasyon',
+    indicationsInfo: 'Impormasyon',
+    noIndications: 'Walang impormasyon na magagamit'
   },
 };
