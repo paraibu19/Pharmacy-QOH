@@ -47,6 +47,7 @@ export default function AdminInventory() {
   const [sortField, setSortField] = useState<SortField>('itemName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   
+  const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
@@ -93,6 +94,19 @@ export default function AdminInventory() {
 
     if (availableGenericsOnly) {
       result = result.filter(m => m.generic && m.qoh > 0);
+    }
+
+    if (stockStatusFilter !== 'all') {
+      result = result.filter(m => {
+        const isOutOfStock = m.qoh <= 0;
+        const isLowStock = !isOutOfStock && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+        const isInStock = !isOutOfStock && !isLowStock;
+        
+        if (stockStatusFilter === 'in') return isInStock;
+        if (stockStatusFilter === 'low') return isLowStock;
+        if (stockStatusFilter === 'out') return isOutOfStock;
+        return true;
+      });
     }
 
     if (lowStockOnly) {
@@ -357,6 +371,31 @@ export default function AdminInventory() {
             ))}
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'all', label: 'All', icon: Filter },
+              { id: 'in', label: 'In Stock', icon: CheckCircle2 },
+              { id: 'low', label: 'Low Stock', icon: AlertTriangle },
+              { id: 'out', label: 'Out of Stock', icon: X },
+            ].map(status => (
+              <button
+                key={status.id}
+                onClick={() => setStockStatusFilter(status.id as any)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
+                  stockStatusFilter === status.id
+                    ? status.id === 'in' ? 'bg-emerald-100 border-emerald-200 text-emerald-700 shadow-sm'
+                    : status.id === 'low' ? 'bg-amber-100 border-amber-200 text-amber-700 shadow-sm'
+                    : status.id === 'out' ? 'bg-red-100 border-red-200 text-red-700 shadow-sm'
+                    : 'bg-[#141414] border-[#141414] text-white shadow-sm'
+                    : 'bg-white border-[#141414]/10 text-[#141414]/40 hover:border-[#141414]/20 hover:text-[#141414]'
+                }`}
+              >
+                <status.icon size={12} />
+                {status.label}
+              </button>
+            ))}
+          </div>
+
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -443,9 +482,10 @@ export default function AdminInventory() {
         )}
       </div>
 
-      {/* Audit Table */}
+      {/* Audit View - Table on desktop, Cards on mobile */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
-        <div className="overflow-x-auto max-h-[75vh]">
+        {/* Desktop View */}
+        <div className="hidden md:block overflow-x-auto max-h-[75vh]">
           <table className="w-full text-left">
             <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="bg-[#141414]/[0.02] text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
@@ -500,7 +540,7 @@ export default function AdminInventory() {
             <tbody className="divide-y divide-[#141414]/5">
               {loading && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center">
+                  <td colSpan={6} className="px-6 py-20 text-center">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#141414]/20" />
                   </td>
                 </tr>
@@ -599,17 +639,97 @@ export default function AdminInventory() {
                   </tr>
                 );
               })}
-              
-              {sortedMeds.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center opacity-30 italic font-medium">
-                    No items to audit in this location.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
+
+        {/* Mobile View */}
+        <div className="md:hidden divide-y divide-[#141414]/5">
+          {loading && (
+            <div className="p-20 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#141414]/20" />
+            </div>
+          )}
+          {!loading && sortedMeds.map((med) => {
+            const physical = physicalCounts[med.id] ?? med.qoh;
+            const variance = physical - med.qoh;
+            const hasVariance = variance !== 0;
+
+            return (
+              <div key={med.id} className="p-4 space-y-4">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</span>
+                    <h3 className="font-bold text-[#141414] leading-tight">{med.itemName}</h3>
+                    {med.isRefrigerated && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[8px] font-black uppercase tracking-tighter">
+                        <ThermometerSnowflake size={8} />
+                        Refrigerated
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right flex flex-col items-end gap-1">
+                    <span className="text-sm font-black bg-[#141414]/5 px-2 py-1 rounded">{formatNumber(med.qoh)}</span>
+                    <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${
+                      med.qoh <= 0 ? 'bg-red-100 text-red-600' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                    }`}>
+                      {med.qoh <= 0 ? 'Out' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'Low' : 'OK'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block ml-1">Physical Count</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={physicalCounts[med.id] ?? ''}
+                      placeholder={formatNumber(med.qoh)}
+                      onChange={(e) => handlePhysicalCountChange(med.id, e.target.value)}
+                      className={`w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#F27D26]/20 transition-all ${
+                        hasVariance ? 'ring-2 ring-orange-200 bg-orange-50/50' : ''
+                      }`}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block ml-1">Variance</label>
+                    <div className={`h-[44px] flex items-center justify-center px-4 rounded-xl text-sm font-black border ${
+                      hasVariance 
+                        ? variance > 0 ? 'bg-blue-50 border-blue-100 text-blue-600' : 'bg-red-50 border-red-100 text-red-600'
+                        : 'bg-[#141414]/5 border-transparent text-[#141414]/20'
+                    }`}>
+                      {hasVariance ? (
+                        <>
+                          <ArrowUpRight className={`w-3 h-3 mr-1 ${variance < 0 ? 'rotate-180' : ''}`} />
+                          {variance > 0 ? '+' : ''}{formatNumber(variance)}
+                        </>
+                      ) : '0'}
+                    </div>
+                  </div>
+                </div>
+
+                {hasVariance && (
+                  <button
+                    onClick={() => handleAdjust(med)}
+                    className="w-full py-4 bg-[#141414] text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#F27D26] shadow-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    Reconcile Variance
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {sortedMeds.length === 0 && !loading && (
+          <div className="p-20 text-center flex flex-col items-center gap-4">
+            <Search className="w-8 h-8 text-[#141414]/10" />
+            <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-sm">No items found</p>
+          </div>
+        )}
       </div>
     </div>
   );

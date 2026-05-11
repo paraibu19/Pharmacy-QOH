@@ -58,6 +58,7 @@ export default function AdminDashboard() {
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [skippedUploads, setSkippedUploads] = useState<string[]>([]);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -1072,31 +1073,6 @@ export default function AdminDashboard() {
               </div>
             </div>
             
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
-              {[
-                { id: 'all', label: 'All', icon: Filter },
-                { id: 'in', label: 'In Stock', icon: Check },
-                { id: 'low', label: 'Low Stock', icon: AlertTriangle },
-                { id: 'out', label: 'Out of Stock', icon: Trash2 }
-              ].map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setStockFilter(f.id as any)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
-                    stockFilter === f.id
-                      ? f.id === 'in' ? 'bg-emerald-500 text-white border-emerald-500 shadow-md' :
-                        f.id === 'low' ? 'bg-amber-500 text-white border-amber-500 shadow-md' :
-                        f.id === 'out' ? 'bg-red-500 text-white border-red-500 shadow-md' :
-                        'bg-[#141414] text-white border-[#141414] shadow-md'
-                      : 'bg-white text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/5'
-                  }`}
-                >
-                  <f.icon size={14} />
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            
             <div className="flex items-center justify-between md:justify-start gap-3">
             <h1 className="text-2xl md:text-3xl font-bold text-[#141414]">Management</h1>
             <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
@@ -1244,7 +1220,7 @@ export default function AdminDashboard() {
       {/* Expiration Alerts Widget */}
       <div className="flex flex-col gap-6 md:gap-8">
         {/* Top Horizontal Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Inventory Stats Mini Card */}
           <div className="bg-[#141414] text-white p-5 rounded-3xl shadow-xl flex flex-col justify-between border border-white/5">
             <div className="flex justify-between items-start mb-4">
@@ -1274,7 +1250,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Activity Feed Card */}
-          <div className="bg-white rounded-3xl p-5 border border-[#141414]/10 shadow-sm flex flex-col h-[180px]">
+          <div className="bg-white rounded-3xl p-5 border border-[#141414]/10 shadow-sm flex flex-col h-[180px] lg:col-span-2">
              <div className="flex items-center gap-2 mb-3">
                <History size={16} className="text-[#F27D26]" />
                <p className="text-[10px] font-black uppercase tracking-widest text-[#141414]/40">Live Activity</p>
@@ -1303,7 +1279,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* System Status Mini Card */}
-          <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col justify-between shadow-sm">
+          <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col justify-between shadow-sm h-[180px] lg:col-span-1">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600">
                 <RefreshCw size={18} className="animate-spin-slow" />
@@ -1313,9 +1289,11 @@ export default function AdminDashboard() {
                 <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-tight">Real-time Connected</p>
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="text-[9px] text-emerald-700/60 font-bold uppercase">Last Sync</div>
-              <div className="text-xs font-bold text-emerald-700">{format(lastSynced, 'HH:mm:ss')}</div>
+            <div className="mt-auto">
+              <div className="flex items-center justify-between">
+                <div className="text-[9px] text-emerald-700/60 font-bold uppercase">Last Sync</div>
+                <div className="text-xs font-bold text-emerald-700">{format(lastSynced, 'HH:mm:ss')}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -1616,6 +1594,31 @@ export default function AdminDashboard() {
                   }`}
                 >
                   {loc.name.replace('Aw-', '')}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2 border-t border-[#141414]/5 mt-2">
+              {[
+                { id: 'all', label: 'All', icon: Filter },
+                { id: 'in', label: 'In Stock', icon: Check },
+                { id: 'low', label: 'Low Stock', icon: AlertTriangle },
+                { id: 'out', label: 'Out of Stock', icon: Trash2 }
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setStockFilter(f.id as any)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border ${
+                    stockFilter === f.id
+                      ? f.id === 'in' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 shadow-sm' :
+                        f.id === 'low' ? 'bg-amber-100 text-amber-700 border-amber-200 shadow-sm' :
+                        f.id === 'out' ? 'bg-red-100 text-red-700 border-red-200 shadow-sm' :
+                        'bg-[#141414] text-white border-[#141414] shadow-sm'
+                      : 'bg-white text-[#141414]/40 border-[#141414]/10 hover:border-[#141414]/20 hover:text-[#141414]'
+                  }`}
+                >
+                  <f.icon size={12} />
+                  {f.label}
                 </button>
               ))}
             </div>

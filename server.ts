@@ -66,14 +66,15 @@ if (!fs.existsSync(SETTINGS_FILE)) {
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
     adminPassword: 'admin123',
     pharmacistPassword: 'pharmacist123',
-    orderPassword: 'order123'
+    orderPassword: 'order123',
+    adminEmail: 'admin@halth-org.com'
   }, null, 2));
 }
 
+// Auth & Settings Routes (Memory store for verification codes removed)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Auth & Settings Routes
 app.post('/api/auth/admin', (req, res) => {
   const { password } = req.body;
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
@@ -88,13 +89,21 @@ app.post('/api/auth/change-password', (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
   
-  if (currentPassword !== settings.adminPassword) {
+  if (currentPassword && currentPassword !== settings.adminPassword) {
     return res.status(401).json({ success: false, error: 'Current password incorrect' });
   }
 
-  settings.adminPassword = newPassword;
+  if (newPassword) settings.adminPassword = newPassword;
+  
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
   res.json({ success: true });
+});
+
+app.get('/api/auth/settings', (req, res) => {
+  const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  res.json({ 
+    adminEmail: settings.adminEmail 
+  });
 });
 
 // API Routes

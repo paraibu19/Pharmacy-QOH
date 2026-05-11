@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Key, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { Key, Eye, EyeOff, Loader2, AlertCircle, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { auth } from '../lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
@@ -15,7 +15,8 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const [view, setView] = useState<'login' | 'forgot' | 'change'>('login');
+  const [view, setView] = useState<'login' | 'change'>('login');
+  const [resetRequested, setResetRequested] = useState(false);
   
   // States for change password
   const [currentPassword, setCurrentPassword] = useState('');
@@ -23,11 +24,6 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
   const navigate = useNavigate();
-
-  const handleForgotPassword = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('Please contact the system administrator to reset your password.');
-  };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,19 +81,26 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
             await signInAnonymously(auth);
           } catch (err) {
             console.warn('Anonymous sign-in failed (ensure it is enabled in Firebase Console):', err);
-            // We don't block access to the dashboard if the backend said OK, 
-            // but we'll likely hit permission errors later if writes are needed.
           }
         }
         onLogin();
         navigate('/admin/dashboard');
       } else {
-        const data = await res.json();
-        setError(data.error || 'Invalid password');
+        let errorMessage = 'Invalid password';
+        try {
+          const data = await res.json();
+          errorMessage = data.error || errorMessage;
+        } catch (e) {
+          console.error('Failed to parse error response:', e);
+          errorMessage = `Server error (${res.status})`;
+        }
+        setError(errorMessage);
       }
-    } catch (err) {
-      console.error('Auth error:', err);
-      setError('Connection error. Please check if the server is running.');
+    } catch (err: any) {
+      console.error('Auth error detail:', err);
+      setError(err?.message === 'The string did not match the expected pattern.' 
+        ? 'Login failed: Possible browser or network configuration issue.'
+        : 'Connection error. Please check if the server is running.');
     } finally {
       setLoading(false);
     }
@@ -118,14 +121,23 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
         
         <h1 className="text-2xl font-bold text-center mb-2">
           {view === 'login' && 'Admin Access'}
-          {view === 'forgot' && 'Forgot Password'}
           {view === 'change' && 'Change Password'}
         </h1>
         <p className="text-center text-[#141414]/60 text-sm mb-8">
           {view === 'login' && 'Sign in with your authorized password to manage AW-PharmaStock Pro.'}
-          {view === 'forgot' && 'Enter your email address if you registered one, or contact support.'}
           {view === 'change' && 'Enter your current password to set a new one.'}
         </p>
+
+        {success && view !== 'login' && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mb-6 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3 text-emerald-600 text-sm font-medium"
+          >
+            <Check size={18} />
+            {success}
+          </motion.div>
+        )}
 
         {view === 'login' && (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -152,14 +164,7 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-1">
-              <button 
-                type="button" 
-                onClick={() => { setView('forgot'); setError(''); }}
-                className="text-[10px] font-bold text-[#F27D26] hover:underline uppercase tracking-widest"
-              >
-                Forgot Password?
-              </button>
+            <div className="flex items-center justify-end px-1">
               <button 
                 type="button" 
                 onClick={() => { setView('change'); setError(''); }}
@@ -184,27 +189,6 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Access Dashboard
-            </button>
-          </form>
-        )}
-
-        {view === 'forgot' && (
-          <form onSubmit={handleForgotPassword} className="space-y-4">
-            <div className="p-4 bg-red-50 text-red-600 text-[10px] font-bold uppercase tracking-widest rounded-xl border border-red-100 flex items-center gap-2 shrink-0">
-               <AlertCircle size={14} />
-               Contact System Administrator
-            </div>
-            
-            <p className="text-xs text-[#141414]/60 bg-[#141414]/5 p-4 rounded-xl leading-relaxed">
-              For security reasons, password recovery is restricted. Please reach out to your IT department or the head pharmacist to initiate a password reset.
-            </p>
-
-            <button
-              type="button"
-              onClick={() => { setView('login'); setError(''); }}
-              className="w-full py-3 border-2 border-[#141414]/10 text-[#141414] rounded-xl font-bold hover:bg-[#141414]/5 transition-colors"
-            >
-              Back to Login
             </button>
           </form>
         )}
