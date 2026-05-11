@@ -50,6 +50,7 @@ export default function UserHome() {
   // Password change states
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isAdminVerified, setIsAdminVerified] = useState(false);
+  const [verifiedAdminPassword, setVerifiedAdminPassword] = useState('');
   const [adminPasswordAttempt, setAdminPasswordAttempt] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -312,15 +313,28 @@ export default function UserHome() {
     doc.save(`${locationName}_Inventory_${format(new Date(), 'yyyyMMdd')}.pdf`);
   };
 
-  const handleVerifyAdmin = (e: React.FormEvent) => {
+  const handleVerifyAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const currentAdminPassword = localStorage.getItem('adminPassword') || 'admin123';
-    if (adminPasswordAttempt.trim() === currentAdminPassword) {
-      setIsAdminVerified(true);
-      setChangeError('');
-      setAdminPasswordAttempt('');
-    } else {
-      setChangeError('Invalid Admin Password');
+    setChangeError('');
+    setIsSavingPassword(true);
+    try {
+      const res = await fetch('/api/auth/verify-admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: adminPasswordAttempt.trim() })
+      });
+      
+      if (res.ok) {
+        setIsAdminVerified(true);
+        setVerifiedAdminPassword(adminPasswordAttempt.trim());
+        setAdminPasswordAttempt('');
+      } else {
+        setChangeError('Invalid Admin Password');
+      }
+    } catch (err) {
+      setChangeError('Verification failed. Server unreachable.');
+    } finally {
+      setIsSavingPassword(false);
     }
   };
 
@@ -337,15 +351,33 @@ export default function UserHome() {
 
     setIsSavingPassword(true);
     try {
-      await technicianAuthOps.updatePassword('pharmacist', newPassword);
-      setIsChangingPassword(false);
-      setIsAdminVerified(false);
-      setNewPassword('');
-      setConfirmPassword('');
-      setChangeError('');
-      setPersistedPassword(newPassword);
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          currentPassword: verifiedAdminPassword, 
+          newPassword,
+          role: 'pharmacist'
+        })
+      });
+
+      if (res.ok) {
+        // Also update Firebase for global sync if enabled
+        await technicianAuthOps.updatePassword('pharmacist', newPassword);
+        
+        setIsChangingPassword(false);
+        setIsAdminVerified(false);
+        setVerifiedAdminPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setChangeError('');
+        setPersistedPassword(newPassword);
+      } else {
+        const data = await res.json();
+        setChangeError(data.error || 'Failed to update password.');
+      }
     } catch (err) {
-      setChangeError('Failed to update password.');
+      setChangeError('Failed to update password. Server error.');
     } finally {
       setIsSavingPassword(false);
     }

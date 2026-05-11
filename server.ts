@@ -86,17 +86,36 @@ app.post('/api/auth/admin', (req, res) => {
 });
 
 app.post('/api/auth/change-password', (req, res) => {
-  const { currentPassword, newPassword } = req.body;
+  const { currentPassword, newPassword, role } = req.body;
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
   
-  if (currentPassword && currentPassword !== settings.adminPassword) {
-    return res.status(401).json({ success: false, error: 'Current password incorrect' });
+  // To change any password, you must provide the current ADMIN password
+  if (!currentPassword || currentPassword !== settings.adminPassword) {
+    return res.status(401).json({ success: false, error: 'Admin password incorrect' });
   }
 
-  if (newPassword) settings.adminPassword = newPassword;
+  if (newPassword) {
+    if (role === 'pharmacist') {
+      settings.pharmacistPassword = newPassword;
+    } else if (role === 'order') {
+      settings.orderPassword = newPassword;
+    } else {
+      settings.adminPassword = newPassword;
+    }
+  }
   
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
   res.json({ success: true });
+});
+
+app.post('/api/auth/verify-admin', (req, res) => {
+  const { password } = req.body;
+  const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  if (password === settings.adminPassword) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, error: 'Invalid admin password' });
+  }
 });
 
 app.get('/api/auth/settings', (req, res) => {
