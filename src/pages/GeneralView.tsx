@@ -462,21 +462,42 @@ export default function GeneralView() {
       {/* Main Content */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
         {fetchError && (
-          <div className="p-6 m-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-4">
-            <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-red-800">Database Connection Error</h3>
-              <p className="text-xs text-red-600 leading-relaxed font-medium">
-                {fetchError.includes('permission') 
-                  ? "Access denied. please ensure you have 'Accepted' the database terms in the AI Studio Firebase setup panel."
-                  : fetchError}
-              </p>
-              <button 
-                onClick={() => refresh(true)}
-                className="text-[10px] font-bold text-red-700 underline mt-2 uppercase tracking-widest"
-              >
-                Retry Connection
-              </button>
+          <div className="p-6 m-4 bg-red-50 border border-red-100 rounded-xl flex items-start gap-4 animate-in fade-in zoom-in-95 duration-500">
+            <AlertCircle className="w-6 h-6 text-red-500 shrink-0 mt-0.5" />
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold text-red-800 uppercase tracking-tight">Database Connection Error</h3>
+              
+              <div className="text-xs text-red-700 leading-relaxed font-medium bg-white/50 p-4 rounded-xl border border-red-200/50">
+                {fetchError.includes('permission') ? (
+                  <p>Access denied. please ensure you have 'Accepted' the database terms in the AI Studio Firebase setup panel.</p>
+                ) : fetchError.toLowerCase().includes('quota') || fetchError.toLowerCase().includes('limit') ? (
+                  <div className="space-y-2">
+                    <p className="font-black text-red-800">DAILY LIMIT REACHED (QUOTA EXCEEDED)</p>
+                    <p>The free version of this database allows 50,000 reads per day. This limit has been reached due to high activity (e.g. large data uploads or many users). </p>
+                    <p className="bg-amber-100 text-amber-800 p-2 rounded border border-amber-200">
+                      <strong>Solution:</strong> The limit will reset automatically <strong>tomorrow</strong> (at midnight US Pacific Time). 
+                    </p>
+                    <p className="opacity-60 italic text-[10px]">Note: Offline mode is now enabled, so future visits will use cached data to save on reads.</p>
+                  </div>
+                ) : (
+                  <p>{fetchError}</p>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => refresh(true)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-200"
+                >
+                  Retry Connection
+                </button>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="text-[10px] font-bold text-red-700 underline uppercase tracking-widest opacity-60 hover:opacity-100"
+                >
+                  Refresh Page
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -656,24 +677,25 @@ export default function GeneralView() {
       {/* Reminder Modal */}
       <AnimatePresence>
         {selectedMedicationForReminder && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
+          <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-0 md:p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
             <motion.div 
-              initial={{ y: 20, opacity: 0 }}
+              initial={{ y: "100%", opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 20, opacity: 0 }}
-              className="relative max-w-lg w-full bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col"
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative max-w-lg w-full bg-white rounded-t-[2.5rem] md:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] md:max-h-[85vh]"
             >
               {/* Modal Header */}
-              <div className="p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between sticky top-0 z-10">
+              <div className="p-5 md:p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between sticky top-0 z-10 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
                     <Bell size={20} />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-[#141414] leading-tight">
+                    <h2 className="text-base md:text-lg font-bold text-[#141414] leading-tight">
                       {selectedMedicationForReminder.itemName}
                     </h2>
-                    <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">
+                    <p className="text-[9px] md:text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">
                       {t.setReminder}
                     </p>
                   </div>
@@ -687,7 +709,7 @@ export default function GeneralView() {
               </div>
 
               {/* Modal Body */}
-              <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh]">
+              <div className="p-5 md:p-6 space-y-6 overflow-y-auto flex-1">
                 {/* Refrigerated Warning */}
                 {selectedMedicationForReminder.isRefrigerated && (
                   <section className="p-4 bg-blue-50 border border-blue-100 rounded-2xl flex items-start gap-3">
@@ -851,14 +873,15 @@ export default function GeneralView() {
       {/* Saved Reminders Modal */}
       <AnimatePresence>
         {showSavedReminders && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
+          <div className="fixed inset-0 z-[110] flex items-end md:items-center justify-center p-0 md:p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
             <motion.div 
-              initial={{ y: 20, opacity: 0 }}
+              initial={{ y: "100%", opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 20, opacity: 0 }}
-              className="relative max-w-lg w-full bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative max-w-lg w-full bg-white rounded-t-[2.5rem] md:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] md:max-h-[85vh]"
             >
-              <div className="p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between sticky top-0 z-10">
+              <div className="p-5 md:p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-500">
                     <Bell size={20} />
@@ -952,23 +975,24 @@ export default function GeneralView() {
       {/* Indications Modal */}
       <AnimatePresence>
         {selectedMedForIndications && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
+          <div className="fixed inset-0 z-[200] flex items-end md:items-center justify-center p-0 md:p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
             <motion.div 
-              initial={{ y: 20, opacity: 0 }}
+              initial={{ y: "100%", opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 20, opacity: 0 }}
-              className="relative max-w-lg w-full bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col"
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative max-w-lg w-full bg-white rounded-t-[2.5rem] md:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] md:max-h-[85vh]"
             >
-              <div className="p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between">
+              <div className="p-5 md:p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
                     <Info size={20} />
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold text-[#141414] leading-tight">
+                    <h2 className="text-base md:text-lg font-bold text-[#141414] leading-tight">
                       {selectedMedForIndications.itemName}
                     </h2>
-                    <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">
+                    <p className="text-[9px] md:text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest mt-0.5">
                       {t.indicationsTitle}
                     </p>
                   </div>
@@ -981,12 +1005,12 @@ export default function GeneralView() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-6">
-                <div className="p-5 bg-[#F27D26]/5 rounded-2xl border border-[#F27D26]/10 min-h-[150px] flex flex-col">
-                  <span className={`text-[10px] font-bold text-[#F27D26] uppercase tracking-widest mb-3 ${isRtl ? 'text-right' : 'text-left'}`}>
+              <div className="p-5 md:p-6 space-y-6 flex-1 overflow-y-auto">
+                <div className="p-5 bg-[#F27D26]/5 rounded-2xl border border-[#F27D26]/10 min-h-[150px] md:min-h-[200px] flex flex-col">
+                  <span className={`text-[9px] md:text-[10px] font-bold text-[#F27D26] uppercase tracking-widest mb-3 ${isRtl ? 'text-right' : 'text-left'}`}>
                     {t.indicationsInfo}
                   </span>
-                  <div className={`text-sm font-medium text-[#141414] leading-relaxed whitespace-pre-wrap ${isRtl ? 'text-right' : 'text-left'}`}>
+                  <div className={`text-xs md:text-sm font-medium text-[#141414] leading-relaxed whitespace-pre-wrap ${isRtl ? 'text-right' : 'text-left'}`}>
                     {(() => {
                       const med = selectedMedForIndications;
                       if (language === 'ar' && med.arIndications) return med.arIndications;
@@ -1008,10 +1032,10 @@ export default function GeneralView() {
                 </div>
               </div>
 
-              <div className="p-6 bg-[#141414]/[0.02] border-t border-[#141414]/5">
+              <div className="p-5 md:p-6 bg-[#141414]/[0.02] border-t border-[#141414]/5 sticky bottom-0 z-10">
                 <button 
                   onClick={() => setSelectedMedForIndications(null)}
-                  className="w-full px-4 py-3 bg-[#141414] text-white rounded-2xl text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-black/10"
+                  className="w-full py-4 bg-[#141414] text-white rounded-2xl text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-black/10 active:scale-[0.98]"
                 >
                   {t.cancel}
                 </button>

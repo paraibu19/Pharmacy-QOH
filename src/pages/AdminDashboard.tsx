@@ -1266,15 +1266,38 @@ export default function AdminDashboard() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between gap-4 shadow-sm"
+            className={`p-4 border rounded-2xl flex items-start justify-between gap-4 shadow-sm ${
+              error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')
+              ? 'bg-amber-50 border-amber-200 text-amber-800'
+              : 'bg-red-50 border-red-200 text-red-700'
+            }`}
           >
-            <div className="flex items-center gap-3 text-red-700">
-              <AlertCircle size={18} />
-              <p className="text-sm font-bold">{error}</p>
+            <div className="flex items-start gap-3">
+              <AlertCircle size={18} className="mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-bold uppercase tracking-tight">System Message</p>
+                <div className="text-xs font-medium leading-relaxed">
+                  {error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit') ? (
+                    <div className="space-y-2">
+                      <p className="font-black text-red-600">DAILY DATABASE READ LIMIT REACHED</p>
+                      <p>Every account has a free limit of 50,000 reads per day. This usually happens after large bulk imports or heavy usage.</p>
+                      <p className="p-2 bg-white/50 rounded border border-amber-300">
+                        <strong>Solution:</strong> The limit resets automatically <strong>tomorrow</strong> (US time). For now, most features will still work in "Offline Mode" if you've visited the page recently.
+                      </p>
+                    </div>
+                  ) : (
+                    <p>{error}</p>
+                  )}
+                </div>
+              </div>
             </div>
             <button 
               onClick={() => setError(null)}
-              className="p-1 hover:bg-red-100 rounded-lg transition-colors text-red-500"
+              className={`p-1 rounded-lg transition-colors ${
+                error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')
+                ? 'hover:bg-amber-100 text-amber-500'
+                : 'hover:bg-red-100 text-red-500'
+              }`}
             >
               <XIcon size={16} />
             </button>
@@ -1503,7 +1526,7 @@ export default function AdminDashboard() {
     
     <AnimatePresence>
         {isBulkMode && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-0 md:p-4 bg-black/80 backdrop-blur-md overflow-hidden">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1512,10 +1535,11 @@ export default function AdminDashboard() {
               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-4xl bg-[#141414] text-white p-6 md:p-8 rounded-[2rem] md:rounded-3xl shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto"
+              initial={{ y: "100%", opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative w-full max-w-4xl bg-[#141414] text-white p-6 md:p-8 rounded-t-[2.5rem] md:rounded-3xl shadow-2xl space-y-6 max-h-[92vh] md:max-h-[85vh] overflow-y-auto custom-scrollbar"
             >
               <div className="flex justify-between items-center sticky top-0 bg-[#141414] z-10 pb-4">
                 <div className="flex items-center gap-3">
@@ -2333,16 +2357,13 @@ export default function AdminDashboard() {
       {/* Quantity Correction Window */}
       <AnimatePresence>
         {showCorrectionModal && selectedMedForEdit && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
-          >
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-6 bg-black/40 backdrop-blur-sm">
             <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-white p-6 md:p-8 rounded-t-[2.5rem] md:rounded-3xl shadow-2xl max-w-sm w-full"
             >
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
@@ -2414,7 +2435,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -2576,7 +2597,7 @@ export default function AdminDashboard() {
       {/* Global Reset Confirmation Modal */}
       <AnimatePresence>
         {isResetModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-hidden">
+          <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center p-0 md:p-4 overflow-hidden">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2591,10 +2612,11 @@ export default function AdminDashboard() {
               className="absolute inset-0 bg-red-950/20 backdrop-blur-md"
             />
             <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="relative w-full max-w-md bg-white p-8 rounded-[32px] shadow-2xl border border-red-100 space-y-6"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative w-full max-w-md bg-white p-6 md:p-8 rounded-t-[2.5rem] md:rounded-[32px] shadow-2xl border border-red-100 space-y-6"
             >
               <div className="flex flex-col items-center text-center space-y-4">
                 <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center text-red-600 animate-pulse">
@@ -2676,20 +2698,20 @@ export default function AdminDashboard() {
       <AnimatePresence>
         {selectedImage && (
           <div 
-            className="fixed inset-0 bg-[#141414]/90 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"
+            className="fixed inset-0 bg-[#141414]/90 z-[100] flex items-center justify-center p-0 md:p-4 backdrop-blur-sm"
             onClick={() => setSelectedImage(null)}
           >
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative max-w-lg w-full bg-white rounded-3xl overflow-hidden shadow-2xl"
+              className="relative max-w-lg w-full bg-white rounded-t-[2rem] md:rounded-3xl overflow-hidden shadow-2xl mt-auto md:mt-0"
               onClick={e => e.stopPropagation()}
             >
-              <img src={selectedImage} alt="Full size" className="w-full h-auto" />
+              <img src={selectedImage} alt="Full size" className="w-full h-auto max-h-[85vh] object-contain" />
               <button 
                 onClick={() => setSelectedImage(null)}
-                className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 text-white rounded-full backdrop-blur-md transition-colors"
+                className="absolute top-4 right-4 p-2 bg-black/40 hover:bg-black/60 text-white rounded-full backdrop-blur-md transition-colors"
               >
                 <XIcon size={20} />
               </button>
