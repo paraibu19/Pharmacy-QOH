@@ -16,7 +16,7 @@ import { useMedications } from '../hooks/useMedications';
 import { useAudits } from '../hooks/useAudits';
 import { medicationOps, systemOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
-import { translateIndications } from '../services/translationService';
+import { translateIndications, batchTranslateIndications } from '../services/translationService';
 import { formatNumber } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
@@ -660,26 +660,32 @@ export default function AdminDashboard() {
         const medsNeedingTranslation = allMedsList.filter(m => m.enIndications && !m.hiIndications);
         if (medsNeedingTranslation.length > 0) {
           console.log(`Translating indications for ${medsNeedingTranslation.length} items...`);
-          // Batch translate to save API costs and time
-          const batchSize = 3; // Reduced batch size to respect rate limits
+          // Batch translate to save API costs and respect rate limits
+          const batchSize = 10; // Use efficiency of batch API
           for (let i = 0; i < medsNeedingTranslation.length; i += batchSize) {
             const chunk = medsNeedingTranslation.slice(i, i + batchSize);
-            await Promise.all(chunk.map(async (med) => {
-              try {
-                const translationsMap = await translateIndications(med.enIndications, ['hi', 'ur', 'ml', 'bn', 'tl']);
-                med.hiIndications = translationsMap.hi || '';
-                med.urIndications = translationsMap.ur || '';
-                med.mlIndications = translationsMap.ml || '';
-                med.bnIndications = translationsMap.bn || '';
-                med.tlIndications = translationsMap.tl || '';
-              } catch (e) {
-                console.warn(`Failed to translate for ${med.itemName}:`, e);
-              }
-            }));
+            const itemsToTranslate = chunk.map(m => ({ id: m.itemCode, text: m.enIndications }));
             
-            // Add a small delay between batches to stay under RPM limits
+            try {
+              const translationsMap = await batchTranslateIndications(itemsToTranslate, ['hi', 'ur', 'ml', 'bn', 'tl']);
+              
+              chunk.forEach(med => {
+                const trans = translationsMap[med.itemCode];
+                if (trans) {
+                  med.hiIndications = trans.hi || '';
+                  med.urIndications = trans.ur || '';
+                  med.mlIndications = trans.ml || '';
+                  med.bnIndications = trans.bn || '';
+                  med.tlIndications = trans.tl || '';
+                }
+              });
+            } catch (e) {
+              console.warn(`Batch translation failed for chunk starting at ${i}:`, e);
+            }
+            
+            // Wait 2-3 seconds between batches to be safe with RPM limits
             if (i + batchSize < medsNeedingTranslation.length) {
-              await new Promise(resolve => setTimeout(resolve, i === 0 ? 500 : 1000));
+              await new Promise(resolve => setTimeout(resolve, 2500));
             }
           }
         }
