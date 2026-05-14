@@ -661,7 +661,7 @@ export default function AdminDashboard() {
         if (medsNeedingTranslation.length > 0) {
           console.log(`Translating indications for ${medsNeedingTranslation.length} items...`);
           // Batch translate to save API costs and time
-          const batchSize = 15;
+          const batchSize = 3; // Reduced batch size to respect rate limits
           for (let i = 0; i < medsNeedingTranslation.length; i += batchSize) {
             const chunk = medsNeedingTranslation.slice(i, i + batchSize);
             await Promise.all(chunk.map(async (med) => {
@@ -673,9 +673,14 @@ export default function AdminDashboard() {
                 med.bnIndications = translationsMap.bn || '';
                 med.tlIndications = translationsMap.tl || '';
               } catch (e) {
-                console.error(`Failed to translate for ${med.itemName}:`, e);
+                console.warn(`Failed to translate for ${med.itemName}:`, e);
               }
             }));
+            
+            // Add a small delay between batches to stay under RPM limits
+            if (i + batchSize < medsNeedingTranslation.length) {
+              await new Promise(resolve => setTimeout(resolve, i === 0 ? 500 : 1000));
+            }
           }
         }
 
