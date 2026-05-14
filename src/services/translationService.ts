@@ -61,35 +61,49 @@ export async function batchTranslateIndications(
         }
       });
 
-      const uniqueResults: Record<string, Record<string, string>> = JSON.parse(response.text || '{}');
+      let responseText = response.text || '{}';
+      // Clean markdown if present
+      if (responseText.includes('```')) {
+        responseText = responseText.replace(/```json\n?|```/g, '').trim();
+      }
       
-      // Map back from unique results to original item IDs
-      const finalResults: Record<string, Record<string, string>> = {};
-      uniqueItems.forEach(uItem => {
-        const trans = uniqueResults[uItem.id];
-        if (trans) {
-          textToIds[uItem.text].forEach(originalId => {
-            finalResults[originalId] = trans;
-          });
-        }
-      });
+      try {
+        const uniqueResults: Record<string, Record<string, string>> = JSON.parse(responseText);
+        
+        // Map back from unique results to original item IDs
+        const finalResults: Record<string, Record<string, string>> = {};
+        uniqueItems.forEach(uItem => {
+          const trans = uniqueResults[uItem.id];
+          if (trans) {
+            textToIds[uItem.text].forEach(originalId => {
+              finalResults[originalId] = trans;
+            });
+          }
+        });
 
-      return finalResults;
+        return finalResults;
+      } catch (parseError) {
+        console.error("Failed to parse AI response as JSON:", responseText.slice(0, 200));
+        throw new Error("AI response was not valid JSON");
+      }
     } catch (error: any) {
       lastError = error;
       const errorMsg = error?.message || String(error);
       const isRateLimit = errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED');
+      const isTransient = errorMsg.includes('500') || errorMsg.includes('503') || errorMsg.includes('Rpc failed') || errorMsg.includes('xhr error');
       
-      if (isRateLimit && i < retries) {
-        const delay = Math.pow(2, i) * 2000 + Math.random() * 1000;
-        console.warn(`Batch translation rate limited (429). Retrying in ${Math.round(delay)}ms... (Attempt ${i + 1}/${retries})`);
+      if ((isRateLimit || isTransient) && i < retries) {
+        const delay = Math.pow(2, i) * 3000 + Math.random() * 1000;
+        console.warn(`Translation error (${isRateLimit ? '429' : 'Transient'}). Retrying in ${Math.round(delay)}ms... (Attempt ${i + 1}/${retries})`);
         await sleep(delay);
         continue;
       }
       
       const readableError = isRateLimit 
         ? "Translation quota exceeded (429). Please try again later." 
-        : errorMsg.slice(0, 500);
+        : isTransient 
+          ? "The AI service is temporarily unavailable. Please try again in a moment."
+          : errorMsg.slice(0, 500);
       console.error("Batch translation failed:", readableError);
       break;
     }

@@ -997,58 +997,80 @@ export default function AdminDashboard() {
   };
 
   const handleManualTranslate = async () => {
-    const medsToTranslate = medications.filter(m => m.enIndications && (!m.hiIndications || m.hiIndications === ''));
+    if (isTranslating) return;
+    
+    // Refresh medications list to be sure we have latest
+    await refresh(true);
+    
+    // Filter items that need translation (have English or Arabic text but missing Hindi)
+    const medsToTranslate = medications.filter(m => 
+      ((m.enIndications && m.enIndications.trim() !== '') || (m.arIndications && m.arIndications.trim() !== '')) && 
+      (!m.hiIndications || m.hiIndications.trim() === '')
+    );
+
     if (medsToTranslate.length === 0) {
-      setSuccess("All items are already translated!");
+      setSuccess("No items in this location need translation. Ensure items have 'EN Indications' or 'AR Indications' correctly set in the list below.");
       return;
     }
 
-    if (!confirm(`This will use AI to translate ${medsToTranslate.length} items. This may take a few minutes depending on the batch size and rate limits. Continue?`)) {
-      return;
-    }
+    setSuccess(`Starting AI translation for ${medsToTranslate.length} items...`);
 
     try {
       setIsTranslating(true);
+      setError(null);
       setTranslationProgress({ current: 0, total: medsToTranslate.length });
       
       const batchSize = 10;
+      let totalUpdated = 0;
+      
       for (let i = 0; i < medsToTranslate.length; i += batchSize) {
         const chunk = medsToTranslate.slice(i, i + batchSize);
-        const itemsToTranslate = chunk.map(m => ({ id: m.id, text: m.enIndications }));
+        // Map the text to translate. Prefer English, fallback to Arabic.
+        const itemsToTranslate = chunk.map(m => ({ 
+          id: m.id, 
+          text: (m.enIndications && m.enIndications.trim() !== '') ? m.enIndications : m.arIndications || '' 
+        }));
         
-        try {
-          const translationsMap = await batchTranslateIndications(itemsToTranslate, ['hi', 'ur', 'ml', 'bn', 'tl']);
-          
-          // Update items in database one by one (or you could batch them in Firebase too)
-          await Promise.all(chunk.map(async med => {
-            const trans = translationsMap[med.id];
-            if (trans) {
-              await medicationOps.update(med.id, {
+        console.log(`Processing translation batch ${Math.floor(i / batchSize) + 1}...`);
+        const translationsMap = await batchTranslateIndications(itemsToTranslate, ['hi', 'ur', 'ml', 'bn', 'tl']);
+        
+        // Prepare bulk update data
+        const updates: { id: string; data: Partial<Medication> }[] = [];
+        chunk.forEach(med => {
+          const trans = translationsMap[med.id];
+          if (trans) {
+            updates.push({
+              id: med.id,
+              data: {
                 hiIndications: trans.hi || '',
                 urIndications: trans.ur || '',
                 mlIndications: trans.ml || '',
                 bnIndications: trans.bn || '',
                 tlIndications: trans.tl || ''
-              });
-            }
-          }));
-        } catch (e) {
-          console.warn(`Manual batch translation failed for chunk starting at ${i}:`, e);
+              }
+            });
+            totalUpdated++;
+          }
+        });
+
+        if (updates.length > 0) {
+          await medicationOps.bulkUpdate(updates);
         }
         
         const nextProgress = Math.min(i + batchSize, medsToTranslate.length);
         setTranslationProgress({ current: nextProgress, total: medsToTranslate.length });
         
-        // Safety delay to prevent RPM exhaustion
+        // Wait 3 seconds between batches to be safe with Free Tier limits
         if (i + batchSize < medsToTranslate.length) {
           await new Promise(resolve => setTimeout(resolve, 3000));
         }
       }
       
       await refresh();
-      setSuccess("Translation process completed successfully!");
+      setSuccess(`Completed! Successfully translated ${totalUpdated} items.`);
     } catch (err: any) {
-      setError(`Translation failed: ${err.message}`);
+      console.error("Translation logic error:", err);
+      setError(`Translation failed: ${err.message || 'Unknown error'}. Common causes: API rate limits or quota.`);
     } finally {
       setIsTranslating(false);
       setTranslationProgress(null);

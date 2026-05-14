@@ -39,7 +39,7 @@ export const medicationOps = {
     }
   },
 
-  async update(id: string, data: Partial<Medication>) {
+  async update(id: string, data: Partial<Medication>, skipSync = false) {
     if (!db) {
       return sharedDb.updateMedication(id, data);
     }
@@ -50,10 +50,49 @@ export const medicationOps = {
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
       });
-      await systemOps.syncGlobalMetadata();
+      if (!skipSync) await systemOps.syncGlobalMetadata();
       return result;
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  },
+
+  async bulkUpdate(updates: { id: string; data: Partial<Medication> }[]) {
+    if (!db) {
+      for (const u of updates) {
+        await sharedDb.updateMedication(u.id, u.data);
+      }
+      return;
+    }
+
+    if (updates.length === 0) return;
+
+    try {
+      let batch = writeBatch(db);
+      let count = 0;
+
+      for (const u of updates) {
+        const medRef = doc(db, 'medications', u.id);
+        batch.update(medRef, {
+          ...u.data,
+          lastUpdatedAt: serverTimestamp(),
+          updatedBy: auth?.currentUser?.uid || 'system',
+        });
+
+        count++;
+        if (count >= 500) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+
+      if (count > 0) {
+        await batch.commit();
+      }
+      await systemOps.syncGlobalMetadata();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'medications/bulk');
     }
   },
 
