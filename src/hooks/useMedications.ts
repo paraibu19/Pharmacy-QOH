@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, getDocsFromCache } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, auth } from '../lib/firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from '../lib/sharedDb';
@@ -84,6 +84,21 @@ export function useMedications(locationId?: PharmacyLocation) {
       (err) => {
         console.error("Firestore onSnapshot error:", err);
         setError(err.message);
+        
+        // If we hit quota but have no meds yet, try one last time from cache
+        if ((err.message.toLowerCase().includes('quota') || err.message.toLowerCase().includes('limit')) && medications.length === 0) {
+          getDocsFromCache(q).then(cacheSnap => {
+            const items: Medication[] = [];
+            cacheSnap.forEach((doc) => {
+              items.push({ id: doc.id, ...doc.data() } as Medication);
+            });
+            if (items.length > 0) {
+              setMedications(items);
+              hasInitialData.current = true;
+            }
+          }).catch(cacheErr => console.warn("Cache fetch failed too", cacheErr));
+        }
+
         setLoading(false);
         // We log it robustly but don't throw to avoid crashing the entire React tree
         const errInfo = {

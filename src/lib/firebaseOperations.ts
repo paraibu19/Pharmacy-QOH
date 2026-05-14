@@ -154,9 +154,9 @@ export const medicationOps = {
               globalRegistry[code].imageUrl = data.imageUrl;
             }
 
-            // Stickiness for translations (Hindi, Urdu, Malayalam, Bengali, Tagalog)
+            // Stickiness for translations (Arabic, English, Hindi, Urdu, Malayalam, Bengali, Tagalog)
             // We preserve these if they exist in ANY location, prioritizing current location if found later
-            const transFields = ['hiIndications', 'urIndications', 'mlIndications', 'bnIndications', 'tlIndications'];
+            const transFields = ['enIndications', 'arIndications', 'hiIndications', 'urIndications', 'mlIndications', 'bnIndications', 'tlIndications'];
             transFields.forEach(field => {
               if (data[field] && !globalRegistry[code][field]) {
                 globalRegistry[code][field] = data[field];
@@ -191,7 +191,7 @@ export const medicationOps = {
         }
 
         // Always preserve translations if they are missing in the incoming Excel row
-        const transFields = ['hiIndications', 'urIndications', 'mlIndications', 'bnIndications', 'tlIndications'];
+        const transFields = ['enIndications', 'arIndications', 'hiIndications', 'urIndications', 'mlIndications', 'bnIndications', 'tlIndications'];
         transFields.forEach(field => {
           if (!m[field as keyof typeof m]) {
             // Keep from current location if exists, otherwise try global registry

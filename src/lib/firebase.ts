@@ -1,6 +1,6 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, doc, getDoc, enableIndexedDbPersistence } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase only if config is valid
@@ -25,7 +25,8 @@ if (db && typeof window !== 'undefined') {
   });
 }
 
-// Connection test
+// Connection test - Disabled to save read quota
+/*
 async function testConnection() {
   if (!app || !db) {
     console.warn("Firebase is not yet configured. Please complete the setup in AI Studio.");
@@ -46,6 +47,7 @@ async function testConnection() {
 if (isConfigValid) {
   testConnection();
 }
+*/
 
 export enum OperationType {
   CREATE = 'create',

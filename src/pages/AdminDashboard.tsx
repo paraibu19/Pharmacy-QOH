@@ -26,6 +26,7 @@ import { signInAnonymously } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 
 import LinkedItemsModal from '../components/LinkedItemsModal';
+import MedicationFormModal from '../components/MedicationFormModal';
 
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
@@ -1797,7 +1798,7 @@ export default function AdminDashboard() {
               </tr>
             )}
             {/* Inline Add/Edit Form */}
-            {(isAdding || editingId) && (
+            {false && (
               <tr className="bg-[#F27D26]/5 animate-in fade-in duration-300">
                 <td className="px-6 py-4">
                   <div className="flex gap-4">
@@ -1994,7 +1995,7 @@ export default function AdminDashboard() {
               }
               
               return (
-                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${editingId === med.id ? 'hidden' : ''} ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : '')}`}>
+                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : '')}`}>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
@@ -2009,10 +2010,10 @@ export default function AdminDashboard() {
                         )}
                       </div>
                       <button 
-                        onClick={() => med.to ? setSelectedMedForLinks(med) : startCorrection(med)}
+                        onClick={() => startEdit(med)}
                         className="flex flex-col items-start gap-0.5 group/name"
                       >
-                        <span className="text-sm font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors">{med.itemName}</span>
+                        <span className="text-sm font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors text-left">{med.itemName}</span>
                         {med.isRefrigerated && (
                           <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
                             <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
@@ -2020,12 +2021,15 @@ export default function AdminDashboard() {
                           </div>
                         )}
                         {med.generic && (
-                          <span className="text-[10px] italic text-[#141414]/40 leading-tight group-hover/name:text-[#F27D26]/60 transition-colors">
+                          <span className="text-[10px] italic text-[#141414]/40 leading-tight group-hover/name:text-[#F27D26]/60 transition-colors text-left">
                             {med.generic}
                           </span>
                         )}
                         {med.to && (
-                          <div className="flex items-center gap-1 mt-0.5">
+                          <div 
+                            onClick={(e) => { e.stopPropagation(); setSelectedMedForLinks(med); }}
+                            className="flex items-center gap-1 mt-0.5 cursor-pointer hover:bg-[#F27D26]/5 p-1 -m-1 rounded transition-colors"
+                          >
                              <div className="w-1 h-1 rounded-full bg-[#F27D26] animate-pulse" />
                              <span className="text-[8px] font-black text-[#F27D26] uppercase tracking-tighter">Linked items available</span>
                           </div>
@@ -2118,133 +2122,6 @@ export default function AdminDashboard() {
            </div>
         )}
         
-        {/* Inline Add/Edit Form for Mobile */}
-        {(isAdding || editingId) && (
-          <div className="p-4 bg-[#F27D26]/5 space-y-4">
-            <div className="flex justify-center mb-2">
-               <div className="flex flex-col items-center gap-2">
-                  <div className="w-24 h-24 bg-white rounded-3xl border border-[#141414]/10 flex items-center justify-center overflow-hidden relative group shadow-sm">
-                    {form.imageUrl ? (
-                      <>
-                        <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                        <button 
-                          onClick={() => setForm(prev => ({ ...prev, imageUrl: '' }))}
-                          className="absolute inset-0 bg-black/60 text-white flex items-center justify-center text-[10px] font-bold"
-                        >
-                          REMOVE
-                        </button>
-                      </>
-                    ) : (
-                      <ImageIcon size={32} className="text-[#141414]/10" />
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => startCamera()}
-                      className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl text-[10px] font-bold text-[#141414] shadow-sm border border-[#141414]/5"
-                    >
-                      <Camera size={14} className="text-[#F27D26]" />
-                      CAMERA
-                    </button>
-                    <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl text-[10px] font-bold text-[#141414] shadow-sm border border-[#141414]/5 cursor-pointer">
-                      <ImageIcon size={14} className="text-[#F27D26]" />
-                      UPLOAD
-                      <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
-                    </label>
-                  </div>
-               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <input 
-                type="text" 
-                placeholder="Item Code" 
-                autoFocus
-                className="w-full text-xs font-mono p-3 bg-white border rounded-xl"
-                value={form.itemCode}
-                onChange={e => setForm({...form, itemCode: e.target.value})}
-              />
-              <input 
-                type="number" 
-                placeholder="Stock Qty" 
-                className="w-full text-xs p-3 bg-white border rounded-xl"
-                value={form.qoh}
-                onChange={e => setForm({...form, qoh: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
-              />
-            </div>
-            <input 
-              type="text" 
-              placeholder="Full Medication Name" 
-              className="w-full text-sm font-bold p-3 bg-white border rounded-xl"
-              value={form.itemName}
-              onChange={e => setForm({...form, itemName: e.target.value})}
-            />
-            <input 
-              type="text" 
-              placeholder="Generic Name (Optional)" 
-              className="w-full text-xs italic p-3 bg-white border rounded-xl"
-              value={form.generic}
-              onChange={e => setForm({...form, generic: e.target.value})}
-            />
-            <div className="grid grid-cols-1 gap-3">
-              <textarea 
-                placeholder="Indications (English)" 
-                className="w-full text-xs p-3 bg-white border rounded-xl h-20"
-                value={form.enIndications}
-                onChange={e => setForm({...form, enIndications: e.target.value})}
-              />
-              <textarea 
-                placeholder="دواعي الاستعمال (Arabic)" 
-                className="w-full text-xs p-3 bg-white border rounded-xl h-20 text-right"
-                dir="rtl"
-                value={form.arIndications}
-                onChange={e => setForm({...form, arIndications: e.target.value})}
-              />
-            </div>
-            <div className="flex items-center gap-3 p-3 bg-white border rounded-xl">
-               <input 
-                 type="checkbox" 
-                 id="isRefrigeratedMobile"
-                 checked={form.isRefrigerated}
-                 onChange={e => setForm({...form, isRefrigerated: e.target.checked})}
-                 className="w-5 h-5 rounded border-[#141414]/10 text-[#F27D26] focus:ring-[#F27D26]/20"
-               />
-               <label htmlFor="isRefrigeratedMobile" className="text-xs font-bold text-[#141414]/60 flex items-center gap-2">
-                  <ThermometerSnowflake size={16} className="text-blue-500" />
-                  Refrigerated (2-8°C)
-               </label>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-2 bg-white p-2 rounded-xl border">
-                <span className="text-[10px] font-bold text-[#141414]/40">Min:</span>
-                <input type="number" className="w-full text-sm font-bold" value={form.minQty} onChange={e => setForm({...form, minQty: e.target.value === '' ? 0 : parseFloat(e.target.value)})} />
-              </div>
-              <div className="flex items-center gap-2 bg-white p-2 rounded-xl border">
-                <span className="text-[10px] font-bold text-[#141414]/40">Max:</span>
-                <input type="number" className="w-full text-sm font-bold" value={form.maxQty} onChange={e => setForm({...form, maxQty: e.target.value === '' ? 0 : parseFloat(e.target.value)})} />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <input type="text" placeholder="Exp 1" className="flex-1 p-2 bg-white border rounded-lg text-xs" value={form.expiration1} onChange={e => setForm({...form, expiration1: e.target.value})} />
-              <input type="text" placeholder="Exp 2" className="flex-1 p-2 bg-white border rounded-lg text-xs" value={form.expiration2} onChange={e => setForm({...form, expiration2: e.target.value})} />
-              <input type="text" placeholder="Exp 3" className="flex-1 p-2 bg-white border rounded-lg text-xs" value={form.expiration3} onChange={e => setForm({...form, expiration3: e.target.value})} />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button 
-                onClick={() => { setIsAdding(false); setEditingId(null); clearDraft(); }} 
-                className="flex-1 py-3 bg-white text-red-500 rounded-xl font-bold border border-red-100"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => handleSave()} 
-                className="flex-1 py-3 bg-[#F27D26] text-white rounded-xl font-bold"
-              >
-                Save Item
-              </button>
-            </div>
-          </div>
-        )}
-
         {!loading && sortedMedications.map(med => {
           const isOutOfStock = med.qoh <= 0;
           const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
@@ -2254,7 +2131,8 @@ export default function AdminDashboard() {
             <motion.div 
               layout
               key={med.id} 
-              className={`p-4 space-y-4 ${editingId === med.id ? 'hidden' : ''} ${isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : ''}`}
+              className={`p-4 space-y-4 ${isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : ''}`}
+              onClick={() => startEdit(med)}
             >
               <div className="flex justify-between items-start">
                 <div className="flex gap-4">
@@ -2354,7 +2232,78 @@ export default function AdminDashboard() {
       </div>
     </div>
 
-      {/* Quantity Correction Window */}
+      <AnimatePresence>
+        {(isAdding || editingId) && (
+          <MedicationFormModal
+            isOpen={true}
+            onClose={() => {
+              setIsAdding(false);
+              setEditingId(null);
+              clearDraft();
+              setForm({ 
+                itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
+                expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
+                enIndications: '', arIndications: ''
+              });
+            }}
+            onSave={async (data) => {
+              // Check for duplicate item code within the same location
+              const formattedCode = data.itemCode.trim().toLowerCase();
+              const isDuplicate = medications.some(m => 
+                m.itemCode.trim().toLowerCase() === formattedCode && 
+                m.id !== editingId
+              );
+
+              if (isDuplicate) {
+                setError(`Duplicate Item Code: "${data.itemCode}" already exists in this location.`);
+                return;
+              }
+
+              setError(null);
+              
+              // Auto-translate if only EN provided
+              const dataToSave = { ...data };
+              if (dataToSave.enIndications && !dataToSave.hiIndications) {
+                try {
+                  const trans = await translateIndications(dataToSave.enIndications!, ['hi', 'ur', 'ml', 'bn', 'tl']);
+                  dataToSave.hiIndications = trans.hi;
+                  dataToSave.urIndications = trans.ur;
+                  dataToSave.mlIndications = trans.ml;
+                  dataToSave.bnIndications = trans.bn;
+                  dataToSave.tlIndications = trans.tl;
+                } catch (e) {
+                  console.warn("Manual translation failed", e);
+                }
+              }
+
+              if (editingId) {
+                await medicationOps.update(editingId, dataToSave);
+              } else {
+                await medicationOps.add({
+                  ...dataToSave,
+                  locationId: selectedLocation,
+                } as any);
+              }
+              
+              await refresh();
+              setEditingId(null);
+              setIsAdding(false);
+              setForm({ 
+                itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
+                expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
+                enIndications: '', arIndications: ''
+              });
+              clearDraft();
+            }}
+            onDelete={handleDelete}
+            initialData={isAdding ? null : form}
+            isAdding={isAdding}
+            locationId={selectedLocation}
+            onStartCapture={() => setIsCapturing(true)}
+          />
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showCorrectionModal && selectedMedForEdit && (
           <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-6 bg-black/40 backdrop-blur-sm">
