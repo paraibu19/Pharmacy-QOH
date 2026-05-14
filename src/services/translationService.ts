@@ -18,6 +18,16 @@ export async function batchTranslateIndications(
 ): Promise<Record<string, Record<string, string>>> {
   const validItems = items.filter(item => item.text && item.text.trim());
   if (validItems.length === 0) return {};
+
+  // Deduplicate translation text to save tokens and request size
+  const textToIds: Record<string, string[]> = {};
+  validItems.forEach(item => {
+    if (!textToIds[item.text]) textToIds[item.text] = [];
+    textToIds[item.text].push(item.id);
+  });
+
+  const uniqueTexts = Object.keys(textToIds);
+  const uniqueItems = uniqueTexts.map((text, idx) => ({ id: `unique_${idx}`, text }));
   
   let lastError: any = null;
   for (let i = 0; i < retries + 1; i++) {
@@ -29,18 +39,18 @@ export async function batchTranslateIndications(
       Each value should be another object where the keys are the language codes (${targetLanguages.join(', ')}) and the values are the translations.
       
       Items to translate:
-      ${validItems.map(item => `ID: "${item.id}"\nText: "${item.text}"`).join('\n---\n')}
+      ${uniqueItems.map(item => `ID: "${item.id}"\nText: "${item.text}"`).join('\n---\n')}
       
       Format your response like this:
       {
-        "ID_1": {
+        "unique_0": {
           "hi": "...",
           "ur": "...",
           "ml": "...",
           "bn": "...",
           "tl": "..."
         },
-        "ID_2": { ... }
+        "unique_1": { ... }
       }`;
 
       const response = await ai.models.generateContent({
@@ -51,7 +61,20 @@ export async function batchTranslateIndications(
         }
       });
 
-      return JSON.parse(response.text || '{}');
+      const uniqueResults: Record<string, Record<string, string>> = JSON.parse(response.text || '{}');
+      
+      // Map back from unique results to original item IDs
+      const finalResults: Record<string, Record<string, string>> = {};
+      uniqueItems.forEach(uItem => {
+        const trans = uniqueResults[uItem.id];
+        if (trans) {
+          textToIds[uItem.text].forEach(originalId => {
+            finalResults[originalId] = trans;
+          });
+        }
+      });
+
+      return finalResults;
     } catch (error: any) {
       lastError = error;
       const errorMsg = error?.message || String(error);

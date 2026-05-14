@@ -55,6 +55,8 @@ export default function AdminDashboard() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetError, setResetError] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState<{current: number, total: number} | null>(null);
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [skippedUploads, setSkippedUploads] = useState<string[]>([]);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
@@ -656,43 +658,15 @@ export default function AdminDashboard() {
           throw new Error("No valid medication data found in the matched sheets.");
         }
 
-        // Auto-translate indications for other languages if only EN/AR provided
-        const medsNeedingTranslation = allMedsList.filter(m => m.enIndications && !m.hiIndications);
-        if (medsNeedingTranslation.length > 0) {
-          console.log(`Translating indications for ${medsNeedingTranslation.length} items...`);
-          // Batch translate to save API costs and respect rate limits
-          const batchSize = 10; // Use efficiency of batch API
-          for (let i = 0; i < medsNeedingTranslation.length; i += batchSize) {
-            const chunk = medsNeedingTranslation.slice(i, i + batchSize);
-            const itemsToTranslate = chunk.map(m => ({ id: m.itemCode, text: m.enIndications }));
-            
-            try {
-              const translationsMap = await batchTranslateIndications(itemsToTranslate, ['hi', 'ur', 'ml', 'bn', 'tl']);
-              
-              chunk.forEach(med => {
-                const trans = translationsMap[med.itemCode];
-                if (trans) {
-                  med.hiIndications = trans.hi || '';
-                  med.urIndications = trans.ur || '';
-                  med.mlIndications = trans.ml || '';
-                  med.bnIndications = trans.bn || '';
-                  med.tlIndications = trans.tl || '';
-                }
-              });
-            } catch (e) {
-              console.warn(`Batch translation failed for chunk starting at ${i}:`, e);
-            }
-            
-            // Wait 2-3 seconds between batches to be safe with RPM limits
-            if (i + batchSize < medsNeedingTranslation.length) {
-              await new Promise(resolve => setTimeout(resolve, 2500));
-            }
-          }
-        }
-
         await medicationOps.bulkAdd(allMedsList, { photoStrategy: importPhotoStrategy });
         await refresh();
-        setSuccess(`Success: Imported/Updated ${allMedsList.length} items to ${sheetsFound} locations.`);
+        
+        const untranslatedCount = allMedsList.filter(m => m.enIndications && !m.hiIndications).length;
+        if (untranslatedCount > 0) {
+          setSuccess(`Imported ${allMedsList.length} items. ${untranslatedCount} items need translation. Click 'AI Translate Missing' to process them.`);
+        } else {
+          setSuccess(`Success: Imported/Updated ${allMedsList.length} items to ${sheetsFound} locations.`);
+        }
         setIsBulkMode(false);
       } catch (error: any) {
         setError(error.message);
@@ -1022,6 +996,65 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleManualTranslate = async () => {
+    const medsToTranslate = medications.filter(m => m.enIndications && (!m.hiIndications || m.hiIndications === ''));
+    if (medsToTranslate.length === 0) {
+      setSuccess("All items are already translated!");
+      return;
+    }
+
+    if (!confirm(`This will use AI to translate ${medsToTranslate.length} items. This may take a few minutes depending on the batch size and rate limits. Continue?`)) {
+      return;
+    }
+
+    try {
+      setIsTranslating(true);
+      setTranslationProgress({ current: 0, total: medsToTranslate.length });
+      
+      const batchSize = 10;
+      for (let i = 0; i < medsToTranslate.length; i += batchSize) {
+        const chunk = medsToTranslate.slice(i, i + batchSize);
+        const itemsToTranslate = chunk.map(m => ({ id: m.id, text: m.enIndications }));
+        
+        try {
+          const translationsMap = await batchTranslateIndications(itemsToTranslate, ['hi', 'ur', 'ml', 'bn', 'tl']);
+          
+          // Update items in database one by one (or you could batch them in Firebase too)
+          await Promise.all(chunk.map(async med => {
+            const trans = translationsMap[med.id];
+            if (trans) {
+              await medicationOps.update(med.id, {
+                hiIndications: trans.hi || '',
+                urIndications: trans.ur || '',
+                mlIndications: trans.ml || '',
+                bnIndications: trans.bn || '',
+                tlIndications: trans.tl || ''
+              });
+            }
+          }));
+        } catch (e) {
+          console.warn(`Manual batch translation failed for chunk starting at ${i}:`, e);
+        }
+        
+        const nextProgress = Math.min(i + batchSize, medsToTranslate.length);
+        setTranslationProgress({ current: nextProgress, total: medsToTranslate.length });
+        
+        // Safety delay to prevent RPM exhaustion
+        if (i + batchSize < medsToTranslate.length) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+      
+      await refresh();
+      setSuccess("Translation process completed successfully!");
+    } catch (err: any) {
+      setError(`Translation failed: ${err.message}`);
+    } finally {
+      setIsTranslating(false);
+      setTranslationProgress(null);
+    }
+  };
+
   return (
     <div className="space-y-6 md:space-y-8 pb-20 px-4 md:px-0">
       {skippedUploads.length > 0 && (
@@ -1161,6 +1194,24 @@ export default function AdminDashboard() {
           >
             <Plus className="w-4 h-4" />
             Add New
+          </button>
+
+          <button 
+            onClick={handleManualTranslate}
+            disabled={isTranslating}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-emerald-600 text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 relative"
+          >
+            {isTranslating ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            AI Translate Missing
+            {translationProgress && (
+              <span className="absolute -top-2 -right-2 bg-white text-emerald-600 text-[8px] px-1.5 py-0.5 rounded-full shadow-sm font-black border border-emerald-100">
+                {Math.round((translationProgress.current / translationProgress.total) * 100)}%
+              </span>
+            )}
           </button>
         </div>
       </div>
