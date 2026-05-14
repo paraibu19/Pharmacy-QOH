@@ -117,117 +117,100 @@ export const medicationOps = {
 
     if (meds.length === 0) return;
     
-    // Group meds by locationId
-    const medsByLocation = meds.reduce((acc, med) => {
-      if (!acc[med.locationId]) acc[med.locationId] = [];
-      acc[med.locationId].push(med);
-      return acc;
-    }, {} as Record<string, typeof meds>);
-
     try {
       const colRef = collection(db, 'medications');
 
-      // 1. Parallelize Global Photo Search if strategy is 'keep'
-      // We'll build a map: itemCode -> { [locationId]: imageUrl, fallback: string | undefined }
-      const photoRegistry: Record<string, { [locId: string]: string; fallback?: string }> = {};
+      // 1. Build a Unified Registry (Photos + Translations) for ALL items being imported
+      // This allows items added to new locations to inherit photos/translations from existing ones
+      const globalRegistry: Record<string, any> = {};
+      const existingInLocation: Record<string, Record<string, any>> = {}; // locationId -> itemCode -> data
+
       if (options.photoStrategy === 'keep') {
         const uniqueCodes = [...new Set(meds.map(m => m.itemCode))];
-        const chunkSize = 30;
-        const photoSearchPromises = [];
+        const chunkSize = 30; // Firestore 'in' query limit is 30
+        const registryPromises = [];
 
         for (let i = 0; i < uniqueCodes.length; i += chunkSize) {
-          photoSearchPromises.push(getDocs(query(colRef, where('itemCode', 'in', uniqueCodes.slice(i, i + chunkSize)))));
+          const chunk = uniqueCodes.slice(i, i + chunkSize);
+          registryPromises.push(getDocs(query(colRef, where('itemCode', 'in', chunk))));
         }
 
-        const snapshots = await Promise.all(photoSearchPromises);
+        const snapshots = await Promise.all(registryPromises);
         snapshots.forEach(snapshot => {
           snapshot.docs.forEach(doc => {
             const data = doc.data();
-            if (data.imageUrl) {
-              if (!photoRegistry[data.itemCode]) photoRegistry[data.itemCode] = {};
-              photoRegistry[data.itemCode][data.locationId] = data.imageUrl;
-              // First one found becomes global fallback if none set
-              if (!photoRegistry[data.itemCode].fallback) photoRegistry[data.itemCode].fallback = data.imageUrl;
+            const code = data.itemCode;
+            const locId = data.locationId;
+            
+            // Track per-location existence
+            if (!existingInLocation[locId]) existingInLocation[locId] = {};
+            existingInLocation[locId][code] = { id: doc.id, ...data };
+
+            // Build global sticky registry
+            if (!globalRegistry[code]) globalRegistry[code] = {};
+            
+            // Stickiness for photos
+            if (data.imageUrl && !globalRegistry[code].imageUrl) {
+              globalRegistry[code].imageUrl = data.imageUrl;
             }
+
+            // Stickiness for translations (Hindi, Urdu, Malayalam, Bengali, Tagalog)
+            // We preserve these if they exist in ANY location, prioritizing current location if found later
+            const transFields = ['hiIndications', 'urIndications', 'mlIndications', 'bnIndications', 'tlIndications'];
+            transFields.forEach(field => {
+              if (data[field] && !globalRegistry[code][field]) {
+                globalRegistry[code][field] = data[field];
+              }
+            });
           });
         });
       }
 
-      // 2. Parallelize existence check for ALL items in their respective locations
-      const existingEntries: Record<string, Record<string, { id: string; hasPhoto: boolean }>> = {};
-      const searchPromises: Promise<any>[] = [];
-      const searchMeta: { locationId: string }[] = [];
-
-      Object.entries(medsByLocation).forEach(([locationId, locationMeds]) => {
-        const itemCodes = [...new Set(locationMeds.map(m => m.itemCode))];
-        const chunkSize = 30;
-        
-        for (let i = 0; i < itemCodes.length; i += chunkSize) {
-          const chunk = itemCodes.slice(i, i + chunkSize);
-          searchMeta.push({ locationId });
-          searchPromises.push(getDocs(query(
-            colRef,
-            where('locationId', '==', locationId),
-            where('itemCode', 'in', chunk)
-          )));
-        }
-      });
-
-      const searchSnapshots = await Promise.all(searchPromises);
-      searchSnapshots.forEach((snapshot, idx) => {
-        const { locationId } = searchMeta[idx];
-        if (!existingEntries[locationId]) existingEntries[locationId] = {};
-        
-        snapshot.docs.forEach(doc => {
-          const data = doc.data();
-          existingEntries[locationId][data.itemCode] = {
-            id: doc.id,
-            hasPhoto: !!data.imageUrl
-          };
-        });
-      });
-
-      // 3. Process writes in batches of 500 (Firestore limit)
+      // 2. Process writes in batches of 500 (Firestore limit)
       let currentBatch = writeBatch(db);
       let opCount = 0;
 
       for (const m of meds) {
-        const registry = photoRegistry[m.itemCode];
-        // Priority: 1. Photo in THIS location, 2. Global fallback from other locations
-        const bestPhoto = registry?.[m.locationId] || registry?.fallback;
-
-        const locationExisting = existingEntries[m.locationId] || {};
+        const existing = existingInLocation[m.locationId]?.[m.itemCode];
+        const registry = globalRegistry[m.itemCode] || {};
         
-        if (locationExisting[m.itemCode]) {
-          const entry = locationExisting[m.itemCode];
-          const medRef = doc(db, 'medications', entry.id);
-          const updateData: any = {
-            ...m,
-            lastUpdatedAt: serverTimestamp(),
-            updatedBy: auth?.currentUser?.uid || 'system',
-          };
+        const baseData: any = {
+          ...m,
+          lastUpdatedAt: serverTimestamp(),
+          updatedBy: auth?.currentUser?.uid || 'system',
+        };
 
-          if (options.photoStrategy === 'remove') {
-            updateData.imageUrl = null;
-          } else if (options.photoStrategy === 'keep' && !entry.hasPhoto && bestPhoto) {
-            updateData.imageUrl = bestPhoto;
+        // Apply Stickiness/Strategy logic
+        if (options.photoStrategy === 'remove') {
+          baseData.imageUrl = null;
+        } else if (options.photoStrategy === 'keep') {
+          // If Excel doesn't have a photo, use registry photo
+          if (!m.imageUrl) {
+            baseData.imageUrl = existing?.imageUrl || registry.imageUrl || null;
           }
+        }
 
-          currentBatch.update(medRef, updateData);
+        // Always preserve translations if they are missing in the incoming Excel row
+        const transFields = ['hiIndications', 'urIndications', 'mlIndications', 'bnIndications', 'tlIndications'];
+        transFields.forEach(field => {
+          if (!m[field as keyof typeof m]) {
+            // Keep from current location if exists, otherwise try global registry
+            const stickyVal = existing?.[field] || registry[field];
+            if (stickyVal) {
+              baseData[field] = stickyVal;
+            }
+          }
+        });
+
+        if (existing) {
+          const medRef = doc(db, 'medications', existing.id);
+          currentBatch.update(medRef, baseData);
         } else {
           const newDoc = doc(colRef);
-          const createData: any = {
-            ...m,
+          currentBatch.set(newDoc, {
+            ...baseData,
             addedAt: serverTimestamp(),
-            lastUpdatedAt: serverTimestamp(),
-            updatedBy: auth?.currentUser?.uid || 'system',
-          };
-
-          if (options.photoStrategy === 'keep' && bestPhoto) {
-            createData.imageUrl = bestPhoto;
-          }
-
-          currentBatch.set(newDoc, createData);
+          });
         }
 
         opCount++;

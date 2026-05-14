@@ -1561,8 +1561,8 @@ export default function AdminDashboard() {
                             <Cloud size={18} />
                           </div>
                           <div className="text-left">
-                            <p className="font-bold">Keep items photos</p>
-                            <p className="text-[10px] text-black/40 font-medium">Auto-sync photos from cloud by code</p>
+                            <p className="font-bold">Keep Photos & Translations</p>
+                            <p className="text-[10px] text-black/40 font-medium">Auto-sync photos and AI translations from cloud by item code</p>
                           </div>
                         </div>
                         <ChevronRight size={18} className="opacity-20 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />

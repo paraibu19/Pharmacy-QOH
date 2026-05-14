@@ -1,6 +1,6 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, enableIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase only if config is valid
@@ -14,6 +14,17 @@ export const db = app ? getFirestore(app, firebaseConfig.firestoreDatabaseId) : 
 export const auth = app ? getAuth(app) : null;
 export const googleProvider = new GoogleAuthProvider();
 
+// Enable offline persistence to save on read units (Spark plan limit is 50k reads/day)
+if (db && typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn("Firestore persistence: Multiple tabs open, only one can have persistence.");
+    } else if (err.code === 'unimplemented') {
+      console.warn("Firestore persistence: Not supported by this browser.");
+    }
+  });
+}
+
 // Connection test
 async function testConnection() {
   if (!app || !db) {
@@ -22,7 +33,8 @@ async function testConnection() {
   }
 
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    // Prefer cached doc if available
+    await getDoc(doc(db, 'test', 'connection'));
     console.log("Firebase connected successfully");
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
