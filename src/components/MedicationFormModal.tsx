@@ -28,6 +28,7 @@ export default function MedicationFormModal({
   locationId,
   onStartCapture
 }: MedicationFormModalProps) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [form, setForm] = useState(initialData || {
     itemCode: '',
     itemName: '',
@@ -156,9 +157,45 @@ export default function MedicationFormModal({
                         type="button"
                         onClick={onStartCapture}
                         className="p-4 bg-[#F27D26] text-white rounded-2xl shadow-xl shadow-[#F27D26]/30 hover:scale-110 active:scale-95 transition-all"
+                        title="Take Photo"
                       >
                         <Camera size={24} />
                       </button>
+                      <button 
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="p-4 bg-[#141414] text-white rounded-2xl shadow-xl shadow-black/20 hover:scale-110 active:scale-95 transition-all"
+                        title="Upload Image"
+                      >
+                        <ImageIcon size={24} />
+                      </button>
+                      <input 
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            const img = new Image();
+                            img.onload = () => {
+                              const canvas = document.createElement('canvas');
+                              const MAX_WIDTH = 400;
+                              const scaleSize = MAX_WIDTH / img.width;
+                              canvas.width = MAX_WIDTH;
+                              canvas.height = img.height * scaleSize;
+                              const ctx = canvas.getContext('2d');
+                              ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                              const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                              setForm(prev => ({ ...prev, imageUrl: dataUrl }));
+                            };
+                            img.src = event.target?.result as string;
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                      />
                       {form.imageUrl && (
                         <button 
                           type="button"
