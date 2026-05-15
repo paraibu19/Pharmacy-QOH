@@ -30,6 +30,24 @@ export default function DashboardStats({ medications }: DashboardStatsProps) {
   }, [medications]);
 
   const totalValue = React.useMemo(() => medications.length, [medications]);
+  
+  const barData = React.useMemo(() => [
+    { 
+      name: 'Adult', 
+      stock: medications.filter(m => m.locationId === PharmacyLocation.ADULT).length, 
+      low: medications.filter(m => m.locationId === PharmacyLocation.ADULT && m.qoh < 10).length 
+    },
+    { 
+      name: 'Pediatric', 
+      stock: medications.filter(m => m.locationId === PharmacyLocation.PEDIATRIC).length, 
+      low: medications.filter(m => m.locationId === PharmacyLocation.PEDIATRIC && m.qoh < 10).length 
+    },
+    { 
+      name: 'Mesaieed', 
+      stock: medications.filter(m => m.locationId === PharmacyLocation.MESAIEED).length, 
+      low: medications.filter(m => m.locationId === PharmacyLocation.MESAIEED && m.qoh < 10).length 
+    },
+  ], [medications]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
@@ -112,11 +130,7 @@ export default function DashboardStats({ medications }: DashboardStatsProps) {
 
         <div className="flex-1 min-h-0">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={[
-              { name: 'Adult', stock: medications.filter(m => m.locationId === PharmacyLocation.ADULT).length, low: medications.filter(m => m.locationId === PharmacyLocation.ADULT && m.qoh < 10).length },
-              { name: 'Pediatric', stock: medications.filter(m => m.locationId === PharmacyLocation.PEDIATRIC).length, low: medications.filter(m => m.locationId === PharmacyLocation.PEDIATRIC && m.qoh < 10).length },
-              { name: 'Mesaieed', stock: medications.filter(m => m.locationId === PharmacyLocation.MESAIEED).length, low: medications.filter(m => m.locationId === PharmacyLocation.MESAIEED && m.qoh < 10).length },
-            ]}>
+            <BarChart data={barData}>
               <XAxis dataKey="name" fontSize={11} fontWeight="bold" axisLine={false} tickLine={false} />
               <YAxis fontSize={11} fontWeight="bold" axisLine={false} tickLine={false} />
               <Tooltip cursor={{fill: 'rgba(20,20,20,0.02)'}} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold' }} />

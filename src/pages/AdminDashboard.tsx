@@ -32,6 +32,161 @@ import DashboardStats from '../components/DashboardStats';
 
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
+const MedicationRow = React.memo(({ med, onEdit, onDelete }: { med: Medication, onEdit: (m: Medication) => void, onDelete: (id: string) => void }) => {
+  const isOutOfStock = med.qoh <= 0;
+  const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+  
+  return (
+    <div 
+      className="grid grid-cols-[1.5fr_120px_140px_220px_100px] py-4 px-8 items-center hover:bg-[#F27D26]/[0.02] transition-colors group cursor-pointer border-b border-[#141414]/[0.03]"
+      onClick={() => onEdit(med)}
+    >
+      <div className="flex items-center gap-4">
+        {med.imageUrl ? (
+          <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#141414]/5 shrink-0 shadow-inner">
+            <img src={med.imageUrl} alt="" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
+          </div>
+        ) : (
+          <div className="w-12 h-12 rounded-2xl bg-[#141414]/[0.03] flex items-center justify-center text-[#141414]/10 shrink-0">
+             <Box size={20} />
+          </div>
+        )}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[8px] font-black text-[#141414]/30 bg-[#141414]/5 px-1.5 py-0.5 rounded tracking-tighter">
+              {med.itemCode}
+            </span>
+            {med.isRefrigerated && (
+              <ThermometerSnowflake size={10} className="text-blue-500 animate-pulse" />
+            )}
+          </div>
+          <h4 className="text-xs font-black text-[#141414] truncate group-hover:text-[#F27D26] transition-colors leading-none">
+            {med.itemName}
+          </h4>
+          <p className="text-[9px] font-bold text-[#141414]/30 uppercase tracking-tighter truncate italic mt-1">
+            {med.generic || 'Generic Formulation unknown'}
+          </p>
+        </div>
+      </div>
+
+      <div className="text-center">
+        <div className={`text-lg font-mono font-black tabular-nums transition-transform group-hover:scale-110 ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-[#141414]'}`}>
+          {formatNumber(med.qoh)}
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center gap-1">
+        <div className="w-full max-w-[80px] h-1.5 bg-[#141414]/5 rounded-full overflow-hidden">
+           <div 
+             className={`h-full transition-all duration-1000 ${isOutOfStock ? 'w-0' : isLowStock ? 'bg-amber-500 w-[30%]' : 'bg-emerald-500 w-full'}`} 
+           />
+        </div>
+        <div className="flex justify-between w-full max-w-[80px] text-[7px] font-black text-[#141414]/30 tracking-tighter">
+           <span>{formatNumber(med.minQty)}</span>
+           <span>{formatNumber(med.maxQty)}</span>
+        </div>
+      </div>
+
+      <div className="flex gap-1 flex-wrap">
+        {[med.expiration1, med.expiration2, med.expiration3].map((exp, idx) => exp && (
+          <span key={idx} className="text-[8px] font-mono font-bold px-2 py-1 bg-white border border-[#141414]/5 rounded text-[#141414]/60 italic shadow-sm group-hover:bg-[#141414]/5 transition-colors">
+            {exp}
+          </span>
+        ))}
+      </div>
+
+      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+        <button 
+          onClick={(e) => { e.stopPropagation(); onEdit(med); }} 
+          className="p-2 hover:bg-[#141414] text-[#141414]/20 hover:text-white rounded-xl transition-all border border-[#141414]/5"
+        >
+          <Edit2 size={12} />
+        </button>
+        <button 
+          onClick={(e) => { e.stopPropagation(); onDelete(med.id); }} 
+          className="p-2 hover:bg-red-500 text-[#141414]/20 hover:text-white rounded-xl transition-all border border-[#141414]/5"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+    </div>
+  );
+});
+
+const MedicationMobileCard = React.memo(({ med, onEdit, onDelete }: { med: Medication, onEdit: (m: Medication) => void, onDelete: (id: string) => void }) => {
+  const isOutOfStock = med.qoh <= 0;
+  const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+  
+  return (
+    <div 
+      className="bg-white rounded-[2rem] p-6 shadow-xl shadow-black/[0.03] border border-[#141414]/5 active:scale-[0.98] transition-all relative overflow-hidden"
+      onClick={() => onEdit(med)}
+    >
+      <div className="flex justify-between items-start gap-4 mb-6">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[9px] font-mono font-black text-[#141414]/30 bg-[#141414]/5 px-2 py-0.5 rounded leading-none">
+              {med.itemCode}
+            </span>
+            {med.isRefrigerated && (
+              <span className="flex items-center gap-1 text-[8px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-tighter">
+                <ThermometerSnowflake size={10} />
+                Cool
+              </span>
+            )}
+          </div>
+          <h3 className="text-base font-black text-[#141414] leading-tight truncate">
+            {med.itemName}
+          </h3>
+          <p className="text-[10px] font-bold text-[#141414]/30 uppercase tracking-tight italic mt-1 truncate">
+            {med.generic || 'Generic Formulation'}
+          </p>
+        </div>
+        
+        {med.imageUrl && (
+          <div className="w-14 h-14 rounded-2xl overflow-hidden border border-[#F27D26]/10 shrink-0 shadow-inner">
+            <img src={med.imageUrl} alt="" className="w-full h-full object-cover" />
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mb-6">
+        <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
+           <p className={`text-lg font-mono font-black ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-[#141414]'}`}>
+             {formatNumber(med.qoh)}
+           </p>
+           <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Stock</p>
+        </div>
+        <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
+           <p className="text-lg font-mono font-black text-[#141414]/40">
+             {formatNumber(med.minQty)}
+           </p>
+           <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Min</p>
+        </div>
+        <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
+           <p className="text-lg font-mono font-black text-[#141414]/40">
+             {formatNumber(med.maxQty)}
+           </p>
+           <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Max</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+          {[med.expiration1, med.expiration2, med.expiration3].map((exp, idx) => exp && (
+            <span key={idx} className="text-[9px] font-mono font-bold px-2.5 py-1.5 bg-[#141414]/[0.04] rounded-xl text-[#141414]/50 italic">
+              {exp}
+            </span>
+          ))}
+        </div>
+        <div className="p-2 bg-red-50 text-red-500 rounded-xl" onClick={(e) => { e.stopPropagation(); onDelete(med.id); }}>
+           <Trash2 size={16} />
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function AdminDashboard() {
   const { lastUpdate } = useSystemMetadata();
 
@@ -290,17 +445,20 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  // Auto-save logic
+  // Auto-save logic with debounce
   useEffect(() => {
     if (isAdding || editingId) {
-      const draft = {
-        form,
-        isAdding,
-        editingId,
-        locationId: selectedLocation,
-        timestamp: Date.now()
-      };
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      const timer = setTimeout(() => {
+        const draft = {
+          form,
+          isAdding,
+          editingId,
+          locationId: selectedLocation,
+          timestamp: Date.now()
+        };
+        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      }, 1000);
+      return () => clearTimeout(timer);
     }
   }, [form, isAdding, editingId, selectedLocation]);
 
@@ -1692,90 +1850,14 @@ export default function AdminDashboard() {
                 </div>
               ) : (
                 <div className="py-2">
-                  {sortedMedications.map((med, i) => {
-                    const isOutOfStock = med.qoh <= 0;
-                    const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
-                    
-                    return (
-                      <motion.div 
-                        key={med.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.02 }}
-                        className="grid grid-cols-[1.5fr_120px_140px_220px_100px] py-4 px-8 items-center hover:bg-[#F27D26]/[0.02] transition-all group cursor-pointer"
-                        onClick={() => startEdit(med)}
-                      >
-                        <div className="flex items-center gap-4">
-                          {med.imageUrl ? (
-                            <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#141414]/5 shrink-0 shadow-inner">
-                              <img src={med.imageUrl} alt="" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
-                            </div>
-                          ) : (
-                            <div className="w-12 h-12 rounded-2xl bg-[#141414]/[0.03] flex items-center justify-center text-[#141414]/10 shrink-0">
-                               <Box size={20} />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className="text-[8px] font-black text-[#141414]/30 bg-[#141414]/5 px-1.5 py-0.5 rounded tracking-tighter">
-                                {med.itemCode}
-                              </span>
-                              {med.isRefrigerated && (
-                                <ThermometerSnowflake size={10} className="text-blue-500 animate-pulse" />
-                              )}
-                            </div>
-                            <h4 className="text-xs font-black text-[#141414] truncate group-hover:text-[#F27D26] transition-colors leading-none">
-                              {med.itemName}
-                            </h4>
-                            <p className="text-[9px] font-bold text-[#141414]/30 uppercase tracking-tighter truncate italic mt-1">
-                              {med.generic || 'Generic Formulation unknown'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="text-center">
-                          <div className={`text-lg font-mono font-black tabular-nums transition-transform group-hover:scale-110 ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-[#141414]'}`}>
-                            {formatNumber(med.qoh)}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="w-full max-w-[80px] h-1.5 bg-[#141414]/5 rounded-full overflow-hidden">
-                             <div 
-                               className={`h-full transition-all duration-1000 ${isOutOfStock ? 'w-0' : isLowStock ? 'bg-amber-500 w-[30%]' : 'bg-emerald-500 w-full'}`} 
-                             />
-                          </div>
-                          <div className="flex justify-between w-full max-w-[80px] text-[7px] font-black text-[#141414]/30 tracking-tighter">
-                             <span>{formatNumber(med.minQty)}</span>
-                             <span>{formatNumber(med.maxQty)}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-1 flex-wrap">
-                          {[med.expiration1, med.expiration2, med.expiration3].map((exp, idx) => exp && (
-                            <span key={idx} className="text-[8px] font-mono font-bold px-2 py-1 bg-white border border-[#141414]/5 rounded text-[#141414]/60 italic shadow-sm group-hover:bg-[#141414]/5 transition-colors">
-                              {exp}
-                            </span>
-                          ))}
-                        </div>
-
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); startEdit(med); }} 
-                            className="p-2 hover:bg-[#141414] text-[#141414]/20 hover:text-white rounded-xl transition-all border border-[#141414]/5"
-                          >
-                            <Edit2 size={12} />
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleDelete(med.id); }} 
-                            className="p-2 hover:bg-red-500 text-[#141414]/20 hover:text-white rounded-xl transition-all border border-[#141414]/5"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
+                  {sortedMedications.map((med) => (
+                    <MedicationRow 
+                      key={med.id} 
+                      med={med} 
+                      onEdit={startEdit} 
+                      onDelete={handleDelete} 
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -1797,83 +1879,14 @@ export default function AdminDashboard() {
                </p>
              </div>
           ) : (
-            sortedMedications.map((med, i) => {
-              const isOutOfStock = med.qoh <= 0;
-              const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
-              
-              return (
-                <motion.div 
-                  key={med.id}
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  className="bg-white rounded-[2rem] p-6 shadow-xl shadow-black/[0.03] border border-[#141414]/5 active:scale-[0.98] transition-all relative overflow-hidden"
-                  onClick={() => startEdit(med)}
-                >
-                  <div className="flex justify-between items-start gap-4 mb-6">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-[9px] font-mono font-black text-[#141414]/30 bg-[#141414]/5 px-2 py-0.5 rounded leading-none">
-                          {med.itemCode}
-                        </span>
-                        {med.isRefrigerated && (
-                          <span className="flex items-center gap-1 text-[8px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-tighter">
-                            <ThermometerSnowflake size={10} />
-                            Cool
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="text-base font-black text-[#141414] leading-tight truncate">
-                        {med.itemName}
-                      </h3>
-                      <p className="text-[10px] font-bold text-[#141414]/30 uppercase tracking-tight italic mt-1 truncate">
-                        {med.generic || 'Generic Formulation'}
-                      </p>
-                    </div>
-                    
-                    {med.imageUrl && (
-                      <div className="w-14 h-14 rounded-2xl overflow-hidden border border-[#F27D26]/10 shrink-0 shadow-inner">
-                        <img src={med.imageUrl} alt="" className="w-full h-full object-cover" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 mb-6">
-                    <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
-                       <p className={`text-lg font-mono font-black ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-[#141414]'}`}>
-                         {formatNumber(med.qoh)}
-                       </p>
-                       <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Stock</p>
-                    </div>
-                    <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
-                       <p className="text-lg font-mono font-black text-[#141414]/40">
-                         {formatNumber(med.minQty)}
-                       </p>
-                       <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Min</p>
-                    </div>
-                    <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
-                       <p className="text-lg font-mono font-black text-[#141414]/40">
-                         {formatNumber(med.maxQty)}
-                       </p>
-                       <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Max</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-                      {[med.expiration1, med.expiration2, med.expiration3].map((exp, idx) => exp && (
-                        <span key={idx} className="text-[9px] font-mono font-bold px-2.5 py-1.5 bg-[#141414]/[0.04] rounded-xl text-[#141414]/50 italic">
-                          {exp}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="p-2 bg-red-50 text-red-500 rounded-xl" onClick={(e) => { e.stopPropagation(); handleDelete(med.id); }}>
-                       <Trash2 size={16} />
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })
+            sortedMedications.map((med) => (
+              <MedicationMobileCard 
+                key={med.id} 
+                med={med} 
+                onEdit={startEdit} 
+                onDelete={handleDelete} 
+              />
+            ))
           )}
         </div>
       </div>
