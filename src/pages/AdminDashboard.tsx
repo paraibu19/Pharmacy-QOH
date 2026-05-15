@@ -3,8 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
-  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud, Cloud, ChevronRight,
-  LayoutDashboard, Box
+  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud, Cloud, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -28,164 +27,8 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MedicationFormModal from '../components/MedicationFormModal';
-import DashboardStats from '../components/DashboardStats';
 
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
-
-const MedicationRow = React.memo(({ med, onEdit, onDelete }: { med: Medication, onEdit: (m: Medication) => void, onDelete: (id: string) => void }) => {
-  const isOutOfStock = med.qoh <= 0;
-  const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
-  
-  return (
-    <div 
-      className="grid grid-cols-[1.5fr_120px_140px_220px_100px] py-4 px-8 items-center hover:bg-[#F27D26]/[0.02] transition-colors group cursor-pointer border-b border-[#141414]/[0.03]"
-      onClick={() => onEdit(med)}
-    >
-      <div className="flex items-center gap-4">
-        {med.imageUrl ? (
-          <div className="w-12 h-12 rounded-2xl overflow-hidden border border-[#141414]/5 shrink-0 shadow-inner">
-            <img src={med.imageUrl} alt="" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
-          </div>
-        ) : (
-          <div className="w-12 h-12 rounded-2xl bg-[#141414]/[0.03] flex items-center justify-center text-[#141414]/10 shrink-0">
-             <Box size={20} />
-          </div>
-        )}
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-[8px] font-black text-[#141414]/30 bg-[#141414]/5 px-1.5 py-0.5 rounded tracking-tighter">
-              {med.itemCode}
-            </span>
-            {med.isRefrigerated && (
-              <ThermometerSnowflake size={10} className="text-blue-500 animate-pulse" />
-            )}
-          </div>
-          <h4 className="text-xs font-black text-[#141414] truncate group-hover:text-[#F27D26] transition-colors leading-none">
-            {med.itemName}
-          </h4>
-          <p className="text-[9px] font-bold text-[#141414]/30 uppercase tracking-tighter truncate italic mt-1">
-            {med.generic || 'Generic Formulation unknown'}
-          </p>
-        </div>
-      </div>
-
-      <div className="text-center">
-        <div className={`text-lg font-mono font-black tabular-nums transition-transform group-hover:scale-110 ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-[#141414]'}`}>
-          {formatNumber(med.qoh)}
-        </div>
-      </div>
-
-      <div className="flex flex-col items-center gap-1">
-        <div className="w-full max-w-[80px] h-1.5 bg-[#141414]/5 rounded-full overflow-hidden">
-           <div 
-             className={`h-full transition-all duration-1000 ${isOutOfStock ? 'w-0' : isLowStock ? 'bg-amber-500 w-[30%]' : 'bg-emerald-500 w-full'}`} 
-           />
-        </div>
-        <div className="flex justify-between w-full max-w-[80px] text-[7px] font-black text-[#141414]/30 tracking-tighter">
-           <span>{formatNumber(med.minQty)}</span>
-           <span>{formatNumber(med.maxQty)}</span>
-        </div>
-      </div>
-
-      <div className="flex gap-1 flex-wrap">
-        {[med.expiration1, med.expiration2, med.expiration3].map((exp, idx) => exp && (
-          <span key={idx} className="text-[8px] font-mono font-bold px-2 py-1 bg-white border border-[#141414]/5 rounded text-[#141414]/60 italic shadow-sm group-hover:bg-[#141414]/5 transition-colors">
-            {exp}
-          </span>
-        ))}
-      </div>
-
-      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
-        <button 
-          onClick={(e) => { e.stopPropagation(); onEdit(med); }} 
-          className="p-2 hover:bg-[#141414] text-[#141414]/20 hover:text-white rounded-xl transition-all border border-[#141414]/5"
-        >
-          <Edit2 size={12} />
-        </button>
-        <button 
-          onClick={(e) => { e.stopPropagation(); onDelete(med.id); }} 
-          className="p-2 hover:bg-red-500 text-[#141414]/20 hover:text-white rounded-xl transition-all border border-[#141414]/5"
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
-    </div>
-  );
-});
-
-const MedicationMobileCard = React.memo(({ med, onEdit, onDelete }: { med: Medication, onEdit: (m: Medication) => void, onDelete: (id: string) => void }) => {
-  const isOutOfStock = med.qoh <= 0;
-  const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
-  
-  return (
-    <div 
-      className="bg-white rounded-[2rem] p-6 shadow-xl shadow-black/[0.03] border border-[#141414]/5 active:scale-[0.98] transition-all relative overflow-hidden"
-      onClick={() => onEdit(med)}
-    >
-      <div className="flex justify-between items-start gap-4 mb-6">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[9px] font-mono font-black text-[#141414]/30 bg-[#141414]/5 px-2 py-0.5 rounded leading-none">
-              {med.itemCode}
-            </span>
-            {med.isRefrigerated && (
-              <span className="flex items-center gap-1 text-[8px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-tighter">
-                <ThermometerSnowflake size={10} />
-                Cool
-              </span>
-            )}
-          </div>
-          <h3 className="text-base font-black text-[#141414] leading-tight truncate">
-            {med.itemName}
-          </h3>
-          <p className="text-[10px] font-bold text-[#141414]/30 uppercase tracking-tight italic mt-1 truncate">
-            {med.generic || 'Generic Formulation'}
-          </p>
-        </div>
-        
-        {med.imageUrl && (
-          <div className="w-14 h-14 rounded-2xl overflow-hidden border border-[#F27D26]/10 shrink-0 shadow-inner">
-            <img src={med.imageUrl} alt="" className="w-full h-full object-cover" />
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-3 gap-2 mb-6">
-        <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
-           <p className={`text-lg font-mono font-black ${isOutOfStock ? 'text-red-500' : isLowStock ? 'text-amber-500' : 'text-[#141414]'}`}>
-             {formatNumber(med.qoh)}
-           </p>
-           <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Stock</p>
-        </div>
-        <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
-           <p className="text-lg font-mono font-black text-[#141414]/40">
-             {formatNumber(med.minQty)}
-           </p>
-           <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Min</p>
-        </div>
-        <div className="bg-[#141414]/[0.02] p-3 rounded-2xl text-center">
-           <p className="text-lg font-mono font-black text-[#141414]/40">
-             {formatNumber(med.maxQty)}
-           </p>
-           <p className="text-[8px] font-black uppercase tracking-widest text-[#141414]/20 mt-1">Max</p>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-          {[med.expiration1, med.expiration2, med.expiration3].map((exp, idx) => exp && (
-            <span key={idx} className="text-[9px] font-mono font-bold px-2.5 py-1.5 bg-[#141414]/[0.04] rounded-xl text-[#141414]/50 italic">
-              {exp}
-            </span>
-          ))}
-        </div>
-        <div className="p-2 bg-red-50 text-red-500 rounded-xl" onClick={(e) => { e.stopPropagation(); onDelete(med.id); }}>
-           <Trash2 size={16} />
-        </div>
-      </div>
-    </div>
-  );
-});
 
 export default function AdminDashboard() {
   const { lastUpdate } = useSystemMetadata();
@@ -445,20 +288,17 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  // Auto-save logic with debounce
+  // Auto-save logic
   useEffect(() => {
     if (isAdding || editingId) {
-      const timer = setTimeout(() => {
-        const draft = {
-          form,
-          isAdding,
-          editingId,
-          locationId: selectedLocation,
-          timestamp: Date.now()
-        };
-        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
-      }, 1000);
-      return () => clearTimeout(timer);
+      const draft = {
+        form,
+        isAdding,
+        editingId,
+        locationId: selectedLocation,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
     }
   }, [form, isAdding, editingId, selectedLocation]);
 
@@ -1280,58 +1120,140 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <div className="flex flex-col gap-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-[#141414] text-white rounded-xl shadow-lg">
-                <LayoutDashboard size={20} />
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-6">
+          <div className="flex flex-col w-full md:w-auto">
+            <div className="flex items-center flex-wrap gap-2 mb-4">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-[#141414]/10 rounded-full shadow-sm">
+                <div className={`w-2 h-2 rounded-full ${isFirebaseConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-400 animate-pulse'}`} />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/60">
+                  Cloud Status: {isFirebaseConnected ? 'Online (Firebase)' : 'Local Mode (Fallback)'}
+                </span>
+                {!isFirebaseConnected && (
+                  <div className="group relative ml-1">
+                    <AlertCircle size={12} className="text-amber-500 cursor-help" />
+                    <div className="absolute left-0 top-full pt-2 z-50 hidden group-hover:block w-48">
+                      <div className="bg-[#141414] text-white text-[10px] p-3 rounded-xl shadow-xl leading-relaxed">
+                        Firebase not configured or disabled. App is using local storage and API routes.
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              <h1 className="text-2xl md:text-3xl font-bold text-[#141414] tracking-tight">Admin Dashboard</h1>
-            </div>
-            <p className="text-[#141414]/50 text-sm font-medium">AW-Pharma Inventory Control & Analytics</p>
-          </div>
 
-          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+              <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10 shadow-sm">
+                <UploadCloud className="w-3 h-3" />
+                <span className="opacity-60 text-[#141414]">Inventory Updated:</span>
+                <span className="text-[#F27D26]">
+                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between md:justify-start gap-3">
+            <h1 className="text-2xl md:text-3xl font-bold text-[#141414]">Management</h1>
+            <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
+              <UploadCloud className="w-3 h-3" />
+              <span className="opacity-60 text-[#141414]">Last Update:</span>
+              <span className="text-[#F27D26]">
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+              </span>
+            </div>
             <button 
               onClick={() => refresh(true)}
               disabled={isSyncing}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all relative ${
                 showSyncPulse
-                ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                : 'bg-white text-[#141414]/60 border-[#141414]/10'
-              } shadow-sm backdrop-blur-sm`}
+                ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 shadow-sm'
+                : 'bg-emerald-50/30 text-emerald-600/60 border border-emerald-100'
+              } disabled:opacity-50 shadow-sm`}
             >
-              <Cloud className={`w-3.5 h-3.5 ${isSyncing ? 'animate-pulse' : ''}`} />
-              {showSyncPulse ? 'Synced' : `Last: ${format(lastSynced, 'HH:mm')}`}
-            </button>
-            
-            <button 
-              onClick={() => setIsBulkMode(true)}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 border border-[#141414]/10 rounded-xl text-xs font-bold hover:bg-[#141414]/5 transition-colors"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              Import
-            </button>
-
-            <button 
-              onClick={() => {
-                setForm({ 
-                  itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
-                  expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
-                  enIndications: '', arIndications: ''
-                });
-                setIsAdding(true);
-              }}
-              className="flex-[2] md:flex-none flex items-center justify-center gap-2 px-6 py-2 bg-[#F27D26] text-white rounded-xl text-xs font-bold hover:bg-[#F27D26]/90 transition-all shadow-lg shadow-[#F27D26]/20"
-            >
-              <Plus className="w-4 h-4" />
-              Add Item
+              <div className={`w-1.5 h-1.5 rounded-full ${showSyncPulse ? 'bg-emerald-500 animate-ping' : 'bg-emerald-400 opacity-50'}`} />
+              {isSyncing ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Cloud className="w-3 h-3" />
+              )}
+              {showSyncPulse ? 'Live Update' : `Sync Logged ${format(lastSynced, 'HH:mm')}`}
             </button>
           </div>
+          <p className="text-[#141414]/50 text-sm md:text-base">Stock inventory control panel</p>
         </div>
+        
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <Link 
+            to="/admin/inventory"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-[#141414] text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-[#F27D26] transition-colors shadow-lg shadow-black/10"
+          >
+            <History className="w-4 h-4" />
+            Stock Take
+          </Link>
+          <button 
+            onClick={() => setIsBulkMode(true)}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 border border-[#141414]/10 rounded-xl text-xs sm:text-sm font-bold hover:bg-[#141414]/5 transition-colors"
+          >
+            <ArrowLeftRight className="w-4 h-4" />
+            Bulk Import
+          </button>
+          
+          <button 
+            onClick={() => bulkPhotoInputRef.current?.click()}
+            disabled={isBulkPhotoUploading}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 border border-[#141414]/10 rounded-xl text-xs sm:text-sm font-bold hover:bg-[#141414]/5 transition-colors relative"
+          >
+            {isBulkPhotoUploading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            Bulk Photos
+            {bulkPhotoProgress && (
+              <span className="absolute -top-2 -right-2 bg-[#F27D26] text-white text-[8px] px-1.5 py-0.5 rounded-full shadow-sm font-black">
+                {Math.round((bulkPhotoProgress.current / bulkPhotoProgress.total) * 100)}%
+              </span>
+            )}
+          </button>
+          <input 
+            type="file" 
+            ref={bulkPhotoInputRef}
+            onChange={handleBulkPhotoUpload}
+            accept=".zip,.rar" 
+            className="hidden" 
+          />
 
-        <DashboardStats medications={medications} />
+          <button 
+            onClick={() => {
+              setForm({ 
+                itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
+                expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
+                enIndications: '', arIndications: ''
+              });
+              setIsAdding(true);
+            }}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-[#F27D26] text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-[#F27D26]/90 transition-colors shadow-lg shadow-[#F27D26]/20"
+          >
+            <Plus className="w-4 h-4" />
+            Add New
+          </button>
+
+          <button 
+            onClick={handleManualTranslate}
+            disabled={isTranslating}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-emerald-600 text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200 relative"
+          >
+            {isTranslating ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            AI Translate Missing
+            {translationProgress && (
+              <span className="absolute -top-2 -right-2 bg-white text-emerald-600 text-[8px] px-1.5 py-0.5 rounded-full shadow-sm font-black border border-emerald-100">
+                {Math.round((translationProgress.current / translationProgress.total) * 100)}%
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
 
       {/* Danger Zone */}
       <div className="p-6 bg-red-50/30 border border-red-100 rounded-3xl animate-in fade-in slide-in-from-top-4 duration-500">
@@ -1617,6 +1539,7 @@ export default function AdminDashboard() {
         </div>
 
       </div>
+    </div>
     
     <AnimatePresence>
         {isBulkMode && (
@@ -1747,50 +1670,76 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Location Filter & Control Strip */}
-      <div className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-[#141414]/5 mb-6">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-          <div className="flex bg-[#141414]/5 p-1 rounded-2xl w-full lg:w-auto">
-            {LOCATIONS.map((loc) => (
-              <button
-                key={loc.id}
-                onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-                className={`flex-1 lg:flex-none px-6 py-2.5 rounded-xl text-[10px] md:text-xs font-black uppercase tracking-widest transition-all ${
-                  selectedLocation === loc.id 
-                    ? 'bg-[#141414] text-white shadow-lg shadow-black/20 transform scale-[1.02]' 
-                    : 'text-[#141414]/40 hover:text-[#141414]/60'
-                }`}
-              >
-                {loc.name.replace('Aw-', '')}
-              </button>
-            ))}
+      {/* Location Filter & Table Header */}
+      <div className="flex flex-col gap-4 px-4 md:px-0">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+              <ClipboardList size={20} />
+            </div>
+            <h2 className="text-xl font-bold tracking-tight">Inventory Management</h2>
           </div>
-
-          <div className="flex flex-col md:flex-row items-center gap-3 w-full lg:w-auto">
-            <div className="relative w-full md:w-80 group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#141414]/20 group-focus-within:text-[#F27D26] transition-colors" size={16} />
+          
+          <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+            {/* Search Bar */}
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30" />
               <input 
                 type="text" 
-                placeholder="Find item, code or brand..." 
+                placeholder="Search code or name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#141414]/[0.03] border-none rounded-2xl py-3.5 pl-12 pr-4 text-xs font-bold focus:ring-2 focus:ring-[#F27D26]/10 transition-all placeholder:text-[#141414]/20"
+                className="w-full pl-9 pr-8 py-2.5 bg-[#141414]/5 border border-transparent rounded-2xl text-xs font-bold focus:outline-none focus:bg-white focus:border-[#F27D26]/20 transition-all"
               />
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#141414]/5 rounded-md text-[#141414]/40"
+                >
+                  <XIcon size={14} />
+                </button>
+              )}
             </div>
 
-            <div className="flex items-center bg-[#141414]/[0.03] p-1 rounded-2xl w-full md:w-auto">
+            <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-fit overflow-x-auto no-scrollbar">
+              {LOCATIONS.map(loc => (
+                <button
+                  key={loc.id}
+                  onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
+                  className={`flex-1 md:flex-none whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    selectedLocation === loc.id 
+                      ? loc.id === PharmacyLocation.ADULT
+                        ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
+                        : loc.id === PharmacyLocation.PEDIATRIC
+                          ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
+                          : loc.id === PharmacyLocation.MESAIEED
+                            ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
+                            : 'bg-white shadow-sm text-[#141414]'
+                      : 'text-[#141414]/40 hover:text-[#141414]'
+                  }`}
+                >
+                  {loc.name.replace('Aw-', '')}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2 border-t border-[#141414]/5 mt-2">
               {[
-                { id: 'all', label: 'All Status', icon: Filter },
-                { id: 'low', label: 'Low Alert', icon: AlertTriangle },
-                { id: 'out', label: 'Missing', icon: XIcon }
+                { id: 'all', label: 'All', icon: Filter },
+                { id: 'in', label: 'In Stock', icon: Check },
+                { id: 'low', label: 'Low Stock', icon: AlertTriangle },
+                { id: 'out', label: 'Out of Stock', icon: Trash2 }
               ].map((f) => (
                 <button
                   key={f.id}
                   onClick={() => setStockFilter(f.id as any)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${
-                    stockFilter === f.id 
-                      ? 'bg-white text-[#141414] shadow-sm' 
-                      : 'text-[#141414]/30 hover:text-[#141414]/50'
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border ${
+                    stockFilter === f.id
+                      ? f.id === 'in' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 shadow-sm' :
+                        f.id === 'low' ? 'bg-amber-100 text-amber-700 border-amber-200 shadow-sm' :
+                        f.id === 'out' ? 'bg-red-100 text-red-700 border-red-200 shadow-sm' :
+                        'bg-[#141414] text-white border-[#141414] shadow-sm'
+                      : 'bg-white text-[#141414]/40 border-[#141414]/10 hover:border-[#141414]/20 hover:text-[#141414]'
                   }`}
                 >
                   <f.icon size={12} />
@@ -1802,94 +1751,500 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Inventory Control Center */}
-      <div className="bg-white rounded-[2.5rem] border border-[#141414]/10 shadow-2xl shadow-black/[0.02] overflow-hidden min-h-[500px]">
-        <div className="p-6 border-b border-[#141414]/5 space-y-4">
-           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h3 className="text-sm font-black text-[#141414] uppercase tracking-tight flex items-center gap-2">
-                <Box className="text-[#F27D26]" size={18} />
-                Inventory Assets
-                <span className="px-2 py-0.5 bg-[#F27D26]/10 text-[#F27D26] text-[8px] rounded-full">
-                  {sortedMedications.length} ITEMS
-                </span>
-              </h3>
-           </div>
-        </div>
-
-        {/* Desktop View: Advanced Grid */}
-        <div className="hidden lg:block overflow-x-auto">
-          <div className="min-w-[1000px]">
-            <div className="grid grid-cols-[1.5fr_120px_140px_220px_100px] border-b border-[#141414]/5 pb-4 px-8 pt-6">
-              <div 
-                className="text-[10px] font-black uppercase tracking-[0.2em] text-[#141414]/30 cursor-pointer hover:text-[#F27D26] transition-colors"
+      {/* Table Container */}
+      <div className="bg-white rounded-3xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto max-h-[75vh]">
+          <table className="w-full text-left">
+            <thead className="sticky top-0 z-20 bg-white shadow-sm">
+              <tr className="bg-[#141414]/5 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 border-b border-[#141414]/10">
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
                 onClick={() => toggleSort('itemName')}
               >
-                Product Identity
-              </div>
-              <div 
-                className="text-[10px] font-black uppercase tracking-[0.2em] text-[#141414]/30 text-center cursor-pointer hover:text-[#F27D26] transition-colors"
+                <div className="flex items-center gap-1">
+                  Item Details
+                  {sortField === 'itemName' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
+                </div>
+              </th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
                 onClick={() => toggleSort('qoh')}
               >
-                Live QOH
-              </div>
-              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#141414]/30 text-center">Thresholds</div>
-              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#141414]/30">Expirations</div>
-              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#141414]/30 text-right">Ops</div>
-            </div>
-
-            <div className="divide-y divide-[#141414]/[0.03]">
-              {loading ? (
-                <div className="p-32 flex flex-col items-center justify-center gap-4">
-                  <Loader2 className="w-12 h-12 animate-spin text-[#F27D26]/20" />
-                  <p className="text-[10px] font-black text-[#141414]/20 uppercase tracking-[0.3em] italic">Syncing Catalog...</p>
+                <div className="flex items-center gap-1">
+                  Quantity on Hand
+                  {sortField === 'qoh' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
                 </div>
-              ) : sortedMedications.length === 0 ? (
-                <div className="p-32 text-center flex flex-col items-center gap-4">
-                  <Search className="w-16 h-16 text-[#141414]/5" />
-                  <p className="text-xs font-bold text-[#141414]/20 uppercase tracking-[0.2em] italic">No catalog entries found</p>
+              </th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                onClick={() => toggleSort('minQty')}
+              >
+                <div className="flex items-center gap-1">
+                  Min / Max
+                  {sortField === 'minQty' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
                 </div>
-              ) : (
-                <div className="py-2">
-                  {sortedMedications.map((med) => (
-                    <MedicationRow 
-                      key={med.id} 
-                      med={med} 
-                      onEdit={startEdit} 
-                      onDelete={handleDelete} 
+              </th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                onClick={() => toggleSort('expiration1')}
+              >
+                <div className="flex items-center gap-1">
+                  Expirations (1 / 2 / 3)
+                  {sortField === 'expiration1' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
+                </div>
+              </th>
+              <th className="px-6 py-4 text-right sticky top-0 bg-[#F9F9F9]">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#141414]/5">
+            {loading && (
+              <tr>
+                <td colSpan={5} className="px-6 py-10 text-center">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#F27D26]" />
+                </td>
+              </tr>
+            )}
+            {/* Inline Add/Edit Form */}
+            {false && (
+              <tr className="bg-[#F27D26]/5 animate-in fade-in duration-300">
+                <td className="px-6 py-4">
+                  <div className="flex gap-4">
+                    <div className="flex flex-col items-center gap-2">
+                       <div className="w-16 h-16 bg-[#141414]/5 rounded-xl border border-[#141414]/10 flex items-center justify-center overflow-hidden relative group">
+                         {form.imageUrl ? (
+                           <>
+                             <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                             <button 
+                               onClick={() => setForm(prev => ({ ...prev, imageUrl: '' }))}
+                               className="absolute inset-0 bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[8px] font-bold"
+                             >
+                               REMOVE
+                             </button>
+                           </>
+                         ) : (
+                           <ImageIcon size={20} className="text-[#141414]/20" />
+                         )}
+                       </div>
+                       <div className="flex gap-1">
+                         <button 
+                           onClick={() => startCamera()}
+                           className="p-1.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-lg text-[#141414]/40 hover:text-[#F27D26] transition-all"
+                           title="Take Photo"
+                         >
+                           <Camera size={14} />
+                         </button>
+                         <label className="p-1.5 bg-[#141414]/5 hover:bg-[#141414]/10 rounded-lg text-[#141414]/40 hover:text-[#F27D26] transition-all cursor-pointer">
+                           <ImageIcon size={14} />
+                           <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload} />
+                         </label>
+                       </div>
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <input 
+                        type="text" 
+                        placeholder="Code" 
+                        autoFocus
+                        className="w-full text-xs font-mono p-1 border rounded"
+                        value={form.itemCode}
+                        onChange={e => setForm({...form, itemCode: e.target.value})}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Item Name" 
+                        className="w-full text-sm font-bold p-1 border rounded"
+                        value={form.itemName}
+                        onChange={e => setForm({...form, itemName: e.target.value})}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Generic Name" 
+                        className="w-full text-[10px] p-1 border rounded italic text-[#141414]/60"
+                        value={form.generic}
+                        onChange={e => setForm({...form, generic: e.target.value})}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Linked Codes (To)" 
+                        className="w-full text-[10px] p-1 border rounded text-[#F27D26] font-bold"
+                        value={form.to}
+                        onChange={e => setForm({...form, to: e.target.value})}
+                      />
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <textarea 
+                          placeholder="Indications (EN)" 
+                          className="w-full text-[10px] p-1 border rounded h-12 bg-blue-50/30"
+                          value={form.enIndications}
+                          onChange={e => setForm({...form, enIndications: e.target.value})}
+                        />
+                        <textarea 
+                          placeholder="دواعي الاستعمال (AR)" 
+                          className="w-full text-[10px] p-1 border rounded h-12 bg-emerald-50/30 text-right"
+                          dir="rtl"
+                          value={form.arIndications}
+                          onChange={e => setForm({...form, arIndications: e.target.value})}
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer select-none mt-1">
+                        <input 
+                          type="checkbox" 
+                          className="w-3 h-3 rounded text-[#F27D26] focus:ring-[#F27D26]/20 border-[#141414]/10"
+                          checked={form.isRefrigerated}
+                          onChange={e => setForm({...form, isRefrigerated: e.target.checked})}
+                        />
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-black uppercase tracking-tighter border border-blue-100/50">
+                          <ThermometerSnowflake size={10} className="text-blue-500" />
+                          Refrigerated (2-8°C)
+                        </div>
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                       <input 
+                         type="checkbox" 
+                         id="isRefrigerated"
+                         checked={form.isRefrigerated}
+                         onChange={e => setForm({...form, isRefrigerated: e.target.checked})}
+                         className="w-4 h-4 rounded border-[#141414]/10 text-[#F27D26] focus:ring-[#F27D26]/20"
+                       />
+                       <label htmlFor="isRefrigerated" className="text-[10px] font-bold text-[#141414]/60 uppercase tracking-widest flex items-center gap-1">
+                          <ThermometerSnowflake size={12} className="text-blue-500" />
+                          Refrigerated (2-8°C)
+                       </label>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Qty:</span>
+                    <input 
+                      type="number" 
+                      step="any"
+                      className="w-20 p-1 border rounded text-sm"
+                      value={form.qoh}
+                      onChange={e => setForm({...form, qoh: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
                     />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile View: High-End Cards */}
-        <div className="lg:hidden p-4 space-y-4 pb-32">
-          {loading ? (
-             <div className="py-20 flex flex-col items-center justify-center gap-4">
-               <Loader2 className="w-10 h-10 animate-spin text-[#F27D26]/30" />
-               <p className="text-[9px] font-black text-[#141414]/20 uppercase tracking-[0.2em]">Syncing Feed...</p>
-             </div>
-          ) : sortedMedications.length === 0 ? (
-             <div className="py-20 text-center flex flex-col items-center gap-4">
-               <Search size={32} className="text-[#141414]/5" />
-               <p className="text-xs font-bold text-[#141414]/30 uppercase tracking-widest italic leading-relaxed">
-                 No entries found
-               </p>
-             </div>
-          ) : (
-            sortedMedications.map((med) => (
-              <MedicationMobileCard 
-                key={med.id} 
-                med={med} 
-                onEdit={startEdit} 
-                onDelete={handleDelete} 
-              />
-            ))
-          )}
-        </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Min:</span>
+                      <input 
+                        type="number" 
+                        step="any"
+                        className="w-20 p-1 border rounded text-sm"
+                        value={form.minQty}
+                        onChange={e => setForm({...form, minQty: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Max:</span>
+                      <input 
+                        type="number" 
+                        step="any"
+                        className="w-20 p-1 border rounded text-sm"
+                        value={form.maxQty}
+                        onChange={e => setForm({...form, maxQty: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
+                      />
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex gap-2 text-xs">
+                    <input type="text" placeholder="Exp1" className="w-24 p-1 border rounded" value={form.expiration1} onChange={e => setForm({...form, expiration1: e.target.value})} />
+                    <input type="text" placeholder="Exp2" className="w-24 p-1 border rounded" value={form.expiration2} onChange={e => setForm({...form, expiration2: e.target.value})} />
+                    <input type="text" placeholder="Exp3" className="w-24 p-1 border rounded" value={form.expiration3} onChange={e => setForm({...form, expiration3: e.target.value})} />
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => { setIsAdding(false); setEditingId(null); clearDraft(); }} className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors"><XIcon className="w-4 h-4" /></button>
+                    <button onClick={() => handleSave()} className="p-1.5 bg-green-50 text-green-500 rounded-lg hover:bg-green-500 hover:text-white transition-colors"><Check className="w-4 h-4" /></button>
+                  </div>
+                </td>
+              </tr>
+            )}
+            {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all') && (
+              <tr>
+                <td colSpan={5} className="px-6 py-20 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <Search className="w-8 h-8 text-[#141414]/10" />
+                    <p className="text-sm font-bold text-[#141414]/40 italic">No products match your search or filter.</p>
+                    <button 
+                      onClick={() => { setSearchQuery(''); setStockFilter('all'); }}
+                      className="text-[10px] font-bold text-[#F27D26] hover:underline uppercase tracking-widest mt-2"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
+            {!loading && sortedMedications.map(med => {
+              const isOutOfStock = med.qoh <= 0;
+              const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+              const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
+              
+              // Expiration check for highlighting
+              const today = startOfToday();
+              const dates = [med.expiration1, med.expiration2, med.expiration3]
+                .map(parseExpDate)
+                .filter(d => d !== null && !isBefore(d, today)) as Date[];
+              
+              let expirationAlertClass = '';
+              if (dates.length > 0) {
+                const nextExp = new Date(Math.min(...dates.map(d => d.getTime())));
+                const daysLeft = differenceInDays(nextExp, today);
+                if (daysLeft <= 15) {
+                  expirationAlertClass = 'bg-red-100/80';
+                } else if (daysLeft <= 30) {
+                  expirationAlertClass = 'bg-yellow-100/80';
+                }
+              }
+              
+              return (
+                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : '')}`}>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold text-[#141414]/40">{med.itemCode}</span>
+                        {isNew ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-[1px] bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-extrabold rounded-full tracking-tight whitespace-nowrap">
+                            <Sparkles className="w-2 h-2" />
+                            NEW
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-[#141414]/20">-</span>
+                        )}
+                      </div>
+                      <button 
+                        onClick={() => startEdit(med)}
+                        className="flex flex-col items-start gap-0.5 group/name"
+                      >
+                        <span className="text-sm font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors text-left">{med.itemName}</span>
+                        {med.isRefrigerated && (
+                          <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
+                            <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
+                            REFRIGERATED
+                          </div>
+                        )}
+                        {med.generic && (
+                          <span className="text-[10px] italic text-[#141414]/40 leading-tight group-hover/name:text-[#F27D26]/60 transition-colors text-left">
+                            {med.generic}
+                          </span>
+                        )}
+                        {med.to && (
+                          <div 
+                            onClick={(e) => { e.stopPropagation(); setSelectedMedForLinks(med); }}
+                            className="flex items-center gap-1 mt-0.5 cursor-pointer hover:bg-[#F27D26]/5 p-1 -m-1 rounded transition-colors"
+                          >
+                             <div className="w-1 h-1 rounded-full bg-[#F27D26] animate-pulse" />
+                             <span className="text-[8px] font-black text-[#F27D26] uppercase tracking-tighter">Linked items available</span>
+                          </div>
+                        )}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-bold ${isOutOfStock ? 'text-red-600' : isLowStock ? 'text-amber-600' : 'text-emerald-600'}`}>{formatNumber(med.qoh)}</span>
+                        <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                          isOutOfStock ? 'bg-red-100 text-red-600' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                        }`}>
+                          {isOutOfStock ? (
+                            <>
+                              <AlertCircle size={8} />
+                              Out of Stock
+                            </>
+                          ) : isLowStock ? (
+                            <>
+                              <AlertCircle size={8} />
+                              Low Stock
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 size={8} className="text-emerald-500" />
+                              In Stock
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
+                      <span>Min: <span className="text-[#141414]">{formatNumber(med.minQty)}</span></span>
+                      <span>Max: <span className="text-[#141414]">{formatNumber(med.maxQty)}</span></span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                  <div className="flex gap-2 font-mono text-[10px]">
+                    <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration1 || '-'}</span>
+                    <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration2 || '-'}</span>
+                    <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration3 || '-'}</span>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => startEdit(med)} className="p-1.5 hover:bg-black rounded-lg hover:text-white transition-colors"><Edit2 className="w-4 h-4" /></button>
+                    <button onClick={() => handleDelete(med.id)} className="p-1.5 hover:bg-red-500 rounded-lg hover:text-white transition-colors"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+            
+            {!loading && medications.length === 0 && !isAdding && (
+              <tr>
+                <td colSpan={4} className="px-6 py-20 text-center text-[#141414]/20 font-bold italic">
+                  No medications in this location yet. Use "+" to add some!
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
+
+      {/* Mobile Card View */}
+      <div className="md:hidden divide-y divide-[#141414]/5">
+        {loading && (
+          <div className="p-10 flex flex-col items-center justify-center gap-4">
+            <Loader2 className="w-8 h-8 animate-spin text-[#F27D26]" />
+            <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Loading Items...</p>
+          </div>
+        )}
+
+        {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all') && (
+           <div className="p-16 text-center flex flex-col items-center gap-3">
+             <Search className="w-10 h-10 text-[#141414]/10" />
+             <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-xs leading-relaxed px-4">
+               No medications match your <br/> current search criteria
+             </p>
+             <button 
+                onClick={() => { setSearchQuery(''); setStockFilter('all'); }}
+                className="mt-2 px-6 py-2.5 bg-[#F27D26]/10 text-[#F27D26] rounded-full text-[10px] font-bold uppercase tracking-widest"
+             >
+                Reset Search
+             </button>
+           </div>
+        )}
+        
+        {!loading && sortedMedications.map(med => {
+          const isOutOfStock = med.qoh <= 0;
+          const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+          const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
+          
+          return (
+            <motion.div 
+              layout
+              key={med.id} 
+              className={`p-4 space-y-4 ${isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : ''}`}
+              onClick={() => startEdit(med)}
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex gap-4">
+                  {med.imageUrl && (
+                    <button 
+                      onClick={() => setSelectedImage(med.imageUrl!)}
+                      className="w-12 h-12 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden hover:scale-105 transition-transform flex-shrink-0"
+                    >
+                      <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                    </button>
+                  )}
+                  <div className="space-y-1">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => med.to ? setSelectedMedForLinks(med) : startEdit(med)}
+                          className="font-bold text-[#141414] leading-tight text-left hover:text-[#F27D26] transition-colors flex flex-col items-start gap-1"
+                        >
+                          {med.itemName}
+                          {med.isRefrigerated && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 text-white rounded-full text-[9px] font-black uppercase tracking-tight shadow-md border border-white/20">
+                              <ThermometerSnowflake size={10} />
+                              REF
+                            </span>
+                          )}
+                        </button>
+                      {isNew && (
+                        <span className="px-1.5 py-0.5 bg-[#F27D26]/10 text-[#F27D26] rounded text-[8px] font-black uppercase tracking-widest whitespace-nowrap">
+                          NEW
+                        </span>
+                      )}
+                      {med.to && (
+                        <ArrowLeftRight size={10} className="text-[#F27D26] animate-pulse" />
+                      )}
+                    </div>
+                    {med.generic && (
+                      <button 
+                        onClick={() => med.to ? setSelectedMedForLinks(med) : null}
+                        className="text-[10px] italic text-[#141414]/40 leading-tight text-left hover:text-[#F27D26] transition-colors"
+                      >
+                        {med.generic}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => startEdit(med)} className="p-2 bg-[#141414]/5 rounded-lg text-[#141414]/40"><Edit2 className="w-3.5 h-3.5" /></button>
+                <button onClick={() => handleDelete(med.id)} className="p-2 bg-red-50 rounded-lg text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40">Stock Status</p>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xl font-black ${
+                      isOutOfStock 
+                        ? 'text-red-600' 
+                        : isLowStock 
+                        ? 'text-amber-600' 
+                        : 'text-emerald-600'
+                    }`}>{formatNumber(med.qoh)}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase whitespace-nowrap ${
+                      isOutOfStock ? 'bg-red-100 text-red-600' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                    }`}>
+                      {isOutOfStock ? 'Out of Stock' : isLowStock ? 'Low Stock' : 'In Stock'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col justify-center border-l border-[#141414]/10 pl-4">
+                   <div className="flex items-center gap-4 text-[10px] font-bold">
+                     <div className="flex flex-col">
+                       <span className="text-[#141414]/40 text-[8px] uppercase">Min</span>
+                       <span>{formatNumber(med.minQty)}</span>
+                     </div>
+                     <div className="flex flex-col">
+                       <span className="text-[#141414]/40 text-[8px] uppercase">Max</span>
+                       <span>{formatNumber(med.maxQty)}</span>
+                     </div>
+                   </div>
+                </div>
+              </div>
+
+              <div className="bg-[#141414]/[0.03] p-2 rounded-xl">
+                 <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ml-1">Expirations</p>
+                 <div className="flex gap-2 font-mono text-[9px]">
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration1 || '-'}</span>
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration2 || '-'}</span>
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration3 || '-'}</span>
+                 </div>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
 
@@ -1994,24 +2349,24 @@ export default function AdminDashboard() {
               </div>
 
               <div className="space-y-4">
-                 <div className="grid grid-cols-2 gap-3 md:gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[8px] md:text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1.5 md:mb-2 ml-1">Min Quantity</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">Min Quantity</label>
                     <input 
                       type="number"
                       value={editMin}
                       onChange={(e) => setEditMin(e.target.value)}
-                      className="w-full px-3 md:px-4 py-2.5 md:py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold text-xs"
+                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold"
                       placeholder="Min"
                     />
                   </div>
                   <div>
-                    <label className="block text-[8px] md:text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1.5 md:mb-2 ml-1">Max Quantity</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-2 ml-1">Max Quantity</label>
                     <input 
                       type="number"
                       value={editMax}
                       onChange={(e) => setEditMax(e.target.value)}
-                      className="w-full px-3 md:px-4 py-2.5 md:py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold text-xs"
+                      className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all font-bold"
                       placeholder="Max"
                     />
                   </div>
@@ -2199,58 +2554,45 @@ export default function AdminDashboard() {
 
               <div className="p-8 flex flex-col items-center gap-6 bg-[#141414]">
                 {capturedImage ? (
-                  <div className="flex flex-col gap-4 w-full">
-                    <div className="flex gap-4">
-                      <button 
-                        onClick={() => {
-                          setCapturedImage(null);
-                          setIsStreamActive(false);
-                          if (videoRef.current) {
-                            videoRef.current.play().then(() => {
-                              setIsStreamActive(true);
-                            }).catch(err => {
-                              console.warn("Retake: Play failed, restarting camera", err);
-                              startCamera(); 
-                            });
-                          } else {
-                            startCamera();
-                          }
-                        }}
-                        className="flex-1 py-4 bg-white/5 text-white/60 rounded-2xl flex items-center justify-center gap-3 hover:bg-white/10 transition-all font-black text-[10px] uppercase tracking-widest border border-white/5"
-                      >
-                        <RotateCcw size={16} />
-                        Retake
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setForm(prev => ({ ...prev, imageUrl: capturedImage }));
-                          stopCamera();
-                        }}
-                        className="flex-[2] py-4 bg-[#F27D26] text-white rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-[#F27D26]/20 transition-all font-black text-[10px] uppercase tracking-widest"
-                      >
-                        <Check size={16} />
-                        Apply Photo
-                      </button>
-                    </div>
+                  <div className="flex gap-4 w-full">
                     <button 
-                      onClick={() => setCapturedImage(null)}
-                      className="w-full py-2 text-white/20 text-[9px] font-black uppercase tracking-[0.2em] hover:text-white/40 transition-colors"
+                      onClick={() => {
+                        setCapturedImage(null);
+                        // Ensure video starts playing again if it was paused
+                        if (videoRef.current) {
+                          videoRef.current.play().catch(err => {
+                            console.warn("Retake: Play failed", err);
+                            startCamera(); // Fallback if it totally lost the stream
+                          });
+                        }
+                      }}
+                      className="flex-1 py-4 bg-white/10 text-white rounded-2xl flex items-center justify-center gap-3 hover:bg-white/20 transition-all font-bold text-xs"
                     >
-                      Discard & Return to Stream
+                      <RotateCcw size={16} />
+                      RETAKE
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, imageUrl: capturedImage }));
+                        stopCamera();
+                      }}
+                      className="flex-1 py-4 bg-[#F27D26] text-white rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-[#F27D26]/20 transition-all font-bold text-xs"
+                    >
+                      <Check size={16} />
+                      USE PHOTO
                     </button>
                   </div>
                 ) : (
                   <>
                     <button 
                       onClick={capturePhoto}
-                      className="w-20 h-20 bg-white rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10 group relative"
+                      className="w-20 h-20 bg-white rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10 group"
                     >
-                       <div className="w-16 h-16 border-4 border-[#141414] rounded-full flex items-center justify-center bg-white group-hover:bg-[#F27D26]/5 transition-colors">
-                        <Camera size={24} className="text-[#141414]" />
+                      <div className="w-16 h-16 border-4 border-[#141414] rounded-full flex items-center justify-center bg-white group-hover:bg-[#F27D26]/5 group-active:bg-[#F27D26]/10 transition-colors">
+                        <Camera className="w-8 h-8 text-[#141414]" />
                       </div>
-                      <div className="absolute -inset-2 border-2 border-white/20 rounded-full animate-pulse" />
                     </button>
-                    <p className="text-[10px] text-white/40 font-black uppercase tracking-[0.3em]">Tap to Capture</p>
+                    <p className="text-[10px] text-white/40 font-bold uppercase tracking-[0.2em]">Click to capture</p>
                   </>
                 )}
               </div>

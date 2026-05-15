@@ -1,13 +1,12 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud, Command, Search } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud } from 'lucide-react';
 import { format } from 'date-fns';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onSnapshotsInSync } from 'firebase/firestore';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
-import CommandPalette from './CommandPalette';
 
 interface LayoutProps {
   children: ReactNode;
@@ -18,19 +17,7 @@ interface LayoutProps {
 export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
   const [isSynced, setIsSynced] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const { lastUpdate } = useSystemMetadata();
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setIsCommandPaletteOpen(prev => !prev);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   useEffect(() => {
     if (!db) return;
@@ -109,11 +96,6 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-[#FDFCFB] text-[#141414] font-sans flex flex-col">
-      <CommandPalette 
-        isOpen={isCommandPaletteOpen} 
-        onClose={() => setIsCommandPaletteOpen(false)} 
-      />
-      
       <nav className="border-b border-[#141414]/10 bg-white sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-20 items-center">
@@ -122,7 +104,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 <div className="p-2 bg-[#F27D26]/10 rounded-xl">
                   <Pill className="w-6 h-6 text-[#F27D26] group-hover:rotate-12 transition-transform" />
                 </div>
-                <div className="flex flex-col text-left">
+                <div className="flex flex-col">
                   <span className="font-bold text-lg tracking-tight leading-none text-[#141414]">AW-PharmaStock</span>
                   <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-[#F27D26]">Pro Edition</span>
                 </div>
@@ -145,20 +127,11 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 </div>
               </div>
 
-              <button 
-                onClick={() => setIsCommandPaletteOpen(true)}
-                className="hidden md:flex items-center gap-3 px-3 py-1.5 bg-[#141414]/[0.02] border border-[#141414]/5 rounded-xl hover:bg-[#141414]/5 transition-all group"
-              >
-                <Search className="w-3.5 h-3.5 text-[#141414]/40" />
-                <div className="flex items-center gap-1">
-                  <div className="px-1.5 py-0.5 rounded border border-[#141414]/10 bg-white shadow-sm flex items-center justify-center">
-                    <Command size={8} className="text-[#141414]/40" />
-                  </div>
-                  <div className="px-1.5 py-0.5 rounded border border-[#141414]/10 bg-white shadow-sm flex items-center justify-center">
-                    <span className="text-[8px] font-bold text-[#141414]/40">K</span>
-                  </div>
-                </div>
-              </button>
+              <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
+                <UploadCloud className="w-3 h-3" />
+                <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data Uploaded'}
+              </div>
             </div>
             
             {/* Desktop Nav */}
