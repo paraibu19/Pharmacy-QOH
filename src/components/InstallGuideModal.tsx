@@ -45,6 +45,22 @@ export default function InstallGuideModal({ isOpen, onClose }: InstallGuideModal
 
             {/* Content searching for tabs / scrollable area */}
             <div className="p-6 space-y-8 overflow-y-auto max-h-[70vh]">
+              {/* Logo Preview */}
+              <div className="flex flex-col items-center justify-center py-4 space-y-3">
+                 <div className="relative group">
+                    <div className="absolute inset-0 bg-[#F27D26]/20 blur-2xl rounded-full group-hover:bg-[#F27D26]/30 transition-all duration-500" />
+                    <img 
+                      src="/icon.svg" 
+                      alt="App Icon" 
+                      className="relative w-24 h-24 rounded-3xl shadow-2xl border-4 border-white transform hover:scale-105 transition-transform duration-300"
+                      referrerPolicy="no-referrer"
+                    />
+                 </div>
+                 <div className="text-center">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#141414]/30">Previewing App Logo</span>
+                 </div>
+              </div>
+
               {/* iOS Section */}
               <section className="space-y-4">
                 <div className="flex items-center gap-2">
