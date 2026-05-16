@@ -36,6 +36,7 @@ export default function AdminDashboard() {
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
     const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+    const { medications: allMedications } = useMedications();
     const { audits, loading: auditsLoading } = useAudits(10);
     const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
@@ -423,6 +424,32 @@ export default function AdminDashboard() {
 
     return { current, next, third };
   }, [medications]);
+
+  const expiredItemsOverall = useMemo(() => {
+    const today = startOfToday();
+    const expired = allMedications.filter(med => {
+      if (med.qoh <= 0) return false;
+      const dates = [med.expiration1, med.expiration2, med.expiration3]
+        .map(parseExpDate)
+        .filter(d => d !== null) as Date[];
+      
+      return dates.some(d => isBefore(d, today));
+    });
+
+    const grouped: Record<PharmacyLocation, Medication[]> = {
+      [PharmacyLocation.ADULT]: [],
+      [PharmacyLocation.PEDIATRIC]: [],
+      [PharmacyLocation.MESAIEED]: [],
+    };
+
+    expired.forEach(med => {
+      if (grouped[med.locationId]) {
+        grouped[med.locationId].push(med);
+      }
+    });
+
+    return grouped;
+  }, [allMedications]);
 
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -1342,6 +1369,99 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
+      {/* Global Expiry Reporting - CROSS-LOCATION ALERT */}
+      {(Object.values(expiredItemsOverall) as Medication[][]).some(list => list.length > 0) && (
+        <div className="p-6 bg-red-50 border border-red-200 rounded-3xl animate-in fade-in slide-in-from-top-6 duration-700">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2.5 bg-red-600 text-white rounded-2xl shadow-lg animate-pulse">
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-red-700 uppercase tracking-tight">Global Expiry Report</h2>
+              <p className="text-xs text-red-600/70 font-bold uppercase tracking-widest">Urgent review required across all 3 locations</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(Object.entries(expiredItemsOverall) as [PharmacyLocation, Medication[]][]).map(([locId, items]) => {
+              const locationName = PHARMACY_NAMES[locId];
+              
+              return (
+                <div key={locId} className="bg-white border border-red-100 rounded-2xl p-4 shadow-sm relative overflow-hidden group">
+                  {/* Location Header */}
+                  <div className="flex items-center justify-between mb-4 relative z-10">
+                    <div className="flex items-center gap-2">
+                       <div className={`w-2 h-2 rounded-full ${items.length > 0 ? 'bg-red-500 animate-ping' : 'bg-emerald-500'}`} />
+                       <span className="text-[10px] font-black uppercase tracking-tight text-[#141414]/40">{locationName}</span>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${items.length > 0 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                      {items.length} EXPIRED
+                    </span>
+                  </div>
+
+                  {items.length > 0 ? (
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2 scrollbar-hide">
+                      {items.map(item => (
+                        <div key={item.id} className="p-3 bg-red-50/50 border border-red-100 rounded-xl hover:bg-red-50 transition-colors">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-bold text-[#141414] truncate uppercase">{item.itemName}</p>
+                              <p className="text-[9px] font-mono text-[#141414]/40">{item.itemCode}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] font-black text-red-600">{item.qoh} UNITS</p>
+                              <p className="text-[8px] font-bold text-[#141414]/30 uppercase">In Stock</p>
+                            </div>
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-red-100/50 flex items-center justify-between">
+                             <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
+                                {[item.expiration1, item.expiration2, item.expiration3].map((exp, idx) => {
+                                  const d = parseExpDate(exp);
+                                  const isExp = d && isBefore(d, startOfToday());
+                                  if (!d || !isExp) return null;
+                                  return (
+                                    <span key={idx} className="text-[8px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
+                                      {exp}
+                                    </span>
+                                  );
+                                })}
+                             </div>
+                             <button 
+                                onClick={() => {
+                                  setSelectedLocation(locId as PharmacyLocation);
+                                  setSearchQuery(item.itemCode);
+                                  // Scroll to inventory section
+                                  const invSection = document.getElementById('inventory-section');
+                                  if (invSection) {
+                                    invSection.scrollIntoView({ behavior: 'smooth' });
+                                  }
+                                }}
+                                className="p-1 hover:bg-red-100 rounded-lg text-red-600 transition-colors"
+                              >
+                               <ChevronRight size={14} />
+                             </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="h-[100px] flex flex-col items-center justify-center text-center opacity-30">
+                       <CheckCircle2 size={32} className="text-emerald-500 mb-2" />
+                       <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">All Clear</p>
+                    </div>
+                  )}
+                  
+                  {/* Background Decoration */}
+                  <div className="absolute -right-4 -bottom-4 opacity-[0.03] rotate-12 group-hover:rotate-6 transition-transform">
+                    <AlertTriangle size={80} className="text-red-600" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Expiration Alerts Widget */}
       <div className="flex flex-col gap-6 md:gap-8">
         {/* Top Horizontal Stats Row */}
@@ -1672,7 +1792,7 @@ export default function AdminDashboard() {
       </AnimatePresence>
 
       {/* Location Filter & Table Header */}
-      <div className="flex flex-col gap-4 px-4 md:px-0">
+      <div id="inventory-section" className="flex flex-col gap-4 px-4 md:px-0 scroll-mt-20">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
