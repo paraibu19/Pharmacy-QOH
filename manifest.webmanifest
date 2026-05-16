@@ -1,0 +1,16 @@
+{
+  "name": "AW-PharmaStock Pro",
+  "short_name": "AW-Pharma",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#F27D26",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,12 +1,13 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud, Smartphone } from 'lucide-react';
 import { format } from 'date-fns';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onSnapshotsInSync } from 'firebase/firestore';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
+import InstallGuideModal from './InstallGuideModal';
 
 interface LayoutProps {
   children: ReactNode;
@@ -17,6 +18,7 @@ interface LayoutProps {
 export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
   const [isSynced, setIsSynced] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isInstallGuideOpen, setIsInstallGuideOpen] = useState(false);
   const { lastUpdate } = useSystemMetadata();
 
   useEffect(() => {
@@ -66,6 +68,17 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
         <Wrench className="w-4 h-4" />
         Order
       </NavLink>
+
+      <button
+        onClick={() => {
+          setIsMobileMenuOpen(false);
+          setIsInstallGuideOpen(true);
+        }}
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all hover:bg-[#141414]/5 text-[#141414]/60"
+      >
+        <Smartphone className="w-4 h-4" />
+        Mobile App
+      </button>
 
       {isAdmin && (
         <>
@@ -205,6 +218,17 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 
                 <NavLinks />
 
+                <button 
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    setIsInstallGuideOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold border border-blue-100 transition-all hover:bg-blue-100"
+                >
+                  <Smartphone className="w-4 h-4" />
+                  Install Mobile App
+                </button>
+
                 <div className="pt-4 border-t border-[#141414]/10">
                   {onLogout ? (
                     <button 
@@ -252,8 +276,22 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
           <p className="text-[10px] text-[#141414]/20 font-mono">
             &copy; 2026 Al Wakra & Mesaieed Pharmacy Portals. Protected by IT Security.
           </p>
+          <div className="mt-8">
+            <button 
+              onClick={() => setIsInstallGuideOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#141414]/5 text-[#141414]/40 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-[#141414]/10 transition-all border border-transparent hover:border-[#141414]/10"
+            >
+              <Smartphone className="w-3 h-3" />
+              Download Mobile App Guide
+            </button>
+          </div>
         </div>
       </footer>
+
+      <InstallGuideModal 
+        isOpen={isInstallGuideOpen} 
+        onClose={() => setIsInstallGuideOpen(false)} 
+      />
     </div>
   );
 }
