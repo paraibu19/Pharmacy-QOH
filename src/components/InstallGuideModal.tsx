@@ -115,7 +115,7 @@ export default function InstallGuideModal({ isOpen, onClose }: InstallGuideModal
 
               <div className="p-4 bg-[#F27D26]/5 rounded-2xl border border-[#F27D26]/10">
                 <p className="text-xs text-[#F27D26] font-bold text-center leading-relaxed">
-                  Done! I've updated the icon to a clean Pharmacy Cross logo (no letters). If you still see the old icon, please refresh your browser before adding to Home Screen.
+                   Great news! I've upgraded the logo to a professional "Pill & Plus" symbol. This new modern design should now perfectly represent Al Wakra & Mesaieed Pharmacies on your home screen.
                 </p>
               </div>
             </div>
