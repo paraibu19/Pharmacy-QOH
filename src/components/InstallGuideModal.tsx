@@ -32,7 +32,7 @@ export default function InstallGuideModal({ isOpen, onClose }: InstallGuideModal
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-[#141414]">Mobile App Guide</h2>
-                  <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Install AW-PharmaStock Pro</p>
+                  <p className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">Add AW-PharmaStock Pro to Home Screen</p>
                 </div>
               </div>
               <button 

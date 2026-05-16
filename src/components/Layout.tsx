@@ -226,7 +226,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                   className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold border border-blue-100 transition-all hover:bg-blue-100"
                 >
                   <Smartphone className="w-4 h-4" />
-                  Install Mobile App
+                  Add Mobile App to Home Screen
                 </button>
 
                 <div className="pt-4 border-t border-[#141414]/10">
