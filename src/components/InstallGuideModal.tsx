@@ -50,7 +50,7 @@ export default function InstallGuideModal({ isOpen, onClose }: InstallGuideModal
                  <div className="relative group">
                     <div className="absolute inset-0 bg-[#F27D26]/20 blur-2xl rounded-full group-hover:bg-[#F27D26]/30 transition-all duration-500" />
                     <img 
-                      src="/icon.svg" 
+                      src="/pharmacy-logo.svg?v=6" 
                       alt="App Icon" 
                       className="relative w-24 h-24 rounded-3xl shadow-2xl border-4 border-white transform hover:scale-105 transition-transform duration-300"
                       referrerPolicy="no-referrer"

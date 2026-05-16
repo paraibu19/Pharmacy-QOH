@@ -1,19 +1,25 @@
 {
   "name": "AW-PharmaStock Pro",
   "short_name": "AW-Pharma",
-  "start_url": "/",
+  "start_url": "/?v=6",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#F27D26",
   "icons": [
     {
-      "src": "/icon.svg?v=5",
+      "src": "/pharmacy-logo.svg?v=6",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any"
     },
     {
-      "src": "/icon.svg?v=5",
+      "src": "/pharmacy-logo.svg?v=6",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pharmacy-logo.svg?v=6",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "maskable"
