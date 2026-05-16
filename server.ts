@@ -248,6 +248,15 @@ app.post('/api/system/reset', (req, res) => {
   res.json({ success: true });
 });
 
+// Static assets from public folder (fallback)
+app.use(express.static(path.join(process.cwd(), 'public'), {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.svg') || path.endsWith('.webmanifest')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
+
 async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
