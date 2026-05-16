@@ -115,7 +115,7 @@ export default function InstallGuideModal({ isOpen, onClose }: InstallGuideModal
 
               <div className="p-4 bg-[#F27D26]/5 rounded-2xl border border-[#F27D26]/10">
                 <p className="text-xs text-[#F27D26] font-bold text-center leading-relaxed">
-                  Done! I've just added the official AW-PharmaStock icon. It will now appear on your Home Screen as a professional app logo.
+                  Done! I've updated the icon to a clean Pharmacy Cross logo (no letters). If you still see the old icon, please refresh your browser before adding to Home Screen.
                 </p>
               </div>
             </div>
