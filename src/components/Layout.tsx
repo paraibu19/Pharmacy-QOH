@@ -149,13 +149,15 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                   Logout
                 </button>
               ) : !isAdmin && (
-                <Link 
+                <NavLink 
                   to="/admin/login" 
-                  className="flex items-center gap-2 px-5 py-2.5 bg-[#141414] text-white border border-[#141414] rounded-xl text-sm font-bold hover:shadow-lg hover:shadow-black/20 transition-all active:scale-95"
+                  className={({ isActive }) => 
+                    `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+                  }
                 >
                   <ShieldCheck className="w-4 h-4" />
                   Admin Login
-                </Link>
+                </NavLink>
               )}
             </div>
 
@@ -216,14 +218,16 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                       Logout
                     </button>
                   ) : !isAdmin && (
-                    <Link 
+                    <NavLink 
                       to="/admin/login" 
                       onClick={() => setIsMobileMenuOpen(false)}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#141414] text-white rounded-xl text-sm font-bold hover:shadow-lg transition-all"
+                      className={({ isActive }) => 
+                        `w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+                      }
                     >
                       <ShieldCheck className="w-4 h-4" />
                       Admin Login
-                    </Link>
+                    </NavLink>
                   )}
                 </div>
               </div>
