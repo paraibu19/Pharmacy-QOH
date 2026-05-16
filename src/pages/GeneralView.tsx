@@ -11,6 +11,7 @@ import LinkedItemsModal from '../components/LinkedItemsModal';
 import * as ics from 'ics';
 import { db } from '../lib/firebase';
 import { localDb } from '../lib/localStorageDb';
+import { storage } from '../lib/storage';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 export default function GeneralView() {
@@ -19,7 +20,7 @@ export default function GeneralView() {
   
   // Language State
   const [language, setLanguage] = useState<Language>(() => {
-    const saved = localStorage.getItem('app_language');
+    const saved = storage.getItem('app_language');
     return (saved as Language) || 'en';
   });
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
@@ -46,7 +47,7 @@ export default function GeneralView() {
   // Saved Reminders from LocalStorage
   const [savedReminders, setSavedReminders] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem('medication_reminders');
+      const saved = storage.getItem('medication_reminders');
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       return [];
@@ -58,7 +59,7 @@ export default function GeneralView() {
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
 
   useEffect(() => {
-    localStorage.setItem('app_language', language);
+    storage.setItem('app_language', language);
   }, [language]);
 
   useEffect(() => {
@@ -85,7 +86,7 @@ export default function GeneralView() {
 
     const updated = [...savedReminders, newReminder];
     setSavedReminders(updated);
-    localStorage.setItem('medication_reminders', JSON.stringify(updated));
+    storage.setItem('medication_reminders', JSON.stringify(updated));
     
     setSelectedMedicationForReminder(null);
     setShowSavedReminders(true);
@@ -94,7 +95,7 @@ export default function GeneralView() {
   const handleDeleteReminder = (id: string) => {
     const updated = savedReminders.filter(r => r.id !== id);
     setSavedReminders(updated);
-    localStorage.setItem('medication_reminders', JSON.stringify(updated));
+    storage.setItem('medication_reminders', JSON.stringify(updated));
   };
 
   const handleExportSingleReminder = (reminder: any) => {
@@ -184,7 +185,7 @@ export default function GeneralView() {
   const handleClearAllReminders = () => {
     if (window.confirm(t.confirmClear)) {
       setSavedReminders([]);
-      localStorage.removeItem('medication_reminders');
+      storage.removeItem('medication_reminders');
     }
   };
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { localDb } from './localStorageDb';
+import { storage } from './storage';
 
 export function useSystemMetadata() {
   const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
@@ -31,7 +32,7 @@ export function useSystemMetadata() {
             
             // If it's newer than local or if we don't have local, update it
             if (!localTime || new Date(timestamp) >= new Date(localTime)) {
-              localStorage.setItem('aw_pharmacy_last_update', timestamp);
+              storage.setItem('aw_pharmacy_last_update', timestamp);
               setLastUpdate(timestamp);
             }
           } catch (e) {

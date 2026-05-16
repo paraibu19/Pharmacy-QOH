@@ -19,6 +19,7 @@ import { sharedDb } from '../lib/sharedDb';
 import { translateIndications, batchTranslateIndications } from '../services/translationService';
 import { formatNumber } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
+import { storage } from '../lib/storage';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 import { db, auth } from '../lib/firebase';
@@ -282,7 +283,7 @@ export default function AdminDashboard() {
 
   // Check for draft on mount
   useEffect(() => {
-    const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+    const savedDraft = storage.getItem(DRAFT_STORAGE_KEY);
     if (savedDraft) {
       setHasDraft(true);
     }
@@ -298,12 +299,12 @@ export default function AdminDashboard() {
         locationId: selectedLocation,
         timestamp: Date.now()
       };
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      storage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
     }
   }, [form, isAdding, editingId, selectedLocation]);
 
   const restoreDraft = () => {
-    const savedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+    const savedDraft = storage.getItem(DRAFT_STORAGE_KEY);
     if (savedDraft) {
       const { form: draftForm, isAdding: draftAdding, editingId: draftEditingId, locationId: draftLocationId } = JSON.parse(savedDraft);
       setSelectedLocation(draftLocationId);
@@ -315,7 +316,7 @@ export default function AdminDashboard() {
   };
 
   const clearDraft = () => {
-    localStorage.removeItem(DRAFT_STORAGE_KEY);
+    storage.removeItem(DRAFT_STORAGE_KEY);
     setHasDraft(false);
   };
 
@@ -950,7 +951,7 @@ export default function AdminDashboard() {
   };
 
   const handleSystemReset = async () => {
-    const currentAdminPassword = localStorage.getItem('adminPassword') || 'admin123';
+    const currentAdminPassword = storage.getItem('adminPassword') || 'admin123';
     
     if (resetPassword !== currentAdminPassword) {
       setResetError('Incorrect password. Reset aborted.');
@@ -2095,8 +2096,40 @@ export default function AdminDashboard() {
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => startEdit(med)} className="p-1.5 hover:bg-black rounded-lg hover:text-white transition-colors"><Edit2 className="w-4 h-4" /></button>
-                    <button onClick={() => handleDelete(med.id)} className="p-1.5 hover:bg-red-500 rounded-lg hover:text-white transition-colors"><Trash2 className="w-4 h-4" /></button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEdit(med);
+                      }} 
+                      className="p-1.5 hover:bg-black rounded-lg hover:text-white transition-colors"
+                      title="Edit Item"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setForm(med);
+                        setEditingId(med.id);
+                        setIsAdding(false);
+                        setIsCapturing(true);
+                        startCamera();
+                      }} 
+                      className={`p-1.5 rounded-lg hover:text-white transition-all ${med.imageUrl ? 'hover:bg-[#F27D26] text-[#141414]/40' : 'hover:bg-[#F27D26] text-[#F27D26] animate-pulse'}`}
+                      title={med.imageUrl ? "Update Photo" : "Add Photo"}
+                    >
+                      <Camera size={14} />
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(med.id);
+                      }} 
+                      className="p-1.5 hover:bg-red-500 rounded-lg hover:text-white transition-colors"
+                      title="Delete Item"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -2315,7 +2348,10 @@ export default function AdminDashboard() {
             initialData={form}
             isAdding={isAdding}
             locationId={selectedLocation}
-            onStartCapture={() => setIsCapturing(true)}
+            onStartCapture={() => {
+              setIsCapturing(true);
+              startCamera();
+            }}
           />
         )}
       </AnimatePresence>

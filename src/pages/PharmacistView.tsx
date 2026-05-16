@@ -13,8 +13,9 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { formatNumber } from '../lib/formatters';
-import { technicianAuthOps } from '../lib/firebaseOperations';
+import { technicianAuthOps, medicationOps } from '../lib/firebaseOperations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
+import MedicationFormModal from '../components/MedicationFormModal';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
@@ -46,6 +47,17 @@ export default function UserHome() {
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
+  
+  // Edit states for technicians
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Medication>>({});
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const startEdit = (med: Medication) => {
+    setEditForm(med);
+    setEditingId(med.id);
+  };
   
   // Password change states
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -1040,12 +1052,12 @@ export default function UserHome() {
                           </button>
                         )}
                         <button 
-                          onClick={() => med.to ? setSelectedMedForLinks(med) : null}
-                          className={`flex flex-col text-left transition-all ${med.to ? 'cursor-pointer hover:opacity-80 group/link' : 'cursor-default'}`}
+                          onClick={() => startEdit(med)}
+                          className={`flex flex-col text-left transition-all cursor-pointer hover:opacity-80 group/link`}
                         >
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-2">
-                              <span className={`text-sm font-bold text-[#141414] ${med.to ? 'group-hover/link:text-[#F27D26]' : ''}`}>{med.itemName}</span>
+                              <span className={`text-sm font-bold text-[#141414] group-hover/link:text-[#F27D26]`}>{med.itemName}</span>
                               {med.to && (
                                 <ArrowUpDown size={10} className="text-[#F27D26] animate-pulse" />
                               )}
@@ -1231,6 +1243,55 @@ export default function UserHome() {
             allMedications={medications}
             onClose={() => setSelectedMedForLinks(null)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Edit Modal for Technicians */}
+      <AnimatePresence>
+        {editingId && (
+          <MedicationFormModal
+            isOpen={true}
+            onClose={() => {
+              setEditingId(null);
+              setEditForm({});
+            }}
+            onSave={async (data) => {
+              setIsUpdating(true);
+              try {
+                if (editingId) {
+                  await medicationOps.update(editingId, data);
+                  await refresh();
+                  setEditingId(null);
+                  setSuccess('Item details updated');
+                  setTimeout(() => setSuccess(null), 3000);
+                }
+              } catch (err: any) {
+                setError(err.message || 'Update failed');
+              } finally {
+                setIsUpdating(false);
+              }
+            }}
+            initialData={editForm as any}
+            isAdding={false}
+            locationId={selectedLocation}
+            onStartCapture={() => {
+              // Camera shortcut not directly in this view yet
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Success Toast */}
+      <AnimatePresence>
+        {success && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 bg-emerald-600 text-white rounded-2xl shadow-2xl z-[200] font-bold text-sm"
+          >
+            {success}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

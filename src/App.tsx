@@ -9,42 +9,53 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminInventory from './pages/AdminInventory';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { storage } from './lib/storage';
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(() => {
-    return localStorage.getItem('admin_session') === 'true';
+    return storage.getItem('admin_session') === 'true';
   });
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
+    // Safety timeout for Safari if Firebase hangs in iframe
+    const timeout = setTimeout(() => {
+      setAuthLoading(false);
+    }, 3000);
+
     if (!auth) {
+      clearTimeout(timeout);
       setAuthLoading(false);
       return;
     }
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      clearTimeout(timeout);
       // If signed in via Google, also set isAdmin to true automatically
       const isGoogleAdmin = !!user && (user.email === 'ahmedmohammedsalah@gmail.com' || user.email?.endsWith('@gmail.com'));
       if (isGoogleAdmin) {
         setIsAdmin(true);
-        localStorage.setItem('admin_session', 'true');
+        storage.setItem('admin_session', 'true');
       }
       setAuthLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      unsubscribe();
+    };
   }, []);
 
   const adminLogout = async () => {
     if (auth) {
       await signOut(auth).catch(() => {});
     }
-    localStorage.removeItem('admin_session');
+    storage.removeItem('admin_session');
     setIsAdmin(false);
   };
 
   const adminLogin = () => {
-    localStorage.setItem('admin_session', 'true');
+    storage.setItem('admin_session', 'true');
     setIsAdmin(true);
   };
 

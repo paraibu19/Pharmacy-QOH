@@ -1,27 +1,28 @@
 import { Medication, InventoryAudit } from '../types';
+import { storage } from './storage';
 
 const MEDS_KEY = 'aw_pharmacy_medications';
 const AUDITS_KEY = 'aw_pharmacy_audits';
 
 export const localDb = {
   getMedications(): Medication[] {
-    const data = localStorage.getItem(MEDS_KEY);
+    const data = storage.getItem(MEDS_KEY);
     return data ? JSON.parse(data) : [];
   },
 
   saveMedications(meds: Medication[]) {
-    localStorage.setItem(MEDS_KEY, JSON.stringify(meds));
+    storage.setItem(MEDS_KEY, JSON.stringify(meds));
     // Trigger custom event for multi-tab sync or re-renders
     window.dispatchEvent(new Event('local-storage-update'));
   },
 
   getAudits(): InventoryAudit[] {
-    const data = localStorage.getItem(AUDITS_KEY);
+    const data = storage.getItem(AUDITS_KEY);
     return data ? JSON.parse(data) : [];
   },
 
   saveAudits(audits: InventoryAudit[]) {
-    localStorage.setItem(AUDITS_KEY, JSON.stringify(audits));
+    storage.setItem(AUDITS_KEY, JSON.stringify(audits));
   },
 
   addMedication(med: Omit<Medication, 'id'>): Medication {
@@ -69,12 +70,12 @@ export const localDb = {
   },
 
   getLastUpdateTime(): string | null {
-    return localStorage.getItem('aw_pharmacy_last_update');
+    return storage.getItem('aw_pharmacy_last_update');
   },
 
   updateLastUpdateTime() {
     const now = new Date().toISOString();
-    localStorage.setItem('aw_pharmacy_last_update', now);
+    storage.setItem('aw_pharmacy_last_update', now);
     window.dispatchEvent(new Event('local-storage-update'));
   }
 

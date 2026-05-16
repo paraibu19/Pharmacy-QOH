@@ -14,6 +14,9 @@ import { auditOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
+import { medicationOps } from '../lib/firebaseOperations';
+import { translateIndications } from '../services/translationService';
+import MedicationFormModal from '../components/MedicationFormModal';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'minQty' | 'physical' | 'variance';
 type SortOrder = 'asc' | 'desc';
@@ -36,6 +39,19 @@ export default function AdminInventory() {
 
   const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>({});
   const [showSyncPulse, setShowSyncPulse] = useState(false);
+
+  // Edit Modal State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<Partial<Medication>>({});
+  const [isAdding, setIsAdding] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const startEdit = (med: Medication) => {
+    setForm(med);
+    setEditingId(med.id);
+    setIsAdding(false);
+  };
 
   // Visual feedback for real-time sync
   useEffect(() => {
@@ -555,7 +571,12 @@ export default function AdminInventory() {
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-[10px] font-mono text-[#141414]/40 mb-0.5">{med.itemCode}</span>
-                        <span className="text-sm font-bold text-[#141414]">{med.itemName}</span>
+                        <button 
+                          onClick={() => startEdit(med)}
+                          className="text-sm font-bold text-[#141414] hover:text-[#F27D26] transition-colors text-left"
+                        >
+                          {med.itemName}
+                        </button>
                         {med.isRefrigerated && (
                           <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
                             <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
@@ -731,6 +752,68 @@ export default function AdminInventory() {
           </div>
         )}
       </div>
+
+      {/* Edit Modal */}
+      <AnimatePresence>
+        {(isAdding || editingId) && (
+          <MedicationFormModal
+            isOpen={true}
+            onClose={() => {
+              setIsAdding(false);
+              setEditingId(null);
+              setForm({});
+            }}
+            onSave={async (data) => {
+              setIsUpdating(true);
+              try {
+                // Auto-translate logic if needed
+                const dataToSave = { ...data };
+                
+                if (editingId) {
+                  await medicationOps.update(editingId, dataToSave);
+                }
+                
+                await refresh();
+                setEditingId(null);
+                setIsAdding(false);
+                setSuccess('Item updated successfully');
+                setTimeout(() => setSuccess(null), 3000);
+              } catch (err: any) {
+                setError(err.message || 'Update failed');
+              } finally {
+                setIsUpdating(false);
+              }
+            }}
+            onDelete={async (id) => {
+              if (window.confirm('Are you sure you want to delete this item?')) {
+                await medicationOps.delete(id);
+                await refresh();
+                setEditingId(null);
+              }
+            }}
+            initialData={form as any}
+            isAdding={isAdding}
+            locationId={selectedLocation}
+            onStartCapture={() => {
+              // Camera logic - focus on file upload for now in this view
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Success Toast */}
+      <AnimatePresence>
+        {success && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 bg-emerald-600 text-white rounded-2xl shadow-2xl z-[200] font-bold text-sm"
+          >
+            {success}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
