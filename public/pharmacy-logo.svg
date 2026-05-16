@@ -26,13 +26,6 @@
     <path d="M-80 -30 Q -120 -30 -120 0" stroke="white" stroke-width="8" stroke-linecap="round" opacity="0.2" fill="none"/>
   </g>
 
-  <!-- Pharmacy Cross (Plus) -->
-  <g transform="translate(380, 130)">
-    <circle r="65" fill="#F27D26" opacity="0.2"/>
-    <rect x="-35" y="-10" width="70" height="20" rx="10" fill="#F27D26"/>
-    <rect x="-10" y="-35" width="20" height="70" rx="10" fill="#F27D26"/>
-  </g>
-  
   <!-- Subtle Border -->
   <rect x="10" y="10" width="492" height="492" rx="110" fill="none" stroke="#F27D26" stroke-width="3" opacity="0.15"/>
 </svg>
