@@ -113,11 +113,6 @@ export default function InstallGuideModal({ isOpen, onClose }: InstallGuideModal
                 </div>
               </section>
 
-              <div className="p-4 bg-[#F27D26]/5 rounded-2xl border border-[#F27D26]/10">
-                <p className="text-xs text-[#F27D26] font-bold text-center leading-relaxed">
-                   Great news! I've upgraded the logo to a professional "Pill & Plus" symbol. This new modern design should now perfectly represent Al Wakra & Mesaieed Pharmacies on your home screen.
-                </p>
-              </div>
             </div>
 
             {/* Footer */}
