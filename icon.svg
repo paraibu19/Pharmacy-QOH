@@ -13,8 +13,11 @@
   <!-- Background -->
   <rect width="512" height="512" rx="120" fill="url(#bgGrad)"/>
   
+  <!-- New subtle inner glow -->
+  <circle cx="256" cy="256" r="220" fill="white" opacity="0.02"/>
+  
   <!-- Glossy Overlay -->
-  <path d="M512 120C512 53.7 458.3 0 392 0H120C53.7 0 0 53.7 0 120V200C150 180 350 250 512 150V120Z" fill="white" opacity="0.03"/>
+  <path d="M512 100C512 40 450 0 380 0H120C50 0 0 40 0 100V200C160 170 340 230 512 140V100Z" fill="white" opacity="0.04"/>
   
   <!-- Pharmacy Cross -->
   <g transform="translate(256, 256)">
