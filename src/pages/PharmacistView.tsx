@@ -149,6 +149,23 @@ export default function UserHome() {
     return null;
   };
 
+  const getExpiryColor = (dateStr: string) => {
+    const date = parseExpDate(dateStr);
+    if (!date) return '';
+
+    const today = new Date();
+    const startOfCurrentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const startOfExpMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+
+    const diffMonths = (startOfExpMonth.getFullYear() - startOfCurrentMonth.getFullYear()) * 12 + (startOfExpMonth.getMonth() - startOfCurrentMonth.getMonth());
+
+    if (diffMonths === 0) return 'bg-red-500 text-white px-2 py-1 rounded shadow-sm';
+    if (diffMonths === 1) return 'bg-yellow-400 text-white px-2 py-1 rounded shadow-sm';
+    if (diffMonths === 2) return 'bg-blue-500 text-white px-2 py-1 rounded shadow-sm';
+    if (diffMonths === 3) return 'bg-green-500 text-white px-2 py-1 rounded shadow-sm';
+    return '';
+  };
+
   const filteredMeds = useMemo(() => {
     let result = medications;
     
@@ -522,18 +539,18 @@ export default function UserHome() {
               <KeyRound className="w-4 h-4" />
             </button>
             <button 
-              onClick={downloadPDF}
-              title="Download PDF"
-              className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors text-[#141414]/60"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            <button 
               onClick={downloadCSV}
               title="Download CSV"
-              className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors text-[#141414]/60 border-l border-[#141414]/5"
+              className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors text-[#141414]/60"
             >
               <FileSpreadsheet className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={downloadPDF}
+              title="Download PDF"
+              className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors text-[#141414]/60 border-l border-[#141414]/5"
+            >
+              <Download className="w-4 h-4" />
             </button>
             <button 
               onClick={downloadExcel}
@@ -1093,9 +1110,21 @@ export default function UserHome() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration1 || '-'}</td>
-                    <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration2 || '-'}</td>
-                    <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration3 || '-'}</td>
+                    <td className="px-6 py-4 text-xs font-bold">
+                      <span className={getExpiryColor(med.expiration1)}>
+                        {med.expiration1 || '-'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold">
+                      <span className={getExpiryColor(med.expiration2)}>
+                        {med.expiration2 || '-'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold">
+                      <span className={getExpiryColor(med.expiration3)}>
+                        {med.expiration3 || '-'}
+                      </span>
+                    </td>
                   </motion.tr>
                 ))}
               </AnimatePresence>
@@ -1183,16 +1212,22 @@ export default function UserHome() {
 
                 <div className="grid grid-cols-3 gap-2 p-2 bg-[#141414]/[0.02] rounded-xl border border-[#141414]/5">
                   <div className="text-center">
-                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 1</p>
-                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration1 || '-'}</p>
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-1">Exp 1</p>
+                    <p className={`text-[10px] font-bold inline-block leading-none ${getExpiryColor(med.expiration1) || 'text-[#141414]/60'}`}>
+                      {med.expiration1 || '-'}
+                    </p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 2</p>
-                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration2 || '-'}</p>
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-1">Exp 2</p>
+                    <p className={`text-[10px] font-bold inline-block leading-none ${getExpiryColor(med.expiration2) || 'text-[#141414]/60'}`}>
+                      {med.expiration2 || '-'}
+                    </p>
                   </div>
                   <div className="text-center">
-                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 3</p>
-                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration3 || '-'}</p>
+                    <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-1">Exp 3</p>
+                    <p className={`text-[10px] font-bold inline-block leading-none ${getExpiryColor(med.expiration3) || 'text-[#141414]/60'}`}>
+                      {med.expiration3 || '-'}
+                    </p>
                   </div>
                 </div>
               </motion.div>
