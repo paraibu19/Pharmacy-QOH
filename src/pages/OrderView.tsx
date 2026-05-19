@@ -7,7 +7,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
 import { LOCATIONS } from '../constants';
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -83,6 +83,46 @@ export default function OrderView() {
     const timer = setTimeout(() => setShowSyncPulse(false), 2000);
     return () => clearTimeout(timer);
   }, [lastSynced]);
+
+  const getExpirationColor = (dateStr: string) => {
+    const date = parseExpDate(dateStr);
+    if (!date) return '';
+    
+    const today = new Date();
+    const currentM = startOfMonth(today);
+    const nextM = startOfMonth(addMonths(today, 1));
+    const afterNextM = startOfMonth(addMonths(today, 2));
+    const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+    
+    const itemM = startOfMonth(date);
+    
+    if (isSameMonth(itemM, currentM)) return 'bg-red-500 text-white';
+    if (isSameMonth(itemM, nextM)) return 'bg-yellow-400 text-black';
+    if (isSameMonth(itemM, afterNextM)) return 'bg-blue-500 text-white';
+    if (isSameMonth(itemM, monthAfterNextNextM)) return 'bg-green-500 text-white';
+    
+    return '';
+  };
+
+  const getExpirationPDFColor = (dateStr: string): [number, number, number] | null => {
+    const date = parseExpDate(dateStr);
+    if (!date) return null;
+    
+    const today = new Date();
+    const currentM = startOfMonth(today);
+    const nextM = startOfMonth(addMonths(today, 1));
+    const afterNextM = startOfMonth(addMonths(today, 2));
+    const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+    
+    const itemM = startOfMonth(date);
+    
+    if (isSameMonth(itemM, currentM)) return [239, 68, 68]; // Red-500
+    if (isSameMonth(itemM, nextM)) return [250, 204, 21]; // Yellow-400
+    if (isSameMonth(itemM, afterNextM)) return [59, 130, 246]; // Blue-500
+    if (isSameMonth(itemM, monthAfterNextNextM)) return [34, 197, 94]; // Green-500
+    
+    return null;
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -339,6 +379,13 @@ export default function OrderView() {
       m.expiration1 || '-'
     ]);
 
+    const formatIndicatorMonth = (date: Date) => {
+      const m = date.getMonth();
+      const yearStr = format(date, 'yy');
+      if (m === 6) return `July-${yearStr}`; // July index is 6
+      return format(date, 'MMM-yy');
+    };
+
     autoTable(doc, {
       startY: 45,
       head: headers,
@@ -351,6 +398,60 @@ export default function OrderView() {
         1: { cellWidth: 25 },
         3: { cellWidth: 20 },
         4: { cellWidth: 25 },
+      },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const color = getExpirationPDFColor(data.cell.raw as string);
+          if (color) {
+            doc.setFillColor(...color);
+            doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F');
+            doc.setTextColor(color[0] === 250 ? 0 : 255); // Black text for yellow, white for others
+            doc.text(data.cell.text, data.cell.x + data.cell.padding('left'), data.cell.y + data.cell.height / 2 + 2);
+          }
+        }
+      },
+      didDrawPage: (data) => {
+        // Draw the color indicators at the top of each page
+        const today = new Date();
+        const currentM = startOfMonth(today);
+        const nextM = startOfMonth(addMonths(today, 1));
+        const afterNextM = startOfMonth(addMonths(today, 2));
+        const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+
+        const monthLabels = [
+          { label: formatIndicatorMonth(currentM), color: [239, 68, 68] as [number, number, number], name: 'Red' },
+          { label: formatIndicatorMonth(nextM), color: [250, 204, 21] as [number, number, number], name: 'Yellow' },
+          { label: formatIndicatorMonth(afterNextM), color: [59, 130, 246] as [number, number, number], name: 'Blue' },
+          { label: formatIndicatorMonth(monthAfterNextNextM), color: [34, 197, 94] as [number, number, number], name: 'Green' }
+        ];
+
+        const pageWidth = doc.internal.pageSize.width || 210;
+        doc.setFontSize(8);
+        doc.setFont("Helvetica", "bold");
+        
+        let startX = pageWidth - 14; // Right-aligned margins
+        const yPos = 8; // Top margin position
+
+        // Draw from right to left so they align beautifully to the right
+        for (let i = monthLabels.length - 1; i >= 0; i--) {
+          const item = monthLabels[i];
+          const textStr = `${item.name}: ${item.label}`;
+          const textWidth = doc.getTextWidth(textStr);
+          const boxSize = 3;
+          const textSep = 1.5;
+          const itemSep = 5;
+          const totalWidth = boxSize + textSep + textWidth + itemSep;
+          
+          startX -= totalWidth;
+          
+          // Draw colored rect
+          doc.setFillColor(...item.color);
+          doc.rect(startX, yPos - 2.2, boxSize, boxSize, 'F');
+          
+          // Draw text
+          doc.setTextColor(80, 80, 80);
+          doc.text(textStr, startX + boxSize + textSep, yPos);
+        }
       }
     });
 
@@ -894,6 +995,7 @@ export default function OrderView() {
                         {sortField === 'orderQty' && <ArrowUpDown className="w-3 h-3 text-emerald-500" />}
                       </div>
                     </th>
+                    <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Expiry Date</th>
                     <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 sticky top-0 bg-[#F9F9F9]">Actions</th>
                   </tr>
                 </thead>
@@ -987,6 +1089,11 @@ export default function OrderView() {
                           ) : (
                             <span className="text-[#141414]/20 text-xs">-</span>
                           )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 rounded text-[10px] font-bold font-mono ${getExpirationColor(med.expiration1)}`}>
+                            {med.expiration1 || '-'}
+                          </span>
                         </td>
                         <td className="px-6 py-4 text-right">
                           <button 
@@ -1085,6 +1192,10 @@ export default function OrderView() {
                       <div className="p-2 text-center bg-emerald-500/10">
                         <p className="text-[8px] font-bold uppercase tracking-wider text-emerald-600/60 mb-0.5">Order</p>
                         <p className="text-xs font-black text-emerald-600">{med.orderQty ? formatNumber(med.orderQty) : '-'}</p>
+                      </div>
+                      <div className={`p-2 text-center flex flex-col justify-center items-center ${getExpirationColor(med.expiration1)}`}>
+                        <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mb-0.5">Expiry</p>
+                        <p className="text-[10px] font-black">{med.expiration1 || '-'}</p>
                       </div>
                     </div>
                   </motion.div>

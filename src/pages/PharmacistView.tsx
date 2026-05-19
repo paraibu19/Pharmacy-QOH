@@ -7,7 +7,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
 import { LOCATIONS } from '../constants';
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -91,6 +91,46 @@ export default function UserHome() {
       .then(setPersistedPassword)
       .catch(() => setPersistedPassword('pharmacist123'));
   }, []);
+
+  const getExpirationColor = (dateStr: string) => {
+    const date = parseExpDate(dateStr);
+    if (!date) return '';
+    
+    const today = new Date();
+    const currentM = startOfMonth(today);
+    const nextM = startOfMonth(addMonths(today, 1));
+    const afterNextM = startOfMonth(addMonths(today, 2));
+    const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+    
+    const itemM = startOfMonth(date);
+    
+    if (isSameMonth(itemM, currentM)) return 'bg-red-500 text-white';
+    if (isSameMonth(itemM, nextM)) return 'bg-yellow-400 text-black';
+    if (isSameMonth(itemM, afterNextM)) return 'bg-blue-500 text-white';
+    if (isSameMonth(itemM, monthAfterNextNextM)) return 'bg-green-500 text-white';
+    
+    return '';
+  };
+
+  const getExpirationPDFColor = (dateStr: string): [number, number, number] | null => {
+    const date = parseExpDate(dateStr);
+    if (!date) return null;
+    
+    const today = new Date();
+    const currentM = startOfMonth(today);
+    const nextM = startOfMonth(addMonths(today, 1));
+    const afterNextM = startOfMonth(addMonths(today, 2));
+    const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+    
+    const itemM = startOfMonth(date);
+    
+    if (isSameMonth(itemM, currentM)) return [239, 68, 68]; // Red-500
+    if (isSameMonth(itemM, nextM)) return [250, 204, 21]; // Yellow-400
+    if (isSameMonth(itemM, afterNextM)) return [59, 130, 246]; // Blue-500
+    if (isSameMonth(itemM, monthAfterNextNextM)) return [34, 197, 94]; // Green-500
+    
+    return null;
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,15 +286,14 @@ export default function UserHome() {
 
   // Handle PDF Export
   const downloadCSV = () => {
-    const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3', 'Status'];
+    const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
     const rows = filteredMeds.map(m => [
       m.itemCode,
       m.itemName,
       formatNumber(m.qoh),
       m.expiration1 || '-',
       m.expiration2 || '-',
-      m.expiration3 || '-',
-      (m.qoh <= 0) ? 'Out of Stock' : (m.maxQty > 0 && m.qoh < m.maxQty * 0.3) ? 'Low Stock' : 'In Stock'
+      m.expiration3 || '-'
     ]);
 
     const csvContent = [
@@ -275,15 +314,14 @@ export default function UserHome() {
   };
 
   const downloadExcel = () => {
-    const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3', 'Status'];
+    const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
     const data = filteredMeds.map(m => ({
       'Item Code': m.itemCode,
       'Item Name': m.itemName,
       'QOH': m.qoh,
       'Exp 1': m.expiration1 || '-',
       'Exp 2': m.expiration2 || '-',
-      'Exp 3': m.expiration3 || '-',
-      'Status': (m.qoh <= 0) ? 'Out of Stock' : (m.maxQty > 0 && m.qoh < m.maxQty * 0.3) ? 'Low Stock' : 'In Stock'
+      'Exp 3': m.expiration3 || '-'
     }));
 
     const ws = XLSX.utils.json_to_sheet(data);
@@ -310,16 +348,76 @@ export default function UserHome() {
       formatNumber(m.qoh),
       m.expiration1 || '-',
       m.expiration2 || '-',
-      m.expiration3 || '-',
-      m.isNew ? 'NEW' : 'Existing'
+      m.expiration3 || '-'
     ]);
+
+    const formatIndicatorMonth = (date: Date) => {
+      const m = date.getMonth();
+      const yearStr = format(date, 'yy');
+      if (m === 6) return `July-${yearStr}`; // July index is 6
+      return format(date, 'MMM-yy');
+    };
 
     autoTable(doc, {
       startY: 30,
-      head: [['Code', 'Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3', 'Status']],
+      head: [['Code', 'Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3']],
       body: tableData,
       headStyles: { fillColor: [20, 20, 20] },
       alternateRowStyles: { fillColor: [245, 245, 245] },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          const color = getExpirationPDFColor(data.cell.raw as string);
+          if (color) {
+            doc.setFillColor(...color);
+            doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F');
+            doc.setTextColor(color[0] === 250 ? 0 : 255);
+            doc.text(data.cell.text, data.cell.x + data.cell.padding('left'), data.cell.y + data.cell.height / 2 + 2);
+          }
+        }
+      },
+      didDrawPage: (data) => {
+        // Draw the color indicators at the top of each page
+        const today = new Date();
+        const currentM = startOfMonth(today);
+        const nextM = startOfMonth(addMonths(today, 1));
+        const afterNextM = startOfMonth(addMonths(today, 2));
+        const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+
+        const monthLabels = [
+          { label: formatIndicatorMonth(currentM), color: [239, 68, 68] as [number, number, number], name: 'Red' },
+          { label: formatIndicatorMonth(nextM), color: [250, 204, 21] as [number, number, number], name: 'Yellow' },
+          { label: formatIndicatorMonth(afterNextM), color: [59, 130, 246] as [number, number, number], name: 'Blue' },
+          { label: formatIndicatorMonth(monthAfterNextNextM), color: [34, 197, 94] as [number, number, number], name: 'Green' }
+        ];
+
+        const pageWidth = doc.internal.pageSize.width || 210;
+        doc.setFontSize(8);
+        doc.setFont("Helvetica", "bold");
+        
+        let startX = pageWidth - 14; // Right-aligned margins
+        const yPos = 8; // Top margin position
+
+        // Draw from right to left so they align beautifully to the right
+        for (let i = monthLabels.length - 1; i >= 0; i--) {
+          const item = monthLabels[i];
+          const textStr = `${item.name}: ${item.label}`;
+          const textWidth = doc.getTextWidth(textStr);
+          const boxSize = 3;
+          const textSep = 1.5;
+          const itemSep = 5;
+          const totalWidth = boxSize + textSep + textWidth + itemSep;
+          
+          startX -= totalWidth;
+          
+          // Draw colored rect
+          doc.setFillColor(...item.color);
+          doc.rect(startX, yPos - 2.2, boxSize, boxSize, 'F');
+          
+          // Draw text
+          doc.setTextColor(80, 80, 80);
+          doc.text(textStr, startX + boxSize + textSep, yPos);
+        }
+      }
     });
 
     doc.save(`${locationName}_Inventory_${format(new Date(), 'yyyyMMdd')}.pdf`);
@@ -1093,7 +1191,11 @@ export default function UserHome() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration1 || '-'}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${getExpirationColor(med.expiration1)}`}>
+                        {med.expiration1 || '-'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration2 || '-'}</td>
                     <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration3 || '-'}</td>
                   </motion.tr>

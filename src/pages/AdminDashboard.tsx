@@ -364,6 +364,26 @@ export default function AdminDashboard() {
     return null;
   };
 
+  const getExpirationColor = (dateStr: string) => {
+    const date = parseExpDate(dateStr);
+    if (!date) return '';
+    
+    const today = new Date();
+    const currentM = startOfMonth(today);
+    const nextM = startOfMonth(addMonths(today, 1));
+    const afterNextM = startOfMonth(addMonths(today, 2));
+    const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+    
+    const itemM = startOfMonth(date);
+    
+    if (isSameMonth(itemM, currentM)) return 'bg-red-500 text-white';
+    if (isSameMonth(itemM, nextM)) return 'bg-yellow-400 text-black';
+    if (isSameMonth(itemM, afterNextM)) return 'bg-blue-500 text-white';
+    if (isSameMonth(itemM, monthAfterNextNextM)) return 'bg-green-500 text-white';
+    
+    return '';
+  };
+
   const expiringItems = useMemo(() => {
     const today = startOfToday();
     let result = medications.map(med => {
@@ -2209,7 +2229,7 @@ export default function AdminDashboard() {
                   </td>
                   <td className="px-6 py-4">
                   <div className="flex gap-2 font-mono text-[10px]">
-                    <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration1 || '-'}</span>
+                    <span className={`px-2 py-0.5 rounded font-bold ${getExpirationColor(med.expiration1)}`}>{med.expiration1 || '-'}</span>
                     <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration2 || '-'}</span>
                     <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration3 || '-'}</span>
                   </div>
