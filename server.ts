@@ -75,12 +75,6 @@ if (!fs.existsSync(SETTINGS_FILE)) {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Request logger
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
-
 app.post('/api/auth/admin', (req, res) => {
   const { password } = req.body;
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));

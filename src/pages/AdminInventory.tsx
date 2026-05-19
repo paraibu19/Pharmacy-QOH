@@ -8,8 +8,6 @@ import {
 import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
 import { format } from 'date-fns';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { auditOps } from '../lib/firebaseOperations';
@@ -267,40 +265,6 @@ export default function AdminInventory() {
     document.body.removeChild(link);
   };
 
-  const downloadPDF = () => {
-    const doc = new jsPDF();
-    const locationName = PHARMACY_NAMES[selectedLocation];
-    const displayDate = format(new Date(), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase();
-
-    doc.setFontSize(18);
-    doc.text(`Inventory Audit - ${locationName}`, 14, 15);
-    doc.setFontSize(10);
-    doc.text(`Run Date: ${displayDate}`, 14, 22);
-
-    const tableData = sortedMeds.map(m => {
-      const physical = physicalCounts[m.id] ?? m.qoh;
-      const variance = physical - m.qoh;
-      return [
-        m.itemCode,
-        m.itemName,
-        formatNumber(m.qoh),
-        formatNumber(m.minQty || 0),
-        formatNumber(physical),
-        formatNumber(variance)
-      ];
-    });
-
-    autoTable(doc, {
-      startY: 30,
-      head: [['Code', 'Name', 'System QOH', 'Min', 'Physical', 'Variance']],
-      body: tableData,
-      headStyles: { fillColor: [242, 125, 38] },
-      alternateRowStyles: { fillColor: [245, 245, 245] },
-    });
-
-    doc.save(`Audit_${selectedLocation}_${format(new Date(), 'yyyyMMdd')}.pdf`);
-  };
-
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
@@ -338,14 +302,6 @@ export default function AdminInventory() {
             >
               <Download className="w-4 h-4" />
               CSV
-            </button>
-            <button 
-              onClick={downloadPDF}
-              className="flex items-center gap-2 px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold border-r border-white/5"
-              title="Download PDF"
-            >
-              <Download className="w-4 h-4" />
-              PDF
             </button>
             <button 
               onClick={downloadExcel}
