@@ -72,7 +72,9 @@ export default function GeneralView() {
     if (!selectedMedicationForReminder) return;
 
     const newReminder = {
-      id: crypto.randomUUID(),
+      id: (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') 
+        ? crypto.randomUUID() 
+        : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
       itemName: selectedMedicationForReminder.itemName,
       generic: selectedMedicationForReminder.generic,
       isRefrigerated: selectedMedicationForReminder.isRefrigerated || false,

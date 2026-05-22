@@ -15,14 +15,18 @@ export const auth = app ? getAuth(app) : null;
 export const googleProvider = new GoogleAuthProvider();
 
 // Enable offline persistence to save on read units (Spark plan limit is 50k reads/day)
-if (db && typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn("Firestore persistence: Multiple tabs open, only one can have persistence.");
-    } else if (err.code === 'unimplemented') {
-      console.warn("Firestore persistence: Not supported by this browser.");
-    }
-  });
+try {
+  if (db && typeof window !== 'undefined') {
+    enableIndexedDbPersistence(db).catch((err) => {
+      if (err.code === 'failed-precondition') {
+        console.warn("Firestore persistence: Multiple tabs open, only one can have persistence.");
+      } else if (err.code === 'unimplemented') {
+        console.warn("Firestore persistence: Not supported by this browser.");
+      }
+    });
+  }
+} catch (e) {
+  console.warn("Firestore persistence: Error initializing IndexedDB or blocked by browser storage security:", e);
 }
 
 // Connection test - Disabled to save read quota
