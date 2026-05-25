@@ -35,7 +35,7 @@ export default function UserHome() {
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
   const [availableBrandsOnly, setAvailableBrandsOnly] = useState(false);
-  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
+  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out' | 'qatari'>('all');
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -221,6 +221,7 @@ export default function UserHome() {
         if (stockFilter === 'in') return isIn;
         if (stockFilter === 'low') return isLow;
         if (stockFilter === 'out') return isOut;
+        if (stockFilter === 'qatari') return !!(m.qatari && (m.qatari.trim().toUpperCase() === 'TRUE' || m.qatari.trim().toUpperCase() === 'QATARI'));
         return true;
       });
     }
@@ -794,7 +795,8 @@ export default function UserHome() {
                     { id: 'all', label: 'All', color: 'gray' },
                     { id: 'in', label: 'In Stock', color: 'emerald' },
                     { id: 'low', label: 'Low Stock', color: 'amber' },
-                    { id: 'out', label: 'Out of Stock', color: 'red' }
+                    { id: 'out', label: 'Out of Stock', color: 'red' },
+                    { id: 'qatari', label: 'Qatari', color: 'orange' }
                   ].map((f) => (
                     <button
                       key={f.id}
@@ -804,6 +806,7 @@ export default function UserHome() {
                           ? f.id === 'in' ? 'bg-emerald-500 text-white border-emerald-500' :
                             f.id === 'low' ? 'bg-amber-500 text-white border-amber-500' :
                             f.id === 'out' ? 'bg-red-500 text-white border-red-500' :
+                            f.id === 'qatari' ? 'bg-[#F27D26] text-white border-[#F27D26]' :
                             'bg-[#141414] text-white border-[#141414]'
                           : 'bg-white text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/5'
                       }`}
