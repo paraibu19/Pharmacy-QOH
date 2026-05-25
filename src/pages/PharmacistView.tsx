@@ -291,7 +291,7 @@ export default function UserHome() {
       m.itemCode,
       m.itemName,
       m.restriction || '-',
-      m.qatari || '-',
+      (m.qatari && m.qatari.trim().toUpperCase() === 'TRUE') ? 'Qatari' : (m.qatari || '-'),
       formatNumber(m.qoh),
       m.expiration1 || '-',
       m.expiration2 || '-',
@@ -321,7 +321,7 @@ export default function UserHome() {
       'Item Code': m.itemCode,
       'Item Name': m.itemName,
       'Restriction': m.restriction || '-',
-      'Qatari': m.qatari || '-',
+      'Qatari': (m.qatari && m.qatari.trim().toUpperCase() === 'TRUE') ? 'Qatari' : (m.qatari || '-'),
       'QOH': m.qoh,
       'Exp 1': m.expiration1 || '-',
       'Exp 2': m.expiration2 || '-',
@@ -350,7 +350,7 @@ export default function UserHome() {
       m.itemCode,
       m.itemName,
       m.restriction || '-',
-      m.qatari || '-',
+      (m.qatari && m.qatari.trim().toUpperCase() === 'TRUE') ? 'Qatari' : (m.qatari || '-'),
       formatNumber(m.qoh),
       m.expiration1 || '-',
       m.expiration2 || '-',
@@ -1209,7 +1209,7 @@ export default function UserHome() {
                     <td className="px-6 py-4">
                       {med.qatari ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-bold bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/20">
-                          {med.qatari}
+                          {med.qatari.trim().toUpperCase() === 'TRUE' ? 'Qatari' : med.qatari}
                         </span>
                       ) : (
                         <span className="text-xs text-[#141414]/30">-</span>
@@ -1313,7 +1313,7 @@ export default function UserHome() {
                         )}
                         {med.qatari && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/10 uppercase">
-                            Qatar: {med.qatari}
+                            {med.qatari.trim().toUpperCase() === 'TRUE' ? 'Qatari' : `Qatar: ${med.qatari}`}
                           </span>
                         )}
                       </div>

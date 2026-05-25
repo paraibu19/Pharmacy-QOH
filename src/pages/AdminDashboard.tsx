@@ -2197,7 +2197,7 @@ export default function AdminDashboard() {
                           )}
                           {med.qatari && (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/10 uppercase tracking-tight">
-                              Qatar: {med.qatari}
+                              {med.qatari.trim().toUpperCase() === 'TRUE' ? 'Qatari' : `Qatar: ${med.qatari}`}
                             </span>
                           )}
                         </div>
