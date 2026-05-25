@@ -19,7 +19,7 @@ import MedicationFormModal from '../components/MedicationFormModal';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
-type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3';
+type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'expiration2' | 'expiration3' | 'restriction' | 'qatari';
 type SortOrder = 'asc' | 'desc';
 
 export default function UserHome() {
@@ -286,10 +286,12 @@ export default function UserHome() {
 
   // Handle PDF Export
   const downloadCSV = () => {
-    const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
+    const headers = ['Item Code', 'Item Name', 'Restriction', 'Qatari', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
     const rows = filteredMeds.map(m => [
       m.itemCode,
       m.itemName,
+      m.restriction || '-',
+      m.qatari || '-',
       formatNumber(m.qoh),
       m.expiration1 || '-',
       m.expiration2 || '-',
@@ -314,10 +316,12 @@ export default function UserHome() {
   };
 
   const downloadExcel = () => {
-    const headers = ['Item Code', 'Item Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
+    const headers = ['Item Code', 'Item Name', 'Restriction', 'Qatari', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
     const data = filteredMeds.map(m => ({
       'Item Code': m.itemCode,
       'Item Name': m.itemName,
+      'Restriction': m.restriction || '-',
+      'Qatari': m.qatari || '-',
       'QOH': m.qoh,
       'Exp 1': m.expiration1 || '-',
       'Exp 2': m.expiration2 || '-',
@@ -345,6 +349,8 @@ export default function UserHome() {
     const tableData = filteredMeds.map(m => [
       m.itemCode,
       m.itemName,
+      m.restriction || '-',
+      m.qatari || '-',
       formatNumber(m.qoh),
       m.expiration1 || '-',
       m.expiration2 || '-',
@@ -360,12 +366,12 @@ export default function UserHome() {
 
     autoTable(doc, {
       startY: 30,
-      head: [['Code', 'Name', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3']],
+      head: [['Code', 'Name', 'Restriction', 'Qatari', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3']],
       body: tableData,
       headStyles: { fillColor: [20, 20, 20] },
       alternateRowStyles: { fillColor: [245, 245, 245] },
       didDrawCell: (data) => {
-        if (data.section === 'body' && data.column.index === 3) {
+        if (data.section === 'body' && data.column.index === 5) {
           const color = getExpirationPDFColor(data.cell.raw as string);
           if (color) {
             doc.setFillColor(...color);
@@ -1071,6 +1077,24 @@ export default function UserHome() {
                 </th>
                 <th 
                   className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                  onClick={() => toggleSort('restriction')}
+                >
+                  <div className="flex items-center gap-1">
+                    Restriction
+                    {sortField === 'restriction' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                  onClick={() => toggleSort('qatari')}
+                >
+                  <div className="flex items-center gap-1">
+                    Qatari
+                    {sortField === 'qatari' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                   onClick={() => toggleSort('qoh')}
                 >
                   <div className="flex items-center gap-1">
@@ -1110,7 +1134,7 @@ export default function UserHome() {
             <tbody className="divide-y divide-[#141414]/5">
               {loading && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-20 text-center">
+                  <td colSpan={9} className="px-6 py-20 text-center">
                     <div className="flex flex-col items-center gap-2 opacity-50">
                       <Loader2 className="w-8 h-8 animate-spin text-[#F27D26]" />
                       <p className="font-bold text-xs uppercase tracking-widest">Loading Inventory...</p>
@@ -1172,6 +1196,24 @@ export default function UserHome() {
                           )}
                         </button>
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {med.restriction ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-bold bg-[#141414]/5 text-[#141414]/70 border border-[#141414]/10">
+                          {med.restriction}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[#141414]/30">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      {med.qatari ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-bold bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/20">
+                          {med.qatari}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[#141414]/30">-</span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
@@ -1263,6 +1305,18 @@ export default function UserHome() {
                         )}
                       </div>
                       <p className="text-xs font-mono text-[#141414]/40 uppercase">{med.itemCode}</p>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {med.restriction && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10 uppercase">
+                            {med.restriction}
+                          </span>
+                        )}
+                        {med.qatari && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/10 uppercase">
+                            Qatar: {med.qatari}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="text-right">

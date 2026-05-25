@@ -25,6 +25,8 @@ export interface Medication {
   minQty?: number;
   maxQty?: number;
   generic?: string;
+  restriction?: string;
+  qatari?: string;
   isNew?: boolean; // UI helper
   imageUrl?: string;
   to?: string;

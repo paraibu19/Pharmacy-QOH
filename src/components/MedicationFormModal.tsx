@@ -39,6 +39,8 @@ export default function MedicationFormModal({
     expiration1: '',
     expiration2: '',
     expiration3: '',
+    restriction: '',
+    qatari: '',
     imageUrl: '',
     isRefrigerated: false,
     enIndications: '',
@@ -96,6 +98,8 @@ export default function MedicationFormModal({
         expiration1: '',
         expiration2: '',
         expiration3: '',
+        restriction: '',
+        qatari: '',
         imageUrl: '',
         isRefrigerated: false,
         enIndications: '',
@@ -300,6 +304,26 @@ export default function MedicationFormModal({
                       onChange={e => setForm({...form, maxQty: Number(e.target.value)})}
                       className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#F27D26]/20"
                     />
+                  </div>
+                  <div className="col-span-2 grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest ml-1">Restriction</label>
+                      <input
+                        value={form.restriction || ''}
+                        onChange={e => setForm({...form, restriction: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-[#141414]/5 border-none rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#F27D26]/20"
+                        placeholder="e.g. Restricted"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest ml-1">Qatari</label>
+                      <input
+                        value={form.qatari || ''}
+                        onChange={e => setForm({...form, qatari: e.target.value})}
+                        className="w-full px-4 py-2.5 bg-[#141414]/5 border-none rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#F27D26]/20"
+                        placeholder="e.g. Yes"
+                      />
+                    </div>
                   </div>
                   <div className="col-span-2 space-y-1.5">
                      <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest ml-1">Expirations (1 / 2 / 3)</label>

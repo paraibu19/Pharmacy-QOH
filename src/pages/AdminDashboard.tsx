@@ -688,12 +688,19 @@ export default function AdminDashboard() {
             
             if (!itemName) return null;
 
+            const restrictionVal = getRowValue(row, ['restriction', 'restrict', 'restricted', 'restrictions', 'class', 'classification', 'category']);
+            const qatariVal = getRowValue(row, ['qatari', 'qatar', 'qat', 'local']);
+            const restriction = restrictionVal !== undefined && restrictionVal !== null ? String(restrictionVal).trim() : '';
+            const qatari = qatariVal !== undefined && qatariVal !== null ? String(qatariVal).trim() : '';
+
             return {
               itemCode: itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`,
               itemName,
               generic,
               to,
               isRefrigerated: !!isRefrigerated,
+              restriction,
+              qatari,
               qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total', 'Available']) || 0),
               minQty: Number(getRowValue(row, ['minQty', 'Min', 'Order Min', 'Minimum']) || 0),
               maxQty: Number(getRowValue(row, ['maxQty', 'Max', 'Order Max', 'Maximum']) || 0),
@@ -2182,6 +2189,18 @@ export default function AdminDashboard() {
                             {med.generic}
                           </span>
                         )}
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {med.restriction && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10 uppercase tracking-tight">
+                              {med.restriction}
+                            </span>
+                          )}
+                          {med.qatari && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/10 uppercase tracking-tight">
+                              Qatar: {med.qatari}
+                            </span>
+                          )}
+                        </div>
                         {med.to && (
                           <div 
                             onClick={(e) => { e.stopPropagation(); setSelectedMedForLinks(med); }}
