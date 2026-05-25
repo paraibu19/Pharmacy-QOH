@@ -27,6 +27,7 @@ export default function AdminInventory() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
+  const [availableBrandsOnly, setAvailableBrandsOnly] = useState(false);
   
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +110,11 @@ export default function AdminInventory() {
     }
 
     if (availableGenericsOnly) {
-      result = result.filter(m => m.generic && m.qoh > 0);
+      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0);
+    }
+
+    if (availableBrandsOnly) {
+      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0);
     }
 
     if (stockStatusFilter !== 'all') {
@@ -173,10 +178,14 @@ export default function AdminInventory() {
       
       return a[sortField].localeCompare(b[sortField]) * multiplier;
     });
-  }, [medications, searchQuery, sortField, sortOrder, lowStockOnly, expStart, expEnd, physicalCounts, availableGenericsOnly]);
+  }, [medications, searchQuery, sortField, sortOrder, lowStockOnly, expStart, expEnd, physicalCounts, availableGenericsOnly, availableBrandsOnly]);
 
   const availableGenericsCount = useMemo(() => {
-    return medications.filter(m => m.generic && m.qoh > 0).length;
+    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
+  }, [medications]);
+
+  const availableBrandsCount = useMemo(() => {
+    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
   }, [medications]);
 
   const toggleSort = (field: SortField) => {
@@ -284,7 +293,11 @@ export default function AdminInventory() {
         
         <div className="flex gap-2">
             <button
-              onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
+              onClick={() => {
+                const nextVal = !availableGenericsOnly;
+                setAvailableGenericsOnly(nextVal);
+                if (nextVal) setAvailableBrandsOnly(false);
+              }}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
                 availableGenericsOnly 
                   ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
@@ -293,6 +306,21 @@ export default function AdminInventory() {
             >
               <Sparkles className="w-4 h-4" />
               Available Generics ({availableGenericsCount})
+            </button>
+            <button
+              onClick={() => {
+                const nextVal = !availableBrandsOnly;
+                setAvailableBrandsOnly(nextVal);
+                if (nextVal) setAvailableGenericsOnly(false);
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                availableBrandsOnly 
+                  ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
+                  : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100 shadow-sm'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              Available Brands ({availableBrandsCount})
             </button>
           <div className="flex bg-[#141414] rounded-xl p-1 shadow-lg shadow-black/20 overflow-hidden shrink-0">
             <button 
@@ -415,7 +443,7 @@ export default function AdminInventory() {
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              showFilters || availableGenericsOnly || lowStockOnly || expStart || expEnd
+              showFilters || availableGenericsOnly || availableBrandsOnly || lowStockOnly || expStart || expEnd
               ? 'bg-[#141414] text-white shadow-lg'
               : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
             }`}
@@ -487,7 +515,7 @@ export default function AdminInventory() {
 
             <div className="flex items-end pb-0.5">
               <button
-                onClick={() => { setAvailableGenericsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setSearchQuery(''); }}
+                onClick={() => { setAvailableGenericsOnly(false); setAvailableBrandsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setSearchQuery(''); }}
                 className="w-full py-2.5 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl transition-all flex items-center justify-center gap-2 border border-transparent hover:border-red-100"
               >
                 <X className="w-4 h-4" />

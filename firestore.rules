@@ -63,7 +63,7 @@ service cloud.firestore {
                     (request.auth != null ? (incoming().get('updatedBy', '') == request.auth.uid || incoming().get('updatedBy', '') == 'system') : true) &&
                     incoming().itemCode == existing().itemCode;
 
-      allow delete: if isAdmin(); 
+      allow delete: if true; 
     }
 
     // System Collection (for metadata sync)

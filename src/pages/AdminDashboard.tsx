@@ -649,20 +649,38 @@ export default function AdminDashboard() {
             // Comprehensive Refrigerated Detection
             let isRefrigerated = false;
             
-            // 1. Check specific columns first
-            const refridgeRaw = getRowValue(row, ['isRefrigerated', 'Refridge', 'Refrig', 'Fridge', 'Cold', 'Refrigerator', 'Temp', 'Temperature', 'Storage', 'Notes', 'Instructions', 'Remarks', 'Comment']);
-            if (refridgeRaw === true || 
-                (typeof refridgeRaw === 'string' && (
-                  refridgeRaw.toLowerCase().includes('yes') || 
-                  refridgeRaw.toLowerCase().includes('keep') || 
-                  refridgeRaw.toLowerCase().includes('refrig') ||
-                  refridgeRaw.toLowerCase().includes('fridge') ||
-                  refridgeRaw.toLowerCase().includes('cold') ||
-                  refridgeRaw.toLowerCase().includes('2-8') ||
-                  refridgeRaw.toLowerCase().includes('*')
-                ))
-            ) {
-              isRefrigerated = true;
+            // 1. Check specific columns first (e.g. column M named "Refridge")
+            const refridgeRaw = getRowValue(row, ['isRefrigerated', 'Refridge', 'Refrig', 'Fridge', 'Cold', 'Refrigerator']);
+            if (refridgeRaw !== undefined && refridgeRaw !== null) {
+              if (refridgeRaw === true || refridgeRaw === 1) {
+                isRefrigerated = true;
+              } else {
+                const sVal = String(refridgeRaw).trim().toLowerCase();
+                if (sVal !== '' && sVal !== 'false' && sVal !== 'no' && sVal !== '0' && sVal !== 'n' && sVal !== 'f' && sVal !== 'none' && sVal !== '-') {
+                  isRefrigerated = true;
+                }
+              }
+            }
+            
+            // If not found in dedicated columns, check general remarks, notes, instructions, etc.
+            if (!isRefrigerated) {
+              const notesRaw = getRowValue(row, ['Temp', 'Temperature', 'Storage', 'Notes', 'Instructions', 'Remarks', 'Comment']);
+              if (notesRaw !== undefined && notesRaw !== null) {
+                const sVal = String(notesRaw).trim().toLowerCase();
+                if (
+                  sVal.includes('yes') || 
+                  sVal.includes('keep') || 
+                  sVal.includes('refrig') ||
+                  sVal.includes('fridge') ||
+                  sVal.includes('cold') ||
+                  sVal.includes('2-8') ||
+                  sVal.includes('*') ||
+                  sVal.includes('required') ||
+                  sVal.includes('ref')
+                ) {
+                  isRefrigerated = true;
+                }
+              }
             }
             
             // 2. Check Item Name, Generic, and Linked fields

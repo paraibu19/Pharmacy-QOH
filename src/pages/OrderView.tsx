@@ -205,11 +205,11 @@ export default function OrderView() {
     }
 
     if (availableGenericsOnly) {
-      result = result.filter(m => m.generic && m.qoh > 0);
+      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0);
     }
 
     if (availableBrandsOnly) {
-      result = result.filter(m => m.to && m.qoh > 0);
+      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0);
     }
 
     if (stockFilter !== 'all') {
@@ -270,14 +270,14 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, availableGenericsOnly, stockFilter, expStart, expEnd, sortField, sortOrder, orderTarget]);
+  }, [medications, searchQuery, availableGenericsOnly, availableBrandsOnly, stockFilter, expStart, expEnd, sortField, sortOrder, orderTarget]);
 
   const availableGenericsCount = useMemo(() => {
-    return medications.filter(m => m.generic && m.qoh > 0).length;
+    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
   }, [medications]);
 
   const availableBrandsCount = useMemo(() => {
-    return medications.filter(m => m.to && m.qoh > 0).length;
+    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
   }, [medications]);
 
   const toggleSort = (field: SortField) => {
@@ -730,7 +730,11 @@ export default function OrderView() {
                 </button>
               ))}
               <button
-                onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
+                onClick={() => {
+                  const nextVal = !availableGenericsOnly;
+                  setAvailableGenericsOnly(nextVal);
+                  if (nextVal) setAvailableBrandsOnly(false);
+                }}
                 className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
                   availableGenericsOnly 
                     ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
@@ -741,7 +745,11 @@ export default function OrderView() {
                 Available Generics ({availableGenericsCount})
               </button>
               <button
-                onClick={() => setAvailableBrandsOnly(!availableBrandsOnly)}
+                onClick={() => {
+                  const nextVal = !availableBrandsOnly;
+                  setAvailableBrandsOnly(nextVal);
+                  if (nextVal) setAvailableGenericsOnly(false);
+                }}
                 className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
                   availableBrandsOnly 
                     ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 

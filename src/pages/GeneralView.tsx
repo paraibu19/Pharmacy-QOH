@@ -30,11 +30,14 @@ export default function GeneralView() {
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
+  const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
+  const [availableBrandsOnly, setAvailableBrandsOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
   const [selectedMedForIndications, setSelectedMedForIndications] = useState<Medication | null>(null);
+  const [selectedMedForRefrigeration, setSelectedMedForRefrigeration] = useState<Medication | null>(null);
   
   // Reminder State
   const [selectedMedicationForReminder, setSelectedMedicationForReminder] = useState<Medication | null>(null);
@@ -212,6 +215,12 @@ export default function GeneralView() {
         (lowerQuery === 'refrigerated' && m.isRefrigerated)
       );
     }
+    if (availableGenericsOnly) {
+      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0);
+    }
+    if (availableBrandsOnly) {
+      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0);
+    }
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
@@ -224,7 +233,15 @@ export default function GeneralView() {
       });
     }
     return result.sort((a, b) => a.itemName.localeCompare(b.itemName));
-  }, [medications, searchQuery, stockFilter]);
+  }, [medications, searchQuery, stockFilter, availableGenericsOnly, availableBrandsOnly]);
+
+  const availableGenericsCount = useMemo(() => {
+    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
+  }, [medications]);
+
+  const availableBrandsCount = useMemo(() => {
+    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
+  }, [medications]);
 
   const changeLanguage = (newLang: Language) => {
     setLanguage(newLang);
@@ -422,10 +439,10 @@ export default function GeneralView() {
                 <div className="flex flex-wrap gap-2">
                   <span className={`w-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ${isRtl ? 'mr-1' : 'ml-1'}`}>{t.stockStatus}</span>
                   {[
-                    { id: 'all', label: t.all, color: 'gray' },
-                    { id: 'in', label: t.inStock, color: 'emerald' },
-                    { id: 'low', label: t.lowStock, color: 'amber' },
-                    { id: 'out', label: t.outOfStock, color: 'red' }
+                    { id: 'all', label: t.all },
+                    { id: 'in', label: t.inStock },
+                    { id: 'low', label: t.lowStock },
+                    { id: 'out', label: t.outOfStock }
                   ].map((f) => (
                     <button
                       key={f.id}
@@ -444,10 +461,56 @@ export default function GeneralView() {
                   ))}
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-[#141414]/5">
+                  <div className="space-y-1">
+                    <span className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                      {t.availableGenerics}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const nextVal = !availableGenericsOnly;
+                        setAvailableGenericsOnly(nextVal);
+                        if (nextVal) setAvailableBrandsOnly(false);
+                      }}
+                      className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                        availableGenericsOnly 
+                          ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
+                          : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100'
+                      }`}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      {t.availableGenerics} ({availableGenericsCount})
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                      {t.availableBrands}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const nextVal = !availableBrandsOnly;
+                        setAvailableBrandsOnly(nextVal);
+                        if (nextVal) setAvailableGenericsOnly(false);
+                      }}
+                      className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                        availableBrandsOnly 
+                          ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
+                          : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100'
+                      }`}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      {t.availableBrands} ({availableBrandsCount})
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-[#141414]/5">
                   <button
                     onClick={() => {
                       setStockFilter('all');
+                      setAvailableGenericsOnly(false);
+                      setAvailableBrandsOnly(false);
                       setSearchQuery('');
                     }}
                     className={`px-4 py-2 flex items-center justify-center gap-2 bg-white border border-red-100 text-red-500 rounded-xl text-xs font-bold hover:bg-red-50 transition-all`}
@@ -546,10 +609,17 @@ export default function GeneralView() {
                         >
                           <span className="text-sm font-bold text-[#141414] group-hover:text-[#F27D26] transition-colors">{med.itemName}</span>
                           {med.isRefrigerated && (
-                            <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedMedForRefrigeration(med);
+                              }}
+                              className="flex items-center gap-1.5 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-[10px] font-black uppercase tracking-tight w-fit border border-blue-200 shadow-sm mt-1 transition-all hover:bg-blue-200 hover:border-blue-300 hover:scale-[1.02] active:scale-95 cursor-pointer"
+                            >
                               <ThermometerSnowflake size={12} className="text-blue-600 animate-pulse" />
                               {t.refrigerated}
-                            </div>
+                            </button>
                           )}
                           {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
                         </div>
@@ -624,10 +694,17 @@ export default function GeneralView() {
                     {med.itemName}
                   </h3>
                   {med.isRefrigerated && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 text-white rounded-full text-[9px] font-black uppercase tracking-tight shadow-md border border-white/20">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedMedForRefrigeration(med);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 active:scale-95 text-white rounded-full text-[9px] font-black uppercase tracking-tight shadow-md border border-white/20 cursor-pointer hover:bg-blue-700 transition-all"
+                    >
                       <ThermometerSnowflake size={10} />
                       REF
-                    </span>
+                    </button>
                   )}
                   {(med.enIndications || med.arIndications) && (
                     <button 
@@ -1039,6 +1116,63 @@ export default function GeneralView() {
                 <button 
                   onClick={() => setSelectedMedForIndications(null)}
                   className="w-full py-4 bg-[#141414] text-white rounded-2xl text-xs font-bold hover:opacity-90 transition-all shadow-lg shadow-black/10 active:scale-[0.98]"
+                >
+                  {t.cancel}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Refrigeration Modal */}
+      <AnimatePresence>
+        {selectedMedForRefrigeration && (
+          <div className="fixed inset-0 z-[200] flex items-end md:items-center justify-center p-0 md:p-4 bg-black/60 backdrop-blur-md" dir={isRtl ? 'rtl' : 'ltr'}>
+            <motion.div 
+              initial={{ y: "100%", opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: "100%", opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative max-w-lg w-full bg-white rounded-t-[2.5rem] md:rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] md:max-h-[85vh]"
+            >
+              <div className="p-5 md:p-6 border-b border-[#141414]/5 bg-white flex items-center justify-between sticky top-0 z-10">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500 animate-pulse">
+                    <ThermometerSnowflake size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-base md:text-lg font-bold text-[#141414] leading-tight">
+                      {selectedMedForRefrigeration.itemName}
+                    </h2>
+                    <p className="text-[9px] md:text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-0.5 animate-pulse">
+                      {t.refrigerationRequiredTitle}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedMedForRefrigeration(null)}
+                  className="p-2 hover:bg-[#141414]/5 rounded-full text-[#141414]/40 transition-colors"
+                >
+                  <XIcon size={20} />
+                </button>
+              </div>
+
+              <div className="p-5 md:p-6 space-y-6 flex-1 overflow-y-auto">
+                <div className="p-5 bg-blue-50/70 rounded-2xl border border-blue-100/60 min-h-[150px] md:min-h-[200px] flex flex-col justify-center">
+                  <span className={`text-[10px] md:text-xs font-black text-blue-600 uppercase tracking-widest mb-3 ${isRtl ? 'text-right' : 'text-left'}`}>
+                    {t.refrigerationRequiredTitle}
+                  </span>
+                  <div className={`text-sm md:text-base font-bold text-blue-900 leading-relaxed whitespace-pre-wrap ${isRtl ? 'text-right' : 'text-left'}`}>
+                    {t.refrigerationRequiredBody}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5 md:p-6 bg-[#141414]/[0.02] border-t border-[#141414]/5 sticky bottom-0 z-10">
+                <button 
+                  onClick={() => setSelectedMedForRefrigeration(null)}
+                  className="w-full py-4 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/10 active:scale-[0.98]"
                 >
                   {t.cancel}
                 </button>

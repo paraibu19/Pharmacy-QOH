@@ -19,6 +19,7 @@ export interface TranslationStrings {
   all: string;
   stockStatus: string;
   availableGenerics: string;
+  availableBrands: string;
   reset: string;
   medicationName: string;
   status: string;
@@ -54,6 +55,8 @@ export interface TranslationStrings {
   indicationsTitle: string;
   indicationsInfo: string;
   noIndications: string;
+  refrigerationRequiredTitle: string;
+  refrigerationRequiredBody: string;
 }
 
 export const LANGUAGES: { id: Language; label: string; dir: 'ltr' | 'rtl' }[] = [
@@ -85,6 +88,7 @@ export const translations: Record<Language, TranslationStrings> = {
     all: 'All',
     stockStatus: 'Stock Status',
     availableGenerics: 'Available Generics',
+    availableBrands: 'Available Brands',
     reset: 'Reset',
     medicationName: 'Medication Name',
     status: 'Status',
@@ -119,7 +123,9 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'Refrigerated (2-8°C)',
     indicationsTitle: 'Drug Indications',
     indicationsInfo: 'Indications',
-    noIndications: 'No indications information available'
+    noIndications: 'No indications information available',
+    refrigerationRequiredTitle: 'REFRIGERATION REQUIRED',
+    refrigerationRequiredBody: 'STORAGE INSTRUCTIONS: Store in refrigerator (2-8°C). DO NOT FREEZE.'
   },
   ar: {
     title: 'الصفحة الرئيسية',
@@ -139,6 +145,7 @@ export const translations: Record<Language, TranslationStrings> = {
     all: 'الكل',
     stockStatus: 'حالة المخزون',
     availableGenerics: 'البدائل المتوفرة',
+    availableBrands: 'العلامات التجارية المتوفرة',
     reset: 'إعادة تعيين',
     medicationName: 'اسم الدواء',
     status: 'الحالة',
@@ -173,7 +180,9 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'مبرّد (2-8 درجة مئوية)',
     indicationsTitle: 'دواعي الاستعمال',
     indicationsInfo: 'معلومات الدواء',
-    noIndications: 'لا توجد معلومات عن دواعي الاستعمال'
+    noIndications: 'لا توجد معلومات عن دواعي الاستعمال',
+    refrigerationRequiredTitle: 'مطلوب تبريد',
+    refrigerationRequiredBody: 'تعليمات التخزين: يحفظ في الثلاجة (2-8 درجات مئوية). لا يجمد.'
   },
   hi: {
     title: 'होमपेज',
@@ -193,6 +202,7 @@ export const translations: Record<Language, TranslationStrings> = {
     all: 'सभी',
     stockStatus: 'स्टॉक की स्थिति',
     availableGenerics: 'उपलब्ध जेनेरिक्स',
+    availableBrands: 'उपलब्ध ब्रांड्स',
     reset: 'रीसेट',
     medicationName: 'दवा का नाम',
     status: 'स्थिति',
@@ -227,7 +237,9 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'रेफ्रिजरेटेड (2-8°C)',
     indicationsTitle: 'दवा के संकेत',
     indicationsInfo: 'जानकारी',
-    noIndications: 'कोई जानकारी उपलब्ध नहीं'
+    noIndications: 'कोई जानकारी उपलब्ध नहीं',
+    refrigerationRequiredTitle: 'रेफ्रिजरेशन आवश्यक है',
+    refrigerationRequiredBody: 'भंडारण निर्देश: रेफ्रिजरेटर (2-8°C) में रखें। फ्रीज न करें।'
   },
   ur: {
     title: 'ہوم پیج',
@@ -247,6 +259,7 @@ export const translations: Record<Language, TranslationStrings> = {
     all: 'تمام',
     stockStatus: 'سٹاک کی صورتحال',
     availableGenerics: 'دستیاب متبادل',
+    availableBrands: 'دستیاب برانڈز',
     reset: 'ری سیٹ',
     medicationName: 'دوا کا نام',
     status: 'حالت',
@@ -281,7 +294,9 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'ریفریجریٹڈ (2-8°C)',
     indicationsTitle: 'دوا کے استعمال',
     indicationsInfo: 'معلومات',
-    noIndications: 'معلومات دستیاب نہیں'
+    noIndications: 'معلومات دستیاب نہیں',
+    refrigerationRequiredTitle: 'ریفریجریشن درکار ہے',
+    refrigerationRequiredBody: 'ذخیرہ کرنے کی ہدایات: ریفریجریٹر (2-8°C) میں رکھیں۔ فریز نہ کریں۔'
   },
   ml: {
     title: 'ഹോംപേജ്',
@@ -301,6 +316,7 @@ export const translations: Record<Language, TranslationStrings> = {
     all: 'എല്ലാം',
     stockStatus: 'ലഭ്യത നില',
     availableGenerics: 'ലഭ്യമായ ഇതര മരുന്നുകൾ',
+    availableBrands: 'ലഭ്യമായ ബ്രാൻഡുകൾ',
     reset: 'റീസെറ്റ്',
     medicationName: 'മരുന്നിന്റെ പേര്',
     status: 'നില',
@@ -335,7 +351,9 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'റെഫ്രിജറേറ്ററിൽ സൂക്ഷിക്കേണ്ടവ (2-8°C)',
     indicationsTitle: 'മരുന്ന് ഉപയോഗം',
     indicationsInfo: 'വിവരങ്ങൾ',
-    noIndications: 'വിവരങ്ങൾ ലഭ്യമല്ല'
+    noIndications: 'വിവരങ്ങൾ ലഭ്യമല്ല',
+    refrigerationRequiredTitle: 'തണുപ്പ് ആവശ്യമാണ്',
+    refrigerationRequiredBody: 'സംഭരണ ​​നിർദ്ദേശങ്ങൾ: റഫ്രിജറേറ്ററിൽ (2-8°C) സൂക്ഷിക്കുക. ഫ്രീസ് ചെയ്യരുത്.'
   },
   bn: {
     title: 'হোমপেজ',
@@ -355,6 +373,7 @@ export const translations: Record<Language, TranslationStrings> = {
     all: 'সব',
     stockStatus: 'স্টকের অবস্থা',
     availableGenerics: 'উপলব্ধ বিকল্প ওষুধ',
+    availableBrands: 'উপলব্ধ ব্র্যান্ড',
     reset: 'রিসেট',
     medicationName: 'ওষুধের নাম',
     status: 'অবস্থা',
@@ -389,7 +408,9 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'রেফ্রিজারেটরে রাখতে হবে (2-8°C)',
     indicationsTitle: 'ওষুধের ব্যবহার',
     indicationsInfo: 'তথ্য',
-    noIndications: 'কোনো তথ্য পাওয়া যায়নি'
+    noIndications: 'কোনো তথ্য পাওয়া যায়নি',
+    refrigerationRequiredTitle: 'রেফ্রিজারেশন প্রয়োজন',
+    refrigerationRequiredBody: 'সংরক্ষণের নির্দেশাবলী: রেফ্রিজারেটরে (2-8°C) রাখুন। ফ্রিজে রাখবেন না।'
   },
   tl: {
     title: 'Homepage',
@@ -409,6 +430,7 @@ export const translations: Record<Language, TranslationStrings> = {
     all: 'Lahat',
     stockStatus: 'Katayuan ng Stock',
     availableGenerics: 'May Katumbas na Gamot',
+    availableBrands: 'May Brand na Gamot',
     reset: 'I-reset',
     medicationName: 'Pangalan ng Gamot',
     status: 'Katayuan',
@@ -443,6 +465,8 @@ export const translations: Record<Language, TranslationStrings> = {
     refrigerated: 'Naka-refrigerator (2-8°C)',
     indicationsTitle: 'Mga Indikasyon',
     indicationsInfo: 'Impormasyon',
-    noIndications: 'Walang impormasyon na magagamit'
+    noIndications: 'Walang impormasyon na magagamit',
+    refrigerationRequiredTitle: 'KAILANGAN NG PAGPAPALAMIG',
+    refrigerationRequiredBody: 'MGA INSTRUKSYON SA PAG-IIMBAK: Itabi sa refrigerator (2-8°C). HUWAG I-FREEZE.'
   },
 };

@@ -35,7 +35,7 @@ export default function UserHome() {
   const [searchQuery, setSearchQuery] = useState('');
   const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
   const [availableBrandsOnly, setAvailableBrandsOnly] = useState(false);
-  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out' | 'qatari'>('all');
+  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out' | 'qatari' | 'restricted'>('all');
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -205,11 +205,11 @@ export default function UserHome() {
     }
 
     if (availableGenericsOnly) {
-      result = result.filter(m => m.generic && m.qoh > 0);
+      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0);
     }
 
     if (availableBrandsOnly) {
-      result = result.filter(m => m.to && m.qoh > 0);
+      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0);
     }
 
     if (stockFilter !== 'all') {
@@ -222,6 +222,7 @@ export default function UserHome() {
         if (stockFilter === 'low') return isLow;
         if (stockFilter === 'out') return isOut;
         if (stockFilter === 'qatari') return !!(m.qatari && (m.qatari.trim().toUpperCase() === 'TRUE' || m.qatari.trim().toUpperCase() === 'QATARI'));
+        if (stockFilter === 'restricted') return !!(m.restriction && m.restriction.trim() !== '');
         return true;
       });
     }
@@ -278,11 +279,11 @@ export default function UserHome() {
   }, [medications, searchQuery, availableGenericsOnly, availableBrandsOnly, stockFilter, expStart, expEnd, sortField, sortOrder]);
 
   const availableGenericsCount = useMemo(() => {
-    return medications.filter(m => m.generic && m.qoh > 0).length;
+    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
   }, [medications]);
 
   const availableBrandsCount = useMemo(() => {
-    return medications.filter(m => m.to && m.qoh > 0).length;
+    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
   }, [medications]);
 
   // Handle PDF Export
@@ -796,7 +797,8 @@ export default function UserHome() {
                     { id: 'in', label: 'In Stock', color: 'emerald' },
                     { id: 'low', label: 'Low Stock', color: 'amber' },
                     { id: 'out', label: 'Out of Stock', color: 'red' },
-                    { id: 'qatari', label: 'Qatari', color: 'orange' }
+                    { id: 'qatari', label: 'Qatari', color: 'orange' },
+                    { id: 'restricted', label: 'Restricted', color: 'blue' }
                   ].map((f) => (
                     <button
                       key={f.id}
@@ -807,6 +809,7 @@ export default function UserHome() {
                             f.id === 'low' ? 'bg-amber-500 text-white border-amber-500' :
                             f.id === 'out' ? 'bg-red-500 text-white border-red-500' :
                             f.id === 'qatari' ? 'bg-[#F27D26] text-white border-[#F27D26]' :
+                            f.id === 'restricted' ? 'bg-blue-500 text-white border-blue-500' :
                             'bg-[#141414] text-white border-[#141414]'
                           : 'bg-white text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/5'
                       }`}
@@ -822,7 +825,11 @@ export default function UserHome() {
                       Generics filter
                     </label>
                     <button
-                      onClick={() => setAvailableGenericsOnly(!availableGenericsOnly)}
+                      onClick={() => {
+                        const nextVal = !availableGenericsOnly;
+                        setAvailableGenericsOnly(nextVal);
+                        if (nextVal) setAvailableBrandsOnly(false);
+                      }}
                       className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                         availableGenericsOnly 
                           ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
@@ -839,7 +846,11 @@ export default function UserHome() {
                       Brands filter
                     </label>
                     <button
-                      onClick={() => setAvailableBrandsOnly(!availableBrandsOnly)}
+                      onClick={() => {
+                        const nextVal = !availableBrandsOnly;
+                        setAvailableBrandsOnly(nextVal);
+                        if (nextVal) setAvailableGenericsOnly(false);
+                      }}
                       className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                         availableBrandsOnly 
                           ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
