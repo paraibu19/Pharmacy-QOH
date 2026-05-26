@@ -9,10 +9,16 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const MEDS_FILE = path.join(DATA_DIR, 'medications.json');
 const AUDITS_FILE = path.join(DATA_DIR, 'audits.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const TRANSLATION_CACHE_FILE = path.join(DATA_DIR, 'translation_cache.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR);
+}
+
+// Ensure translation cache file exists
+if (!fs.existsSync(TRANSLATION_CACHE_FILE)) {
+  fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
 }
 
 // Ensure files exist
@@ -242,9 +248,31 @@ app.post('/api/audits', (req, res) => {
   res.status(201).json(newAudit);
 });
 
+app.get('/api/translation_cache', (req, res) => {
+  try {
+    const data = fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read translation cache' });
+  }
+});
+
+app.post('/api/translation_cache', (req, res) => {
+  try {
+    const cache = JSON.parse(fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8'));
+    const updates = req.body;
+    Object.assign(cache, updates);
+    fs.writeFileSync(TRANSLATION_CACHE_FILE, JSON.stringify(cache, null, 2));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to write translation cache' });
+  }
+});
+
 app.post('/api/system/reset', (req, res) => {
   fs.writeFileSync(MEDS_FILE, '[]');
   fs.writeFileSync(AUDITS_FILE, '[]');
+  fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
   res.json({ success: true });
 });
 

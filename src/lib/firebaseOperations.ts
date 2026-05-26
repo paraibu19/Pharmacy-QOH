@@ -300,7 +300,7 @@ export const systemOps = {
     }
 
     // Reset Firestore Collections
-    const collections = ['medications', 'inventory_audits'];
+    const collections = ['medications', 'inventory_audits', 'translation_cache'];
     
     try {
       for (const colName of collections) {
@@ -375,6 +375,144 @@ export const technicianAuthOps = {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  }
+};
+
+export async function getTranslationHash(text: string): Promise<string> {
+  const clean = (text || '').trim().toLowerCase();
+  if (!clean) return '';
+  try {
+    const msg = new TextEncoder().encode(clean);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msg);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return 'tc_' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 50);
+  } catch (e) {
+    let h1 = 5381;
+    let h2 = 127;
+    for (let i = 0; i < clean.length; i++) {
+      const char = clean.charCodeAt(i);
+      h1 = (h1 * 33) ^ char;
+      h2 = (h2 * 37) ^ char;
+    }
+    return 'tcfb_' + Math.abs(h1).toString(36) + '_' + Math.abs(h2).toString(36);
+  }
+}
+
+export const translationCacheOps = {
+  async getTranslations(texts: string[]): Promise<Record<string, any>> {
+    if (!db) {
+      try {
+        const res = await fetch(`/api/translation_cache?t=${Date.now()}`);
+        const serverCache = await res.json();
+        const result: Record<string, any> = {};
+        for (const text of texts) {
+          const hash = await getTranslationHash(text);
+          if (serverCache[hash]) {
+            result[text] = serverCache[hash];
+          }
+        }
+        return result;
+      } catch (err) {
+        console.warn('Failed to fetch translation cache from server:', err);
+        return {};
+      }
+    }
+
+    const result: Record<string, any> = {};
+    const textToHash: Record<string, string> = {};
+    const hashes: string[] = [];
+
+    for (const text of texts) {
+      const hash = await getTranslationHash(text);
+      if (hash) {
+        textToHash[text] = hash;
+        hashes.push(hash);
+      }
+    }
+
+    if (hashes.length === 0) return {};
+
+    try {
+      const chunkSize = 30;
+      const promises = [];
+      for (let i = 0; i < hashes.length; i += chunkSize) {
+        const chunk = hashes.slice(i, i + chunkSize);
+        const q = query(
+          collection(db, 'translation_cache'),
+          where('__name__', 'in', chunk)
+        );
+        promises.push(getDocs(q));
+      }
+
+      const snapshots = await Promise.all(promises);
+      const hashToData: Record<string, any> = {};
+      snapshots.forEach(snapshot => {
+        snapshot.docs.forEach(doc => {
+          hashToData[doc.id] = doc.data();
+        });
+      });
+
+      for (const text of texts) {
+        const hash = textToHash[text];
+        if (hash && hashToData[hash]) {
+          result[text] = hashToData[hash];
+        }
+      }
+    } catch (err) {
+      console.warn('Firestore translation cache read failed:', err);
+    }
+
+    return result;
+  },
+
+  async saveTranslations(entries: Record<string, any>) {
+    if (!db) {
+      try {
+        const serverPayload: Record<string, any> = {};
+        for (const [text, data] of Object.entries(entries)) {
+          const hash = await getTranslationHash(text);
+          serverPayload[hash] = data;
+        }
+        await fetch('/api/translation_cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(serverPayload)
+        });
+      } catch (err) {
+        console.warn('Failed to write translation cache to server:', err);
+      }
+      return;
+    }
+
+    try {
+      let batch = writeBatch(db);
+      let count = 0;
+
+      for (const [text, data] of Object.entries(entries)) {
+        const hash = await getTranslationHash(text);
+        if (!hash) continue;
+
+        const docRef = doc(db, 'translation_cache', hash);
+        batch.set(docRef, {
+          ...data,
+          sourceText: text,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        count++;
+        if (count >= 500) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
+        }
+      }
+
+      if (count > 0) {
+        await batch.commit();
+      }
+    } catch (err) {
+      console.warn('Firestore translation cache write failed:', err);
     }
   }
 };

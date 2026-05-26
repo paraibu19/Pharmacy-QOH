@@ -85,6 +85,22 @@ export function useMedications(locationId?: PharmacyLocation) {
         console.error("Firestore onSnapshot error:", err);
         setError(err.message);
         
+        // Auto-detect quota exceeded error and automatically trigger local storage fallback!
+        if (
+          err.message.toLowerCase().includes('quota') || 
+          err.message.toLowerCase().includes('limit') || 
+          err.message.toLowerCase().includes('exceeded') || 
+          err.message.toLowerCase().includes('permission-denied')
+        ) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('firestore_fallback', 'true');
+            console.warn('Auto-switching useMedications to Local Server database mode.');
+            setTimeout(() => {
+              window.location.reload();
+            }, 800);
+          }
+        }
+        
         // If we hit quota but have no meds yet, try one last time from cache
         if ((err.message.toLowerCase().includes('quota') || err.message.toLowerCase().includes('limit')) && medications.length === 0) {
           getDocsFromCache(q).then(cacheSnap => {

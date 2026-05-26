@@ -119,5 +119,11 @@ service cloud.firestore {
       // Create if it doesn't exist
       allow create: if isSignedIn() && isValidSetting(incoming());
     }
+
+    // Translation Cache Collection
+    match /translation_cache/{cacheId} {
+      allow read, get, list: if true;
+      allow write, create, update: if true;
+    }
   }
 }

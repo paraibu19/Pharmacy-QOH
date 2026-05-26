@@ -14,7 +14,7 @@ import JSZip from 'jszip';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { useAudits } from '../hooks/useAudits';
-import { medicationOps, systemOps } from '../lib/firebaseOperations';
+import { medicationOps, systemOps, translationCacheOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
 import { translateIndications, batchTranslateIndications } from '../services/translationService';
 import { formatNumber } from '../lib/formatters';
@@ -646,62 +646,37 @@ export default function AdminDashboard() {
             const enIndications = String(getRowValue(row, ['enIndications', 'EN Indications', 'EN_Indications', 'Indications EN', 'Indications (EN)', 'English Indications']) || '');
             const arIndications = String(getRowValue(row, ['arIndications', 'AR Indications', 'AR_Indications', 'Indications AR', 'Indications (AR)', 'Arabic Indications']) || '');
             
-            // Comprehensive Refrigerated Detection
+            // Strict Refrigerated Detection matching Column M ('Refridge' / 'isRefrigerated' / 'Refrig')
             let isRefrigerated = false;
             
-            // 1. Check specific columns first (e.g. column M named "Refridge")
-            const refridgeRaw = getRowValue(row, ['isRefrigerated', 'Refridge', 'Refrig', 'Fridge', 'Cold', 'Refrigerator']);
+            const refridgeRaw = getRowValue(row, ['Refridge', 'isRefrigerated', 'Refrig']);
             if (refridgeRaw !== undefined && refridgeRaw !== null) {
               if (refridgeRaw === true || refridgeRaw === 1) {
                 isRefrigerated = true;
               } else {
                 const sVal = String(refridgeRaw).trim().toLowerCase();
-                if (sVal !== '' && sVal !== 'false' && sVal !== 'no' && sVal !== '0' && sVal !== 'n' && sVal !== 'f' && sVal !== 'none' && sVal !== '-') {
-                  isRefrigerated = true;
-                }
-              }
-            }
-            
-            // If not found in dedicated columns, check general remarks, notes, instructions, etc.
-            if (!isRefrigerated) {
-              const notesRaw = getRowValue(row, ['Temp', 'Temperature', 'Storage', 'Notes', 'Instructions', 'Remarks', 'Comment']);
-              if (notesRaw !== undefined && notesRaw !== null) {
-                const sVal = String(notesRaw).trim().toLowerCase();
+                // Positive matches for active refrigeration
                 if (
-                  sVal.includes('yes') || 
-                  sVal.includes('keep') || 
+                  sVal === 'yes' || 
+                  sVal === 'y' || 
+                  sVal === 'true' || 
+                  sVal === '1' || 
+                  sVal === 'refrig' || 
+                  sVal === 'refrigerated' || 
+                  sVal === 'ref' || 
+                  sVal === 'required' || 
+                  sVal.includes('✓') ||
+                  sVal.includes('yes') ||
+                  sVal.includes('keep') ||
                   sVal.includes('refrig') ||
                   sVal.includes('fridge') ||
-                  sVal.includes('cold') ||
                   sVal.includes('2-8') ||
                   sVal.includes('*') ||
-                  sVal.includes('required') ||
-                  sVal.includes('ref')
+                  sVal.includes('required')
                 ) {
                   isRefrigerated = true;
                 }
               }
-            }
-            
-            // 2. Check Item Name, Generic, and Linked fields
-            if (!isRefrigerated) {
-              const combinedText = `${itemName} ${generic} ${to}`.toLowerCase();
-              if (combinedText.includes('refrig') || 
-                  combinedText.includes('fridge') || 
-                  combinedText.includes('2-8') || 
-                  combinedText.includes('(ref)') || 
-                  combinedText.includes('cold') || 
-                  combinedText.includes('*')) {
-                isRefrigerated = true;
-              }
-            }
-
-            // 3. Last resort: Scan EVERY single value in the row if still not identified as refrigerated
-            if (!isRefrigerated) {
-              isRefrigerated = Object.values(row).some(val => {
-                const s = String(val || '').toLowerCase();
-                return s.includes('refrig') || s.includes('2-8') || s.includes('fridge') || (s.includes('cold') && !s.includes('cold flu'));
-              });
             }
             
             if (!itemName) return null;
@@ -1096,18 +1071,65 @@ export default function AdminDashboard() {
       return;
     }
 
-    setSuccess(`Starting AI translation for ${medsToTranslate.length} items...`);
-
     try {
       setIsTranslating(true);
       setError(null);
-      setTranslationProgress({ current: 0, total: medsToTranslate.length });
+      
+      setSuccess("Checking storage for existing translations...");
+      const rawTexts = medsToTranslate.map(m => 
+        (m.enIndications && m.enIndications.trim() !== '') ? m.enIndications.trim() : m.arIndications?.trim() || ''
+      ).filter(text => text !== '') as string[];
+      
+      const uniqueTexts = Array.from(new Set(rawTexts));
+
+      // Retrieve cached translations in one efficient batch query
+      const cachedMap = await translationCacheOps.getTranslations(uniqueTexts);
+
+      const cacheUpdates: { id: string; data: Partial<Medication> }[] = [];
+      const remainingMeds: Medication[] = [];
+
+      medsToTranslate.forEach(med => {
+        const text = ((med.enIndications && med.enIndications.trim() !== '') ? med.enIndications.trim() : med.arIndications?.trim() || '');
+        const cacheHit = cachedMap[text];
+        if (cacheHit) {
+          cacheUpdates.push({
+            id: med.id,
+            data: {
+              hiIndications: cacheHit.hiIndications || cacheHit.hi || '',
+              urIndications: cacheHit.urIndications || cacheHit.ur || '',
+              mlIndications: cacheHit.mlIndications || cacheHit.ml || '',
+              bnIndications: cacheHit.bnIndications || cacheHit.bn || '',
+              tlIndications: cacheHit.tlIndications || cacheHit.tl || ''
+            }
+          });
+        } else {
+          remainingMeds.push(med);
+        }
+      });
+
+      let totalUpdated = 0;
+
+      // Immediately write cached updates to the database (very cheap and fast)
+      if (cacheUpdates.length > 0) {
+        await medicationOps.bulkUpdate(cacheUpdates);
+        totalUpdated += cacheUpdates.length;
+        console.log(`Resolved ${cacheUpdates.length} items from translation cache.`);
+      }
+
+      if (remainingMeds.length === 0) {
+        await refresh();
+        setSuccess(`Completed! All ${totalUpdated} items resolved from translation cache instantly.`);
+        return;
+      }
+
+      // If we have remaining newly added items, update only those with Gemini AI
+      setSuccess(`Cache hit for ${cacheUpdates.length} items. Translating ${remainingMeds.length} newly added items with AI...`);
+      setTranslationProgress({ current: 0, total: remainingMeds.length });
       
       const batchSize = 10;
-      let totalUpdated = 0;
       
-      for (let i = 0; i < medsToTranslate.length; i += batchSize) {
-        const chunk = medsToTranslate.slice(i, i + batchSize);
+      for (let i = 0; i < remainingMeds.length; i += batchSize) {
+        const chunk = remainingMeds.slice(i, i + batchSize);
         // Map the text to translate. Prefer English, fallback to Arabic.
         const itemsToTranslate = chunk.map(m => ({ 
           id: m.id, 
@@ -1117,40 +1139,54 @@ export default function AdminDashboard() {
         console.log(`Processing translation batch ${Math.floor(i / batchSize) + 1}...`);
         const translationsMap = await batchTranslateIndications(itemsToTranslate, ['hi', 'ur', 'ml', 'bn', 'tl']);
         
-        // Prepare bulk update data
+        // Prepare bulk update data for medications & cache storage
         const updates: { id: string; data: Partial<Medication> }[] = [];
+        const cacheToSave: Record<string, any> = {};
+
         chunk.forEach(med => {
           const trans = translationsMap[med.id];
           if (trans) {
+            const dataToSet = {
+              hiIndications: trans.hi || '',
+              urIndications: trans.ur || '',
+              mlIndications: trans.ml || '',
+              bnIndications: trans.bn || '',
+              tlIndications: trans.tl || ''
+            };
             updates.push({
               id: med.id,
-              data: {
-                hiIndications: trans.hi || '',
-                urIndications: trans.ur || '',
-                mlIndications: trans.ml || '',
-                bnIndications: trans.bn || '',
-                tlIndications: trans.tl || ''
-              }
+              data: dataToSet
             });
             totalUpdated++;
+
+            const text = (med.enIndications && med.enIndications.trim() !== '') ? med.enIndications : med.arIndications || '';
+            const cleanText = text.trim();
+            if (cleanText) {
+              cacheToSave[cleanText] = dataToSet;
+            }
           }
         });
 
         if (updates.length > 0) {
           await medicationOps.bulkUpdate(updates);
         }
+
+        // Store translations in our central storage cache
+        if (Object.keys(cacheToSave).length > 0) {
+          await translationCacheOps.saveTranslations(cacheToSave);
+        }
         
-        const nextProgress = Math.min(i + batchSize, medsToTranslate.length);
-        setTranslationProgress({ current: nextProgress, total: medsToTranslate.length });
+        const nextProgress = Math.min(i + batchSize, remainingMeds.length);
+        setTranslationProgress({ current: nextProgress, total: remainingMeds.length });
         
         // Wait 3 seconds between batches to be safe with Free Tier limits
-        if (i + batchSize < medsToTranslate.length) {
+        if (i + batchSize < remainingMeds.length) {
           await new Promise(resolve => setTimeout(resolve, 3000));
         }
       }
       
       await refresh();
-      setSuccess(`Completed! Successfully translated ${totalUpdated} items.`);
+      setSuccess(`Completed! Successfully updated ${totalUpdated} items (including ${remainingMeds.length} translated via AI).`);
     } catch (err: any) {
       console.error("Translation logic error:", err);
       setError(`Translation failed: ${err.message || 'Unknown error'}. Common causes: API rate limits or quota.`);

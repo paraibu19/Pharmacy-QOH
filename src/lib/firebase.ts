@@ -3,8 +3,18 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase only if config is valid
-const isConfigValid = firebaseConfig && firebaseConfig.apiKey && firebaseConfig.apiKey !== "";
+// Check if user manually opted to use Local Server Mode or if Firestore is over quota
+const checkQuotaOver = () => {
+  if (typeof window !== 'undefined') {
+    return window.localStorage.getItem('firestore_fallback') === 'true';
+  }
+  return false;
+};
+
+export const isFallbackMode = checkQuotaOver();
+
+// Initialize Firebase only if config is valid and not in local fallback mode
+const isConfigValid = firebaseConfig && firebaseConfig.apiKey && firebaseConfig.apiKey !== "" && !isFallbackMode;
 
 export const app = isConfigValid 
   ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig))
@@ -74,16 +84,34 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  
+  // Auto-detect quota exceeded or database-restricted error and automatically switch to Local Server mode!
+  if (
+    errMsg.toLowerCase().includes('quota') || 
+    errMsg.toLowerCase().includes('limit') || 
+    errMsg.toLowerCase().includes('exceeded') || 
+    errMsg.toLowerCase().includes('permission-denied')
+  ) {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('firestore_fallback', 'true');
+      console.warn('Auto-switching to Local Server database mode because Firestore limit or quota was exceeded.');
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    }
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
+      userId: auth ? auth.currentUser?.uid : null,
+      email: auth ? auth.currentUser?.email : null,
+      emailVerified: auth ? auth.currentUser?.emailVerified : null,
     },
     operationType,
     path
-  }
+  };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
