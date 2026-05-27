@@ -26,8 +26,10 @@ export default function AdminInventory() {
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
-  const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
-  const [availableBrandsOnly, setAvailableBrandsOnly] = useState(false);
+  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
+  const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
+  const [typeFilter, setTypeFilter] = useState<'generic' | 'brand' | null>(null);
+  const [refFilter, setRefFilter] = useState<boolean>(false);
   
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const [error, setError] = useState<string | null>(null);
@@ -64,8 +66,6 @@ export default function AdminInventory() {
   const [sortField, setSortField] = useState<SortField>('itemName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   
-  const [stockStatusFilter, setStockStatusFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
-  const [lowStockOnly, setLowStockOnly] = useState(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -109,29 +109,47 @@ export default function AdminInventory() {
       );
     }
 
-    if (availableGenericsOnly) {
-      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0);
-    }
-
-    if (availableBrandsOnly) {
-      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0);
-    }
-
-    if (stockStatusFilter !== 'all') {
+    // Stock Status (Single-select, "all" default)
+    if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOutOfStock = m.qoh <= 0;
         const isLowStock = !isOutOfStock && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
         const isInStock = !isOutOfStock && !isLowStock;
         
-        if (stockStatusFilter === 'in') return isInStock;
-        if (stockStatusFilter === 'low') return isLowStock;
-        if (stockStatusFilter === 'out') return isOutOfStock;
+        if (stockFilter === 'in') return isInStock;
+        if (stockFilter === 'low') return isLowStock;
+        if (stockFilter === 'out') return isOutOfStock;
         return true;
       });
     }
 
-    if (lowStockOnly) {
-      result = result.filter(m => m.maxQty > 0 && m.qoh < m.maxQty * 0.3);
+    // Classification (Single-select or unselect)
+    if (classificationFilter) {
+      result = result.filter(m => {
+        const isQatari = !!(m.qatari && (m.qatari.trim().toUpperCase() === 'TRUE' || m.qatari.trim().toUpperCase() === 'QATARI'));
+        const isRestricted = !!(m.restriction && m.restriction.trim() !== '');
+        
+        if (classificationFilter === 'qatari') return isQatari;
+        if (classificationFilter === 'restricted') return isRestricted;
+        return true;
+      });
+    }
+
+    // Type (Single-select or unselect)
+    if (typeFilter) {
+      result = result.filter(m => {
+        const isGeneric = !!(m.generic && m.generic.toLowerCase().includes('generic'));
+        const isBrand = !!(m.generic && m.generic.toLowerCase().includes('brand'));
+        
+        if (typeFilter === 'generic') return isGeneric;
+        if (typeFilter === 'brand') return isBrand;
+        return true;
+      });
+    }
+
+    // Refrigerated filter (Ref selection or unselect)
+    if (refFilter) {
+      result = result.filter(m => !!m.isRefrigerated);
     }
 
     if (expStart || expEnd) {
@@ -178,15 +196,24 @@ export default function AdminInventory() {
       
       return a[sortField].localeCompare(b[sortField]) * multiplier;
     });
-  }, [medications, searchQuery, sortField, sortOrder, lowStockOnly, expStart, expEnd, physicalCounts, availableGenericsOnly, availableBrandsOnly]);
+  }, [medications, searchQuery, sortField, sortOrder, expStart, expEnd, physicalCounts, stockFilter, classificationFilter, typeFilter, refFilter]);
 
-  const availableGenericsCount = useMemo(() => {
-    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
+  const filterCounts = useMemo(() => {
+    const all = medications.length;
+    const inStock = medications.filter(m => m.qoh > 0 && !(m.maxQty > 0 && m.qoh < m.maxQty * 0.3)).length;
+    const lowStock = medications.filter(m => m.qoh > 0 && m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length;
+    const outOfStock = medications.filter(m => m.qoh <= 0).length;
+    const qatari = medications.filter(m => m.qatari && (m.qatari.trim().toUpperCase() === 'TRUE' || m.qatari.trim().toUpperCase() === 'QATARI') && m.qoh > 0).length;
+    const restricted = medications.filter(m => m.restriction && m.restriction.trim() !== '' && m.qoh > 0).length;
+    const generics = medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
+    const brands = medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
+    const refrigerated = medications.filter(m => m.isRefrigerated && m.qoh > 0).length;
+
+    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, refrigerated };
   }, [medications]);
 
-  const availableBrandsCount = useMemo(() => {
-    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
-  }, [medications]);
+  const availableGenericsCount = filterCounts.generics;
+  const availableBrandsCount = filterCounts.brands;
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -294,12 +321,10 @@ export default function AdminInventory() {
         <div className="flex gap-2">
             <button
               onClick={() => {
-                const nextVal = !availableGenericsOnly;
-                setAvailableGenericsOnly(nextVal);
-                if (nextVal) setAvailableBrandsOnly(false);
+                setTypeFilter(prev => prev === 'generic' ? null : 'generic');
               }}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                availableGenericsOnly 
+                typeFilter === 'generic' 
                   ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
                   : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100 shadow-sm'
               }`}
@@ -309,12 +334,10 @@ export default function AdminInventory() {
             </button>
             <button
               onClick={() => {
-                const nextVal = !availableBrandsOnly;
-                setAvailableBrandsOnly(nextVal);
-                if (nextVal) setAvailableGenericsOnly(false);
+                setTypeFilter(prev => prev === 'brand' ? null : 'brand');
               }}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                availableBrandsOnly 
+                typeFilter === 'brand' 
                   ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
                   : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100 shadow-sm'
               }`}
@@ -415,35 +438,10 @@ export default function AdminInventory() {
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {[
-              { id: 'all', label: 'All', icon: Filter },
-              { id: 'in', label: 'In Stock', icon: CheckCircle2 },
-              { id: 'low', label: 'Low Stock', icon: AlertTriangle },
-              { id: 'out', label: 'Out of Stock', icon: X },
-            ].map(status => (
-              <button
-                key={status.id}
-                onClick={() => setStockStatusFilter(status.id as any)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${
-                  stockStatusFilter === status.id
-                    ? status.id === 'in' ? 'bg-emerald-100 border-emerald-200 text-emerald-700 shadow-sm'
-                    : status.id === 'low' ? 'bg-amber-100 border-amber-200 text-amber-700 shadow-sm'
-                    : status.id === 'out' ? 'bg-red-100 border-red-200 text-red-700 shadow-sm'
-                    : 'bg-[#141414] border-[#141414] text-white shadow-sm'
-                    : 'bg-white border-[#141414]/10 text-[#141414]/40 hover:border-[#141414]/20 hover:text-[#141414]'
-                }`}
-              >
-                <status.icon size={12} />
-                {status.label}
-              </button>
-            ))}
-          </div>
-
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              showFilters || availableGenericsOnly || availableBrandsOnly || lowStockOnly || expStart || expEnd
+              showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd
               ? 'bg-[#141414] text-white shadow-lg'
               : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
             }`}
@@ -472,56 +470,204 @@ export default function AdminInventory() {
           )}
         </div>
 
+        {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd) && (
+          <div className="flex flex-wrap items-center gap-2 p-3 bg-[#141414]/[0.02] rounded-xl border border-[#141414]/5 animate-in slide-in-from-top-2">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-[#141414]/40 flex items-center gap-1">
+              Active Filters:
+            </span>
+            {stockFilter !== 'all' && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Stock: {stockFilter === 'in' ? 'In Stock' : stockFilter === 'low' ? 'Low Stock' : 'Out of Stock'}
+              </span>
+            )}
+            {classificationFilter !== null && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Class: {classificationFilter === 'qatari' ? 'Qatari' : 'Restricted'}
+              </span>
+            )}
+            {typeFilter !== null && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Type: {typeFilter === 'generic' ? 'Generics' : 'Brands'}
+              </span>
+            )}
+            {refFilter && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5 flex items-center gap-1">
+                <ThermometerSnowflake className="w-2.5 h-2.5 text-[#141414]/60" />
+                Storage: Refrigerated
+              </span>
+            )}
+            {(expStart || expEnd) && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Exp Range: {expStart || '*'} to {expEnd || '*'}
+              </span>
+            )}
+            <button 
+              onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter(false); setExpStart(''); setExpEnd(''); }}
+              className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
+            >
+              Clear All
+            </button>
+          </div>
+        )}
+
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-[#141414]/5 animate-in slide-in-from-top-2">
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
-                Stock Level
-              </label>
-              <button
-                onClick={() => setLowStockOnly(!lowStockOnly)}
-                className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
-                  lowStockOnly ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-[#141414]/5 text-[#141414]/60'
-                }`}
-              >
-                <AlertTriangle className="w-4 h-4" />
-                Low Stock Only ({'< 30% Max'})
-              </button>
+          <div className="flex flex-col gap-5 pt-4 border-t border-[#141414]/5 animate-in slide-in-from-top-2">
+            
+            {/* Grid of dynamic selection options */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              
+              {/* Stock Status selector */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Stock Status</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setStockFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      stockFilter === 'all'
+                        ? 'bg-[#141414] text-white border-[#141414]'
+                        : 'bg-white text-[#141414]/65 border-[#141414]/5 hover:bg-[#141414]/5'
+                    }`}
+                  >
+                    All ({filterCounts.all})
+                  </button>
+                  {[
+                    { id: 'in', label: 'In Stock', count: filterCounts.inStock, color: 'bg-emerald-500 text-white border-emerald-500' },
+                    { id: 'low', label: 'Low Stock', count: filterCounts.lowStock, color: 'bg-amber-500 text-white border-amber-500' },
+                    { id: 'out', label: 'Out of Stock', count: filterCounts.outOfStock, color: 'bg-red-500 text-white border-red-500' }
+                  ].map(f => {
+                    const active = stockFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setStockFilter(f.id as any)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          active ? f.color : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        {f.label} ({f.count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Classification selector */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Classification</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'qatari', label: 'Qatari', count: filterCounts.qatari, color: 'bg-[#F27D26] text-white border-[#F27D26]' },
+                    { id: 'restricted', label: 'Restricted', count: filterCounts.restricted, color: 'bg-blue-500 text-white border-blue-500' }
+                  ].map(f => {
+                    const active = classificationFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => {
+                          setClassificationFilter(prev => prev === f.id ? null : f.id as any);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          active ? f.color : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        {f.label} ({f.count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Type Category selector */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Type</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'generic', label: 'Generics', count: filterCounts.generics, color: 'bg-yellow-500 text-white border-yellow-500' },
+                    { id: 'brand', label: 'Brands', count: filterCounts.brands, color: 'bg-orange-500 text-white border-orange-500' }
+                  ].map(f => {
+                    const active = typeFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => {
+                          setTypeFilter(prev => prev === f.id ? null : f.id as any);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          active ? f.color : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        {f.label} ({f.count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Refrigeration (Ref) Category */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Storage</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setRefFilter(prev => !prev)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                      refFilter
+                        ? 'bg-blue-500 text-white border-blue-500'
+                        : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                    }`}
+                  >
+                    <ThermometerSnowflake className="w-3 h-3" />
+                    Ref Storage ({filterCounts.refrigerated})
+                  </button>
+                </div>
+              </div>
+
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
-                Expiry (Start)
-              </label>
-              <input
-                type="date"
-                value={expStart}
-                onChange={(e) => setExpStart(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#141414]/[0.03] rounded-xl text-sm focus:ring-2 focus:ring-[#141414]/5 transition-all"
-              />
+            {/* Date range selection */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-[#141414]/5">
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                  Exp. Range (Start)
+                </label>
+                <input
+                  type="date"
+                  value={expStart}
+                  onChange={(e) => setExpStart(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-medium"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                  Exp. Range (End)
+                </label>
+                <input
+                  type="date"
+                  value={expEnd}
+                  onChange={(e) => setExpEnd(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-medium"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    setStockFilter('all');
+                    setClassificationFilter(null);
+                    setTypeFilter(null);
+                    setRefFilter(false);
+                    setExpStart('');
+                    setExpEnd('');
+                    setSearchQuery('');
+                  }}
+                  className="w-full h-10 flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 rounded-xl text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                  Reset All Filters
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
-                Expiry (End)
-              </label>
-              <input
-                type="date"
-                value={expEnd}
-                onChange={(e) => setExpEnd(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#141414]/[0.03] rounded-xl text-sm focus:ring-2 focus:ring-[#141414]/5 transition-all"
-              />
-            </div>
-
-            <div className="flex items-end pb-0.5">
-              <button
-                onClick={() => { setAvailableGenericsOnly(false); setAvailableBrandsOnly(false); setLowStockOnly(false); setExpStart(''); setExpEnd(''); setSearchQuery(''); }}
-                className="w-full py-2.5 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl transition-all flex items-center justify-center gap-2 border border-transparent hover:border-red-100"
-              >
-                <X className="w-4 h-4" />
-                Clear Filters
-              </button>
-            </div>
           </div>
         )}
       </div>

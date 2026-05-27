@@ -43,9 +43,10 @@ export default function OrderView() {
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
   const [searchQuery, setSearchQuery] = useState('');
-  const [availableGenericsOnly, setAvailableGenericsOnly] = useState(false);
-  const [availableBrandsOnly, setAvailableBrandsOnly] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
+  const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
+  const [typeFilter, setTypeFilter] = useState<'generic' | 'brand' | null>(null);
+  const [refFilter, setRefFilter] = useState<boolean>(false);
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -204,14 +205,7 @@ export default function OrderView() {
       );
     }
 
-    if (availableGenericsOnly) {
-      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0);
-    }
-
-    if (availableBrandsOnly) {
-      result = result.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0);
-    }
-
+    // Stock Status (Single-select, "all" default)
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
@@ -223,6 +217,35 @@ export default function OrderView() {
         if (stockFilter === 'out') return isOut;
         return true;
       });
+    }
+
+    // Classification (Single-select or unselect)
+    if (classificationFilter) {
+      result = result.filter(m => {
+        const isQatari = !!(m.qatari && (m.qatari.trim().toUpperCase() === 'TRUE' || m.qatari.trim().toUpperCase() === 'QATARI'));
+        const isRestricted = !!(m.restriction && m.restriction.trim() !== '');
+        
+        if (classificationFilter === 'qatari') return isQatari;
+        if (classificationFilter === 'restricted') return isRestricted;
+        return true;
+      });
+    }
+
+    // Type (Single-select or unselect)
+    if (typeFilter) {
+      result = result.filter(m => {
+        const isGeneric = !!(m.generic && m.generic.toLowerCase().includes('generic'));
+        const isBrand = !!(m.generic && m.generic.toLowerCase().includes('brand'));
+        
+        if (typeFilter === 'generic') return isGeneric;
+        if (typeFilter === 'brand') return isBrand;
+        return true;
+      });
+    }
+
+    // Refrigerated filter (Ref selection or unselect)
+    if (refFilter) {
+      result = result.filter(m => !!m.isRefrigerated);
     }
 
     if (expStart || expEnd) {
@@ -270,15 +293,24 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, availableGenericsOnly, availableBrandsOnly, stockFilter, expStart, expEnd, sortField, sortOrder, orderTarget]);
+  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, sortField, sortOrder, orderTarget]);
 
-  const availableGenericsCount = useMemo(() => {
-    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
+  const filterCounts = useMemo(() => {
+    const all = medications.length;
+    const inStock = medications.filter(m => m.qoh > 0 && !(m.maxQty > 0 && m.qoh < m.maxQty * 0.3)).length;
+    const lowStock = medications.filter(m => m.qoh > 0 && m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length;
+    const outOfStock = medications.filter(m => m.qoh <= 0).length;
+    const qatari = medications.filter(m => m.qatari && (m.qatari.trim().toUpperCase() === 'TRUE' || m.qatari.trim().toUpperCase() === 'QATARI') && m.qoh > 0).length;
+    const restricted = medications.filter(m => m.restriction && m.restriction.trim() !== '' && m.qoh > 0).length;
+    const generics = medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
+    const brands = medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
+    const refrigerated = medications.filter(m => m.isRefrigerated && m.qoh > 0).length;
+
+    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, refrigerated };
   }, [medications]);
 
-  const availableBrandsCount = useMemo(() => {
-    return medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
-  }, [medications]);
+  const availableGenericsCount = filterCounts.generics;
+  const availableBrandsCount = filterCounts.brands;
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -670,7 +702,7 @@ export default function OrderView() {
         </div>
       </div>
 
-      {(availableGenericsOnly || availableBrandsOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1) && (
+      {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd || orderTarget !== 1) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
@@ -678,7 +710,23 @@ export default function OrderView() {
           </span>
           {stockFilter !== 'all' && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Stock: <span className="text-[#F27D26] uppercase">{stockFilter}</span>
+              Stock: <span className="text-[#F27D26] uppercase">{stockFilter === 'in' ? 'In Stock' : stockFilter === 'low' ? 'Low Stock' : 'Out of Stock'}</span>
+            </span>
+          )}
+          {classificationFilter !== null && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
+              Class: <span className="text-[#F27D26] uppercase">{classificationFilter === 'qatari' ? 'Qatari' : 'Restricted'}</span>
+            </span>
+          )}
+          {typeFilter !== null && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
+              Type: <span className="text-[#F27D26] uppercase">{typeFilter === 'generic' ? 'Generics' : 'Brands'}</span>
+            </span>
+          )}
+          {refFilter && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1">
+              <ThermometerSnowflake className="w-2.5 h-2.5 text-[#F27D26]" /> 
+              Storage: <span className="text-[#F27D26] uppercase">Refrigerated</span>
             </span>
           )}
           {orderTarget !== 1 && (
@@ -686,18 +734,13 @@ export default function OrderView() {
               Target: <span className="text-[#F27D26]">{orderTarget === 0 ? 'ALL' : `${orderTarget * 100}%`}</span>
             </span>
           )}
-          {availableGenericsOnly && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              In-Stock Generics
-            </span>
-          )}
-          {availableBrandsOnly && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Available Brands
+          {(expStart || expEnd) && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
+              Expiry: <span className="text-[#F27D26]">{expStart || 'Any'}</span> – <span className="text-[#F27D26]">{expEnd || 'Any'}</span>
             </span>
           )}
           <button 
-            onClick={() => { setAvailableGenericsOnly(false); setAvailableBrandsOnly(false); setStockFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -731,12 +774,10 @@ export default function OrderView() {
               ))}
               <button
                 onClick={() => {
-                  const nextVal = !availableGenericsOnly;
-                  setAvailableGenericsOnly(nextVal);
-                  if (nextVal) setAvailableBrandsOnly(false);
+                  setTypeFilter(prev => prev === 'generic' ? null : 'generic');
                 }}
                 className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  availableGenericsOnly 
+                  typeFilter === 'generic' 
                     ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
                     : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100 shadow-sm'
                 }`}
@@ -746,18 +787,29 @@ export default function OrderView() {
               </button>
               <button
                 onClick={() => {
-                  const nextVal = !availableBrandsOnly;
-                  setAvailableBrandsOnly(nextVal);
-                  if (nextVal) setAvailableGenericsOnly(false);
+                  setTypeFilter(prev => prev === 'brand' ? null : 'brand');
                 }}
                 className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  availableBrandsOnly 
+                  typeFilter === 'brand' 
                     ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
                     : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100 shadow-sm'
                 }`}
               >
                 <Sparkles className="w-3 h-3" />
                 Available Brands ({availableBrandsCount})
+              </button>
+              <button
+                onClick={() => {
+                  setRefFilter(prev => !prev);
+                }}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  refFilter 
+                    ? 'bg-blue-400 text-white shadow-lg ring-2 ring-blue-400/20' 
+                    : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 shadow-sm'
+                }`}
+              >
+                <ThermometerSnowflake className="w-3.5 h-3.5" />
+                Ref ({filterCounts.refrigerated})
               </button>
             </div>
 
@@ -795,7 +847,7 @@ export default function OrderView() {
             <button 
               onClick={() => setShowFilters(!showFilters)}
               className={`w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                showFilters || availableGenericsOnly || availableBrandsOnly || stockFilter !== 'all' || expStart || expEnd || orderTarget !== 1
+                showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd || orderTarget !== 1
                 ? 'bg-[#F27D26] text-white shadow-lg'
                 : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
               }`}
@@ -865,70 +917,173 @@ export default function OrderView() {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
+              className="overflow-hidden mb-4"
             >
-              <div className="flex flex-col gap-4 bg-[#141414]/5 p-4 rounded-3xl border border-[#141414]/10">
-                <div className="flex flex-wrap gap-2">
-                  <span className="w-full text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ml-1">Stock Status</span>
-                  {[
-                    { id: 'all', label: 'All', color: 'gray' },
-                    { id: 'in', label: 'In Stock', color: 'emerald' },
-                    { id: 'low', label: 'Low Stock', color: 'amber' },
-                    { id: 'out', label: 'Out of Stock', color: 'red' }
-                  ].map((f) => (
-                    <button
-                      key={f.id}
-                      onClick={() => setStockFilter(f.id as any)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
-                        stockFilter === f.id
-                          ? f.id === 'in' ? 'bg-emerald-500 text-white border-emerald-500' :
-                            f.id === 'low' ? 'bg-amber-500 text-white border-amber-500' :
-                            f.id === 'out' ? 'bg-red-500 text-white border-red-500' :
-                            'bg-[#141414] text-white border-[#141414]'
-                          : 'bg-white text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/5'
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
+              <div className="flex flex-col gap-5 bg-[#141414]/[0.02] p-5 rounded-2xl border border-[#141414]/10 shadow-sm">
+                
+                {/* Row 1: Filter Categories */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                  
+                  {/* Stock Status Category */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Stock Status</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => setStockFilter('all')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          stockFilter === 'all'
+                            ? 'bg-[#141414] text-white border-[#141414]'
+                            : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        All ({filterCounts.all})
+                      </button>
+                      
+                      {[
+                        { id: 'in', label: 'In Stock', count: filterCounts.inStock, activeColor: 'bg-emerald-500 text-white border-emerald-500' },
+                        { id: 'low', label: 'Low Stock', count: filterCounts.lowStock, activeColor: 'bg-amber-500 text-white border-amber-500' },
+                        { id: 'out', label: 'Out of Stock', count: filterCounts.outOfStock, activeColor: 'bg-red-500 text-white border-red-500' }
+                      ].map((f) => {
+                        const active = stockFilter === f.id;
+                        return (
+                          <button
+                            key={f.id}
+                            onClick={() => setStockFilter(f.id as any)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                              active
+                                ? f.activeColor
+                                : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                            }`}
+                          >
+                            {f.label} ({f.count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Classification Category */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Classification</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { id: 'qatari', label: 'Qatari', count: filterCounts.qatari, activeColor: 'bg-[#F27D26] text-white border-[#F27D26]' },
+                        { id: 'restricted', label: 'Restricted', count: filterCounts.restricted, activeColor: 'bg-blue-500 text-white border-blue-500' }
+                      ].map((f) => {
+                        const active = classificationFilter === f.id;
+                        return (
+                          <button
+                            key={f.id}
+                            onClick={() => {
+                              setClassificationFilter(prev => prev === f.id ? null : f.id as any);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                              active
+                                ? f.activeColor
+                                : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                            }`}
+                          >
+                            {f.label} ({f.count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Type Category */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Type</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { id: 'generic', label: 'Generics', count: filterCounts.generics, activeColor: 'bg-yellow-500 text-white border-yellow-500' },
+                        { id: 'brand', label: 'Brands', count: filterCounts.brands, activeColor: 'bg-orange-500 text-white border-orange-500' }
+                      ].map((f) => {
+                        const active = typeFilter === f.id;
+                        return (
+                          <button
+                            key={f.id}
+                            onClick={() => {
+                              setTypeFilter(prev => prev === f.id ? null : f.id as any);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                              active
+                                ? f.activeColor
+                                : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                            }`}
+                          >
+                            {f.label} ({f.count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Refrigeration (Ref) Category */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Storage</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => setRefFilter(prev => !prev)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                          refFilter
+                            ? 'bg-blue-500 text-white border-blue-500'
+                            : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        <ThermometerSnowflake className="w-3 h-3" />
+                        Ref Storage ({filterCounts.refrigerated})
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-[#141414]/5">
+                {/* Row 2: Expiry & Reset */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-[#141414]/5">
                   <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Exp. Start</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">
+                      Exp. Range (Start)
+                    </label>
                     <input
                       type="date"
                       value={expStart}
                       onChange={(e) => setExpStart(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm shadow-sm"
+                      className="w-full px-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-medium text-[#141414]/80"
                     />
                   </div>
+
                   <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Exp. End</label>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">
+                      Exp. Range (End)
+                    </label>
                     <input
                       type="date"
                       value={expEnd}
                       onChange={(e) => setExpEnd(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-white border border-[#141414]/10 rounded-xl text-sm shadow-sm"
+                      className="w-full px-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-medium text-[#141414]/80"
                     />
                   </div>
+
                   <div className="flex items-end">
-                      <button
-                        onClick={() => { 
-                          setAvailableGenericsOnly(false); 
-                          setAvailableBrandsOnly(false);
-                          setStockFilter('all');
-                          setExpStart(''); 
-                          setExpEnd(''); 
-                          setOrderTarget(1); 
-                        }}
-                        className="w-full h-10 text-red-500 text-xs font-bold hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition-all flex items-center justify-center gap-2"
-                      >
-                        <XIcon className="w-4 h-4" />
-                        Reset
-                      </button>
+                    <button
+                      onClick={() => {
+                        setStockFilter('all');
+                        setClassificationFilter(null);
+                        setTypeFilter(null);
+                        setRefFilter(false);
+                        setExpStart('');
+                        setExpEnd('');
+                        setSearchQuery('');
+                        setOrderTarget(1);
+                      }}
+                      className="w-full h-10 flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 rounded-xl text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
+                    >
+                      <XIcon className="w-4 h-4" />
+                      Reset All Filters
+                    </button>
                   </div>
                 </div>
+
               </div>
             </motion.div>
           )}

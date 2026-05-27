@@ -40,6 +40,12 @@ export default function AdminDashboard() {
     const { audits, loading: auditsLoading } = useAudits(10);
     const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
+  const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
+  const [typeFilter, setTypeFilter] = useState<'generic' | 'brand' | null>(null);
+  const [refFilter, setRefFilter] = useState<boolean>(false);
+  const [expStart, setExpStart] = useState('');
+  const [expEnd, setExpEnd] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
@@ -496,6 +502,7 @@ export default function AdminDashboard() {
       );
     }
 
+    // Stock Status (Single-select, "all" default)
     if (stockFilter !== 'all') {
       result = result.filter(m => {
         const isOut = m.qoh <= 0;
@@ -506,6 +513,56 @@ export default function AdminDashboard() {
         if (stockFilter === 'low') return isLow;
         if (stockFilter === 'out') return isOut;
         return true;
+      });
+    }
+
+    // Classification (Single-select or unselect)
+    if (classificationFilter) {
+      result = result.filter(m => {
+        const isQatari = !!(m.qatari && (m.qatari.trim().toUpperCase() === 'TRUE' || m.qatari.trim().toUpperCase() === 'QATARI'));
+        const isRestricted = !!(m.restriction && m.restriction.trim() !== '');
+        
+        if (classificationFilter === 'qatari') return isQatari;
+        if (classificationFilter === 'restricted') return isRestricted;
+        return true;
+      });
+    }
+
+    // Type (Single-select or unselect)
+    if (typeFilter) {
+      result = result.filter(m => {
+        const isGeneric = !!(m.generic && m.generic.toLowerCase().includes('generic'));
+        const isBrand = !!(m.generic && m.generic.toLowerCase().includes('brand'));
+        
+        if (typeFilter === 'generic') return isGeneric;
+        if (typeFilter === 'brand') return isBrand;
+        return true;
+      });
+    }
+
+    // Refrigerated filter (Ref selection or unselect)
+    if (refFilter) {
+      result = result.filter(m => !!m.isRefrigerated);
+    }
+
+    // EXP RANGE
+    if (expStart || expEnd) {
+      const start = expStart ? new Date(expStart) : null;
+      const end = expEnd ? new Date(expEnd) : null;
+
+      result = result.filter(m => {
+        const dates = [m.expiration1, m.expiration2, m.expiration3]
+          .map(parseExpDate)
+          .filter(d => d !== null) as Date[];
+
+        if (dates.length === 0) return !expStart && !expEnd;
+
+        return dates.some(d => {
+          let matches = true;
+          if (start && d < start) matches = false;
+          if (end && d > end) matches = false;
+          return matches;
+        });
       });
     }
 
@@ -536,7 +593,21 @@ export default function AdminDashboard() {
       if (valA > valB) return 1 * multiplier;
       return 0;
     });
-  }, [medications, sortField, sortOrder, stockFilter, searchQuery]);
+  }, [medications, sortField, sortOrder, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, searchQuery]);
+
+  const filterCounts = useMemo(() => {
+    const all = medications.length;
+    const inStock = medications.filter(m => m.qoh > 0 && !(m.maxQty > 0 && m.qoh < m.maxQty * 0.3)).length;
+    const lowStock = medications.filter(m => m.qoh > 0 && m.maxQty > 0 && m.qoh < m.maxQty * 0.3).length;
+    const outOfStock = medications.filter(m => m.qoh <= 0).length;
+    const qatari = medications.filter(m => m.qatari && (m.qatari.trim().toUpperCase() === 'TRUE' || m.qatari.trim().toUpperCase() === 'QATARI') && m.qoh > 0).length;
+    const restricted = medications.filter(m => m.restriction && m.restriction.trim() !== '' && m.qoh > 0).length;
+    const generics = medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
+    const brands = medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
+    const refrigerated = medications.filter(m => m.isRefrigerated && m.qoh > 0).length;
+
+    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, refrigerated };
+  }, [medications]);
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1915,7 +1986,7 @@ export default function AdminDashboard() {
                         : loc.id === PharmacyLocation.PEDIATRIC
                           ? 'bg-sky-100 border border-sky-200 text-sky-700 shadow-sm'
                           : loc.id === PharmacyLocation.MESAIEED
-                            ? 'bg-orange-100 border border-orange-200 text-orange-700 shadow-sm'
+                            ? 'bg-orange-100 border border-orange-200 text-[#F27D26] shadow-sm'
                             : 'bg-white shadow-sm text-[#141414]'
                       : 'text-[#141414]/40 hover:text-[#141414]'
                   }`}
@@ -1925,32 +1996,220 @@ export default function AdminDashboard() {
               ))}
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-2 border-t border-[#141414]/5 mt-2">
-              {[
-                { id: 'all', label: 'All', icon: Filter },
-                { id: 'in', label: 'In Stock', icon: Check },
-                { id: 'low', label: 'Low Stock', icon: AlertTriangle },
-                { id: 'out', label: 'Out of Stock', icon: Trash2 }
-              ].map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setStockFilter(f.id as any)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border ${
-                    stockFilter === f.id
-                      ? f.id === 'in' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 shadow-sm' :
-                        f.id === 'low' ? 'bg-amber-100 text-amber-700 border-amber-200 shadow-sm' :
-                        f.id === 'out' ? 'bg-red-100 text-red-700 border-red-200 shadow-sm' :
-                        'bg-[#141414] text-white border-[#141414] shadow-sm'
-                      : 'bg-white text-[#141414]/40 border-[#141414]/10 hover:border-[#141414]/20 hover:text-[#141414]'
-                  }`}
-                >
-                  <f.icon size={12} />
-                  {f.label}
-                </button>
-              ))}
-            </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
+                showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd
+                  ? 'bg-[#141414] text-white shadow-lg'
+                  : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              {showFilters ? 'Hide Filters' : 'Advanced Filters'}
+            </button>
           </div>
         </div>
+
+        {/* Active Filters Bar */}
+        {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd) && (
+          <div className="flex flex-wrap items-center gap-2 p-3 bg-[#141414]/[0.02] rounded-2xl border border-[#141414]/5 animate-in slide-in-from-top-2">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-[#141414]/40 flex items-center gap-1">
+              Active:
+            </span>
+            {stockFilter !== 'all' && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Stock: {stockFilter === 'in' ? 'In Stock' : stockFilter === 'low' ? 'Low Stock' : 'Out of Stock'}
+              </span>
+            )}
+            {classificationFilter !== null && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Class: {classificationFilter === 'qatari' ? 'Qatari' : 'Restricted'}
+              </span>
+            )}
+            {typeFilter !== null && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Type: {typeFilter === 'generic' ? 'Generics' : 'Brands'}
+              </span>
+            )}
+            {refFilter && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5 flex items-center gap-1">
+                <ThermometerSnowflake className="w-2.5 h-2.5 text-[#141414]/60" />
+                Storage: Refrigerated
+              </span>
+            )}
+            {(expStart || expEnd) && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Exp Range: {expStart || '*'} to {expEnd || '*'}
+              </span>
+            )}
+            <button 
+              onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter(false); setExpStart(''); setExpEnd(''); }}
+              className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
+            >
+              Clear All
+            </button>
+          </div>
+        )}
+
+        {/* Collapsible Filter Dropdown Container */}
+        {showFilters && (
+          <div className="bg-white p-5 rounded-2xl border border-[#141414]/10 shadow-md flex flex-col gap-5 animate-in slide-in-from-top-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              
+              {/* Stock Status selector */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Stock Status</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setStockFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      stockFilter === 'all'
+                        ? 'bg-[#141414] text-white border-[#141414]'
+                        : 'bg-white text-[#141414]/65 border-[#141414]/5 hover:bg-[#141414]/5'
+                    }`}
+                  >
+                    All ({filterCounts.all})
+                  </button>
+                  {[
+                    { id: 'in', label: 'In Stock', count: filterCounts.inStock, color: 'bg-emerald-500 text-white border-emerald-500' },
+                    { id: 'low', label: 'Low Stock', count: filterCounts.lowStock, color: 'bg-amber-500 text-white border-amber-500' },
+                    { id: 'out', label: 'Out of Stock', count: filterCounts.outOfStock, color: 'bg-red-500 text-white border-red-500' }
+                  ].map(f => {
+                    const active = stockFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setStockFilter(f.id as any)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          active ? f.color : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        {f.label} ({f.count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Classification selector */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Classification</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'qatari', label: 'Qatari', count: filterCounts.qatari, color: 'bg-[#F27D26] text-white border-[#F27D26]' },
+                    { id: 'restricted', label: 'Restricted', count: filterCounts.restricted, color: 'bg-blue-500 text-white border-blue-500' }
+                  ].map(f => {
+                    const active = classificationFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => {
+                          setClassificationFilter(prev => prev === f.id ? null : f.id as any);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          active ? f.color : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        {f.label} ({f.count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Type Category selector */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Type</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'generic', label: 'Generics', count: filterCounts.generics, color: 'bg-yellow-500 text-white border-yellow-500' },
+                    { id: 'brand', label: 'Brands', count: filterCounts.brands, color: 'bg-orange-500 text-white border-orange-500' }
+                  ].map(f => {
+                    const active = typeFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => {
+                          setTypeFilter(prev => prev === f.id ? null : f.id as any);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          active ? f.color : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        {f.label} ({f.count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Refrigeration (Ref) Category */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Storage</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setRefFilter(prev => !prev)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                      refFilter
+                        ? 'bg-blue-500 text-white border-blue-500'
+                        : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                    }`}
+                  >
+                    <ThermometerSnowflake className="w-3 h-3" />
+                    Ref Storage ({filterCounts.refrigerated})
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Exp dates / reset in collapsible filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-[#141414]/5">
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                  Exp. Range (Start)
+                </label>
+                <input
+                  type="date"
+                  value={expStart}
+                  onChange={(e) => setExpStart(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-xs focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-medium"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
+                  Exp. Range (End)
+                </label>
+                <input
+                  type="date"
+                  value={expEnd}
+                  onChange={(e) => setExpEnd(e.target.value)}
+                  className="w-full px-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-xs focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-medium"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <button
+                  onClick={() => {
+                    setStockFilter('all');
+                    setClassificationFilter(null);
+                    setTypeFilter(null);
+                    setRefFilter(false);
+                    setExpStart('');
+                    setExpEnd('');
+                    setSearchQuery('');
+                  }}
+                  className="w-full h-10 flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 rounded-xl text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
+                >
+                  <XIcon className="w-4 h-4" />
+                  Reset All Filters
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
       </div>
 
       {/* Table Container */}
@@ -2174,14 +2433,22 @@ export default function AdminDashboard() {
                 </td>
               </tr>
             )}
-            {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all') && (
+            {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd) && (
               <tr>
                 <td colSpan={5} className="px-6 py-20 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Search className="w-8 h-8 text-[#141414]/10" />
                     <p className="text-sm font-bold text-[#141414]/40 italic">No products match your search or filter.</p>
                     <button 
-                      onClick={() => { setSearchQuery(''); setStockFilter('all'); }}
+                      onClick={() => {
+                        setSearchQuery('');
+                        setStockFilter('all');
+                        setClassificationFilter(null);
+                        setTypeFilter(null);
+                        setRefFilter(false);
+                        setExpStart('');
+                        setExpEnd('');
+                      }}
                       className="text-[10px] font-bold text-[#F27D26] hover:underline uppercase tracking-widest mt-2"
                     >
                       Clear all filters
@@ -2369,20 +2636,28 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all') && (
-           <div className="p-16 text-center flex flex-col items-center gap-3">
-             <Search className="w-10 h-10 text-[#141414]/10" />
-             <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-xs leading-relaxed px-4">
-               No medications match your <br/> current search criteria
-             </p>
-             <button 
-                onClick={() => { setSearchQuery(''); setStockFilter('all'); }}
-                className="mt-2 px-6 py-2.5 bg-[#F27D26]/10 text-[#F27D26] rounded-full text-[10px] font-bold uppercase tracking-widest"
-             >
-                Reset Search
-             </button>
-           </div>
-        )}
+         {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd) && (
+            <div className="p-16 text-center flex flex-col items-center gap-3">
+              <Search className="w-10 h-10 text-[#141414]/10" />
+              <p className="font-bold text-[#141414]/40 uppercase tracking-widest text-xs leading-relaxed px-4">
+                No medications match your <br/> current search criteria
+              </p>
+              <button 
+                 onClick={() => {
+                   setSearchQuery('');
+                   setStockFilter('all');
+                   setClassificationFilter(null);
+                   setTypeFilter(null);
+                   setRefFilter(false);
+                   setExpStart('');
+                   setExpEnd('');
+                 }}
+                 className="mt-2 px-6 py-2.5 bg-[#F27D26]/10 text-[#F27D26] rounded-full text-[10px] font-bold uppercase tracking-widest"
+              >
+                 Reset Search
+              </button>
+            </div>
+         )}
         
         {!loading && sortedMedications.map(med => {
           const isOutOfStock = med.qoh <= 0;
