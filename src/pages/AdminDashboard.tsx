@@ -75,6 +75,7 @@ export default function AdminDashboard() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isDirectRowCamera, setIsDirectRowCamera] = useState(false);
   const [isStreamActive, setIsStreamActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -192,6 +193,10 @@ export default function AdminDashboard() {
     }
     setIsCapturing(false);
     setCapturedImage(null);
+    if (isDirectRowCamera) {
+      setEditingId(null);
+      setIsDirectRowCamera(false);
+    }
   };
 
   useEffect(() => {
@@ -2487,9 +2492,28 @@ export default function AdminDashboard() {
               return (
                 <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : '')}`}>
                   <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono font-bold text-[#141414]/40">{med.itemCode}</span>
+                    <div className="flex items-center gap-4">
+                      {med.imageUrl ? (
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedImage(med.imageUrl!);
+                          }}
+                          className="w-10 h-10 bg-[#141414]/5 rounded-xl border border-[#141414]/10 overflow-hidden hover:scale-105 transition-transform flex-shrink-0"
+                          title="Click to zoom photo"
+                        >
+                          <img src={med.imageUrl} alt={med.itemName} className="w-full h-full object-cover" />
+                        </button>
+                      ) : (
+                        <div className="w-10 h-10 bg-[#141414]/5 rounded-xl border border-[#141414]/10 flex flex-shrink-0 items-center justify-center">
+                          <ImageIcon size={18} className="text-[#141414]/10" />
+                        </div>
+                      )}
+                      
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono font-bold text-[#141414]/40">{med.itemCode}</span>
                         {isNew ? (
                           <span className="inline-flex items-center gap-1 px-1.5 py-[1px] bg-[#F27D26]/10 text-[#F27D26] text-[8px] font-extrabold rounded-full tracking-tight whitespace-nowrap">
                             <Sparkles className="w-2 h-2" />
@@ -2538,7 +2562,8 @@ export default function AdminDashboard() {
                         )}
                       </button>
                     </div>
-                  </td>
+                  </div>
+                </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
@@ -2597,6 +2622,7 @@ export default function AdminDashboard() {
                         setForm(med);
                         setEditingId(med.id);
                         setIsAdding(false);
+                        setIsDirectRowCamera(true);
                         setIsCapturing(true);
                         startCamera();
                       }} 
@@ -2775,7 +2801,7 @@ export default function AdminDashboard() {
     </div>
 
       <AnimatePresence>
-        {(isAdding || editingId) && (
+        {(isAdding || (editingId && !isDirectRowCamera)) && (
           <MedicationFormModal
             isOpen={true}
             onClose={() => {
@@ -3101,8 +3127,20 @@ export default function AdminDashboard() {
                       RETAKE
                     </button>
                     <button 
-                      onClick={() => {
-                        setForm(prev => ({ ...prev, imageUrl: capturedImage }));
+                      onClick={async () => {
+                        if (isDirectRowCamera && editingId) {
+                          try {
+                            await medicationOps.update(editingId, { imageUrl: capturedImage || '' });
+                            setSuccess("Item photo updated successfully!");
+                            await refresh();
+                          } catch (err: any) {
+                            setError(`Failed to update photo: ${err.message}`);
+                          }
+                          setEditingId(null);
+                          setIsDirectRowCamera(false);
+                        } else {
+                          setForm(prev => ({ ...prev, imageUrl: capturedImage || '' }));
+                        }
                         stopCamera();
                       }}
                       className="flex-1 py-4 bg-[#F27D26] text-white rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-[#F27D26]/20 transition-all font-bold text-xs"
