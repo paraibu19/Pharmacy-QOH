@@ -7,6 +7,35 @@ import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from './sharedDb';
 import { localDb } from './localStorageDb';
 
+function cleanUndefined<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanUndefined(item)) as any;
+  }
+  
+  const isPlainObject = (val: any) => {
+    if (typeof val !== 'object' || val === null) return false;
+    const proto = Object.getPrototypeOf(val);
+    return proto === null || proto === Object.prototype;
+  };
+
+  if (!isPlainObject(obj)) {
+    return obj;
+  }
+
+  const cleaned: any = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const val = (obj as any)[key];
+      if (val !== undefined) {
+        cleaned[key] = cleanUndefined(val);
+      }
+    }
+  }
+  return cleaned as T;
+}
+
 export const medicationOps = {
   async add(med: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>) {
     if (!db) {
@@ -26,12 +55,12 @@ export const medicationOps = {
         throw new Error(`Item code ${med.itemCode} already exists in this location.`);
       }
 
-      const result = await addDoc(collection(db, path), {
+      const result = await addDoc(collection(db, path), cleanUndefined({
         ...med,
         addedAt: serverTimestamp(),
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
-      });
+      }));
       await systemOps.syncGlobalMetadata();
       return result;
     } catch (error) {
@@ -45,11 +74,11 @@ export const medicationOps = {
     }
     const path = `medications/${id}`;
     try {
-      const result = await updateDoc(doc(db, 'medications', id), {
+      const result = await updateDoc(doc(db, 'medications', id), cleanUndefined({
         ...data,
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
-      });
+      }));
       if (!skipSync) await systemOps.syncGlobalMetadata();
       return result;
     } catch (error) {
@@ -73,11 +102,11 @@ export const medicationOps = {
 
       for (const u of updates) {
         const medRef = doc(db, 'medications', u.id);
-        batch.update(medRef, {
+        batch.update(medRef, cleanUndefined({
           ...u.data,
           lastUpdatedAt: serverTimestamp(),
           updatedBy: auth?.currentUser?.uid || 'system',
-        });
+        }));
 
         count++;
         if (count >= 500) {
@@ -204,13 +233,13 @@ export const medicationOps = {
 
         if (existing) {
           const medRef = doc(db, 'medications', existing.id);
-          currentBatch.update(medRef, baseData);
+          currentBatch.update(medRef, cleanUndefined(baseData));
         } else {
           const newDoc = doc(colRef);
-          currentBatch.set(newDoc, {
+          currentBatch.set(newDoc, cleanUndefined({
             ...baseData,
             addedAt: serverTimestamp(),
-          });
+          }));
         }
 
         opCount++;
@@ -251,14 +280,14 @@ export const auditOps = {
     
     // 1. Update medication QOH
     const medRef = doc(db, 'medications', medId);
-    batch.update(medRef, {
+    batch.update(medRef, cleanUndefined({
       qoh: physicalCount,
       lastUpdatedAt: serverTimestamp(),
-    });
+    }));
 
     // 2. Log audit
     const auditRef = doc(collection(db, 'inventory_audits'));
-    batch.set(auditRef, {
+    batch.set(auditRef, cleanUndefined({
       itemCode,
       itemName,
       locationId,
@@ -267,7 +296,7 @@ export const auditOps = {
       variance: physicalCount - recordedQoh,
       auditedAt: serverTimestamp(),
       auditedBy: auth?.currentUser?.uid || auditedBy,
-    });
+    }));
 
     try {
       await batch.commit();

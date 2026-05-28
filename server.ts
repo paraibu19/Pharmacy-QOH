@@ -386,7 +386,21 @@ app.post('/api/translate', async (req, res) => {
     res.json(finalResults);
   } catch (error: any) {
     console.error('Translation endpoint error:', error);
-    res.status(500).json({ error: error.message || 'Internal translation failure' });
+    let errMsg = error.message || 'Internal translation failure';
+    
+    const lowerMsg = errMsg.toLowerCase();
+    if (
+      lowerMsg.includes('prepayment') || 
+      lowerMsg.includes('depleted') || 
+      lowerMsg.includes('resource_exhausted') || 
+      lowerMsg.includes('429') || 
+      lowerMsg.includes('quota') || 
+      lowerMsg.includes('billing')
+    ) {
+      errMsg = "The AI translation service is temporarily unavailable due to depleted prepay credits or rate limits on the Gemini API. You can still save and manage medications manually. To restore AI translations, please top up your balance or update your API key in AI Studio.";
+    }
+    
+    res.status(500).json({ error: errMsg });
   }
 });
 

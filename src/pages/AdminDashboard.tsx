@@ -1029,11 +1029,11 @@ export default function AdminDashboard() {
       if (dataToSave.enIndications && !dataToSave.hiIndications) {
         try {
           const trans = await translateIndications(dataToSave.enIndications!, ['hi', 'ur', 'ml', 'bn', 'tl']);
-          dataToSave.hiIndications = trans.hi;
-          dataToSave.urIndications = trans.ur;
-          dataToSave.mlIndications = trans.ml;
-          dataToSave.bnIndications = trans.bn;
-          dataToSave.tlIndications = trans.tl;
+          dataToSave.hiIndications = trans?.hi || '';
+          dataToSave.urIndications = trans?.ur || '';
+          dataToSave.mlIndications = trans?.ml || '';
+          dataToSave.bnIndications = trans?.bn || '';
+          dataToSave.tlIndications = trans?.tl || '';
         } catch (e) {
           console.warn("Manual translation failed", e);
         }
@@ -2833,11 +2833,11 @@ export default function AdminDashboard() {
               if (dataToSave.enIndications && !dataToSave.hiIndications) {
                 try {
                   const trans = await translateIndications(dataToSave.enIndications!, ['hi', 'ur', 'ml', 'bn', 'tl']);
-                  dataToSave.hiIndications = trans.hi;
-                  dataToSave.urIndications = trans.ur;
-                  dataToSave.mlIndications = trans.ml;
-                  dataToSave.bnIndications = trans.bn;
-                  dataToSave.tlIndications = trans.tl;
+                  dataToSave.hiIndications = trans?.hi || '';
+                  dataToSave.urIndications = trans?.ur || '';
+                  dataToSave.mlIndications = trans?.ml || '';
+                  dataToSave.bnIndications = trans?.bn || '';
+                  dataToSave.tlIndications = trans?.tl || '';
                 } catch (e) {
                   console.warn("Manual translation failed", e);
                 }
