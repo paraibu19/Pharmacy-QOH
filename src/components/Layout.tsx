@@ -139,39 +139,6 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 </div>
               </Link>
               
-              {/* Database Mode Status/Toggle */}
-              {isLocalMode ? (
-                <button 
-                  onClick={handleToggleDatabaseMode}
-                  title="Running on Local Server due to Firestore over-quota. Click to switch back and check if daily limitations are renewed."
-                  className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-full text-xs font-bold text-amber-700 shadow-sm transition-all cursor-pointer active:scale-95 flex-shrink-0"
-                >
-                  <CloudOff className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
-                  <span className="text-[9px] uppercase tracking-wider font-extrabold">Local Server Mode</span>
-                </button>
-              ) : (
-                <button
-                  onClick={handleToggleDatabaseMode}
-                  title="Integrating with Firebase Cloud Sync. Tap to switch to Local Server mode if cloud quota runs out."
-                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100/70 border border-emerald-100 rounded-full shadow-sm cursor-pointer transition-all active:scale-95"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex h-2 w-2">
-                      <span className={`absolute inline-flex h-full w-full rounded-full bg-emerald-400 ${isSynced ? 'animate-ping' : 'animate-pulse'} opacity-75`}></span>
-                      <span className={`relative inline-flex rounded-full h-2 w-2 bg-emerald-500`}></span>
-                    </div>
-                    <div className="flex flex-col -space-y-1 align-start text-left">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/60 animate-pulse">
-                        Cloud Sync (Live)
-                      </span>
-                      <span className="text-[7px] text-[#141414]/30 font-mono uppercase tracking-tighter">
-                        Instance Active
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              )}
-
               <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
                 <UploadCloud className="w-3 h-3" />
                 <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
@@ -226,42 +193,6 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
               className="lg:hidden border-t border-[#141414]/10 bg-white overflow-hidden shadow-xl"
             >
               <div className="px-4 pt-4 pb-8 space-y-3">
-                {isLocalMode ? (
-                  <button 
-                    onClick={handleToggleDatabaseMode}
-                    className="w-full flex lg:hidden items-center justify-between px-4 py-3 border border-amber-200 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <CloudOff className="w-4 h-4 text-amber-600 animate-bounce" />
-                      <div className="flex flex-col -space-y-0.5 text-left">
-                        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-amber-700">
-                          Local Server Mode Active
-                        </span>
-                        <span className="text-[8px] text-amber-600 font-bold uppercase tracking-widest">Tap to restore Cloud Sync</span>
-                      </div>
-                    </div>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleToggleDatabaseMode}
-                    className="w-full flex lg:hidden items-center justify-between px-4 py-3 border border-[#141414]/10 rounded-xl bg-white hover:bg-neutral-50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex h-2 w-2">
-                        <span className={`absolute inline-flex h-full w-full rounded-full bg-emerald-400 ${isSynced ? 'animate-ping' : 'animate-pulse'} opacity-75`}></span>
-                        <span className={`relative inline-flex rounded-full h-2 w-2 bg-emerald-500`}></span>
-                      </div>
-                      <div className="flex flex-col -space-y-0.5 text-left">
-                        <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#141414]/60 animate-pulse">
-                          Cloud Sync Connected
-                        </span>
-                        <span className="text-[8px] text-[#141414]/40 font-mono font-bold uppercase tracking-widest">Tap to force Local Server DB</span>
-                      </div>
-                    </div>
-                    <RefreshCw className={`w-3.5 h-3.5 text-[#141414]/20 ${isSynced ? 'animate-spin' : ''}`} />
-                  </button>
-                )}
-
                 <div className="flex lg:hidden items-center gap-2 px-4 py-2 bg-[#F27D26]/5 rounded-xl text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
                   <UploadCloud className="w-3 h-3" />
                   <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>

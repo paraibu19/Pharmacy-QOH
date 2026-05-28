@@ -1325,23 +1325,6 @@ export default function AdminDashboard() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-6">
           <div className="flex flex-col w-full md:w-auto">
             <div className="flex items-center flex-wrap gap-2 mb-4">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-[#141414]/10 rounded-full shadow-sm">
-                <div className={`w-2 h-2 rounded-full ${isFirebaseConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-400 animate-pulse'}`} />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/60">
-                  Cloud Status: {isFirebaseConnected ? 'Online (Firebase)' : 'Local Mode (Fallback)'}
-                </span>
-                {!isFirebaseConnected && (
-                  <div className="group relative ml-1">
-                    <AlertCircle size={12} className="text-amber-500 cursor-help" />
-                    <div className="absolute left-0 top-full pt-2 z-50 hidden group-hover:block w-48">
-                      <div className="bg-[#141414] text-white text-[10px] p-3 rounded-xl shadow-xl leading-relaxed">
-                        Firebase not configured or disabled. App is using local storage and API routes.
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
               <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10 shadow-sm">
                 <UploadCloud className="w-3 h-3" />
                 <span className="opacity-60 text-[#141414]">Inventory Updated:</span>
