@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const app = express();
 const PORT = 3000;
@@ -10,6 +11,24 @@ const MEDS_FILE = path.join(DATA_DIR, 'medications.json');
 const AUDITS_FILE = path.join(DATA_DIR, 'audits.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const TRANSLATION_CACHE_FILE = path.join(DATA_DIR, 'translation_cache.json');
+
+function getTranslationHashSync(text: string): string {
+  const clean = (text || '').trim().toLowerCase();
+  if (!clean) return '';
+  try {
+    const hash = crypto.createHash('sha256').update(clean).digest('hex');
+    return 'tc_' + hash.slice(0, 50);
+  } catch (e) {
+    let h1 = 5381;
+    let h2 = 127;
+    for (let i = 0; i < clean.length; i++) {
+      const char = clean.charCodeAt(i);
+      h1 = (h1 * 33) ^ char;
+      h2 = (h2 * 37) ^ char;
+    }
+    return 'tcfb_' + Math.abs(h1).toString(36) + '_' + Math.abs(h2).toString(36);
+  }
+}
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -190,8 +209,19 @@ app.post('/api/medications/bulk', (req, res) => {
       });
     }
 
+    // Load translation cache
+    let translationCache: Record<string, any> = {};
+    try {
+      if (fs.existsSync(TRANSLATION_CACHE_FILE)) {
+        translationCache = JSON.parse(fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8'));
+      }
+    } catch (e) {
+      console.warn('Failed to parse translation cache inside bulk endpoint:', e);
+    }
+
     const newMeds = itemsToProcess.map((m: any) => {
       const existingIndex = meds.findIndex((em: any) => em.locationId === m.locationId && em.itemCode === m.itemCode);
+      const existing = existingIndex !== -1 ? meds[existingIndex] : null;
       
       let imageUrl = m.imageUrl;
       if (options?.photoStrategy === 'keep') {
@@ -202,10 +232,34 @@ app.post('/api/medications/bulk', (req, res) => {
         imageUrl = null;
       }
 
+      // Check translation cache on the server
+      const itemText = (m.enIndications && m.enIndications.trim() !== '') ? m.enIndications.trim() : m.arIndications?.trim() || '';
+      let cachedTrans: any = null;
+      if (itemText) {
+        const hash = getTranslationHashSync(itemText);
+        if (hash && translationCache[hash]) {
+          cachedTrans = translationCache[hash];
+        }
+      }
+
+      const getCachedField = (key: string, backupKey: string) => {
+        if (!cachedTrans) return '';
+        return cachedTrans[key] || cachedTrans[backupKey] || '';
+      };
+
+      const transFields = {
+        hiIndications: m.hiIndications || existing?.hiIndications || getCachedField('hiIndications', 'hi') || '',
+        urIndications: m.urIndications || existing?.urIndications || getCachedField('urIndications', 'ur') || '',
+        mlIndications: m.mlIndications || existing?.mlIndications || getCachedField('mlIndications', 'ml') || '',
+        bnIndications: m.bnIndications || existing?.bnIndications || getCachedField('bnIndications', 'bn') || '',
+        tlIndications: m.tlIndications || existing?.tlIndications || getCachedField('tlIndications', 'tl') || ''
+      };
+
       if (existingIndex !== -1) {
         meds[existingIndex] = { 
           ...meds[existingIndex], 
           ...m, 
+          ...transFields,
           imageUrl: options?.photoStrategy === 'remove' ? null : (imageUrl || meds[existingIndex].imageUrl),
           lastUpdatedAt: new Date().toISOString() 
         };
@@ -213,6 +267,7 @@ app.post('/api/medications/bulk', (req, res) => {
       } else {
         const nm = {
           ...m,
+          ...transFields,
           imageUrl: imageUrl || null,
           id: Math.random().toString(36).substring(2, 11),
           addedAt: new Date().toISOString(),

@@ -790,7 +790,29 @@ export default function AdminDashboard() {
         await medicationOps.bulkAdd(allMedsList, { photoStrategy: importPhotoStrategy });
         await refresh();
         
-        const untranslatedCount = allMedsList.filter(m => m.enIndications && !m.hiIndications).length;
+        // Fetch up-to-date medications to correctly check for missing translations
+        let latestMeds: Medication[] = [];
+        try {
+          if (!db) {
+            latestMeds = await sharedDb.getMedications();
+          } else {
+            const snap = await getDocs(query(collection(db, 'medications')));
+            latestMeds = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+          }
+        } catch (err) {
+          console.warn('Failed to fetch latest medications for translation count:', err);
+          latestMeds = [];
+        }
+
+        // Check untranslated count amongst the locations that were imported
+        const uploadedLocs = new Set(allMedsList.map(m => m.locationId));
+        const filteredLatest = latestMeds.filter(m => uploadedLocs.has(m.locationId));
+
+        const untranslatedCount = filteredLatest.filter(m => 
+          ((m.enIndications && m.enIndications.trim() !== '') || (m.arIndications && m.arIndications.trim() !== '')) && 
+          (!m.hiIndications || m.hiIndications.trim() === '')
+        ).length;
+
         if (untranslatedCount > 0) {
           setSuccess(`Imported ${allMedsList.length} items. ${untranslatedCount} items need translation. Click 'AI Translate Missing' to process them.`);
         } else {
