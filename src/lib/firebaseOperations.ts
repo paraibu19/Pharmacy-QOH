@@ -499,21 +499,27 @@ export const translationCacheOps = {
   },
 
   async saveTranslations(entries: Record<string, any>) {
-    if (!db) {
-      try {
-        const serverPayload: Record<string, any> = {};
-        for (const [text, data] of Object.entries(entries)) {
-          const hash = await getTranslationHash(text);
+    // Always sync with the server-side cache
+    try {
+      const serverPayload: Record<string, any> = {};
+      for (const [text, data] of Object.entries(entries)) {
+        const hash = await getTranslationHash(text);
+        if (hash) {
           serverPayload[hash] = data;
         }
+      }
+      if (Object.keys(serverPayload).length > 0) {
         await fetch('/api/translation_cache', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(serverPayload)
         });
-      } catch (err) {
-        console.warn('Failed to write translation cache to server:', err);
       }
+    } catch (err) {
+      console.warn('Failed to write translation cache to server:', err);
+    }
+
+    if (!db) {
       return;
     }
 

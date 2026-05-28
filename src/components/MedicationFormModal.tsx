@@ -176,9 +176,19 @@ export default function MedicationFormModal({
                 {/* Photo Section */}
               <div className="flex flex-col md:flex-row gap-6 items-start">
                 <div className="relative group shrink-0">
-                  <div className="w-32 h-32 md:w-40 md:h-40 bg-[#141414]/5 rounded-3xl border-2 border-dashed border-[#141414]/10 flex items-center justify-center overflow-hidden transition-all group-hover:border-[#F27D26]/30">
+                  <div className="w-32 h-32 md:w-40 md:h-40 bg-[#141414]/5 rounded-3xl border-2 border-dashed border-[#141414]/10 flex items-center justify-center overflow-hidden transition-all group-hover:border-[#F27D26]/30 relative">
                     {form.imageUrl ? (
-                      <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <>
+                        <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setForm(prev => ({ ...prev, imageUrl: '' }))}
+                          className="absolute top-2 left-2 p-2 bg-red-500/90 hover:bg-red-600 hover:scale-105 active:scale-95 text-white rounded-xl shadow-md backdrop-blur-sm transition-all z-10"
+                          title="Delete Photo"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </>
                     ) : (
                       <ImageIcon size={32} className="text-[#141414]/10" />
                     )}

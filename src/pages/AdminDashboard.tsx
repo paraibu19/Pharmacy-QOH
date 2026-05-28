@@ -1474,7 +1474,7 @@ export default function AdminDashboard() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             className={`p-4 border rounded-2xl flex items-start justify-between gap-4 shadow-sm ${
-              error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')
+              error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit') || error.toLowerCase().includes('translate') || error.toLowerCase().includes('gemini') || error.toLowerCase().includes('prepay')
               ? 'bg-amber-50 border-amber-200 text-amber-800'
               : 'bg-red-50 border-red-200 text-red-700'
             }`}
@@ -1484,13 +1484,18 @@ export default function AdminDashboard() {
               <div className="space-y-1">
                 <p className="text-sm font-bold uppercase tracking-tight">System Message</p>
                 <div className="text-xs font-medium leading-relaxed">
-                  {error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit') ? (
+                  {(error.toLowerCase().includes('database') || error.toLowerCase().includes('firestore') || error.toLowerCase().includes('reads')) && (error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')) ? (
                     <div className="space-y-2">
                       <p className="font-black text-red-600">DAILY DATABASE READ LIMIT REACHED</p>
                       <p>Every account has a free limit of 50,000 reads per day. This usually happens after large bulk imports or heavy usage.</p>
                       <p className="p-2 bg-white/50 rounded border border-amber-300">
                         <strong>Solution:</strong> The limit resets automatically <strong>tomorrow</strong> (US time). For now, most features will still work in "Offline Mode" if you've visited the page recently.
                       </p>
+                    </div>
+                  ) : error.toLowerCase().includes('translate') || error.toLowerCase().includes('gemini') || error.toLowerCase().includes('prepay') || error.toLowerCase().includes('depleted') ? (
+                    <div className="space-y-2">
+                      <p className="font-black text-amber-900">AI TRANSLATION SERVICE LIMIT / SERVICE UNAVAILABLE</p>
+                      <p>{error}</p>
                     </div>
                   ) : (
                     <p>{error}</p>
@@ -1501,7 +1506,7 @@ export default function AdminDashboard() {
             <button 
               onClick={() => setError(null)}
               className={`p-1 rounded-lg transition-colors ${
-                error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit')
+                error.toLowerCase().includes('quota') || error.toLowerCase().includes('limit') || error.toLowerCase().includes('translate') || error.toLowerCase().includes('gemini') || error.toLowerCase().includes('prepay')
                 ? 'hover:bg-amber-100 text-amber-500'
                 : 'hover:bg-red-100 text-red-500'
               }`}

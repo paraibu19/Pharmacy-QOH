@@ -314,6 +314,7 @@ app.post('/api/system/reset', (req, res) => {
 });
 
 app.post('/api/translate', async (req, res) => {
+  const finalResults: Record<string, Record<string, string>> = {};
   try {
     const { items, targetLanguages } = req.body;
     if (!Array.isArray(items) || !Array.isArray(targetLanguages)) {
@@ -325,12 +326,47 @@ app.post('/api/translate', async (req, res) => {
       return res.json({});
     }
 
+    // Load server-side translation cache
+    let translationCache: Record<string, any> = {};
+    try {
+      if (fs.existsSync(TRANSLATION_CACHE_FILE)) {
+        translationCache = JSON.parse(fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8'));
+      }
+    } catch (e) {
+      console.warn('Failed to read translation cache inside /api/translate:', e);
+    }
+
+    // Separate cached items from newly added items
+    const itemsToProcess: { id: string; text: string; hash: string }[] = [];
+
+    validItems.forEach(item => {
+      const hash = getTranslationHashSync(item.text);
+      const cached = translationCache[hash];
+      if (cached && (cached.hi || cached.hiIndications || cached.ur || cached.urIndications)) {
+        // Cache hit! Map keys properly
+        finalResults[item.id] = {
+          hi: cached.hi || cached.hiIndications || '',
+          ur: cached.ur || cached.urIndications || '',
+          ml: cached.ml || cached.mlIndications || '',
+          bn: cached.bn || cached.bnIndications || '',
+          tl: cached.tl || cached.tlIndications || ''
+        };
+      } else {
+        itemsToProcess.push({ id: item.id, text: item.text, hash });
+      }
+    });
+
+    if (itemsToProcess.length === 0) {
+      console.log('All requested items successfully resolved from server-side translation cache. 0 Gemini API calls were made.');
+      return res.json(finalResults);
+    }
+
     // Lazy initialization of Gemini
     const ai = getGeminiClient();
 
-    // Deduplicate
+    // Deduplicate the items to process to save Gemini quota
     const textToIds: Record<string, string[]> = {};
-    validItems.forEach(item => {
+    itemsToProcess.forEach(item => {
       if (!textToIds[item.text]) textToIds[item.text] = [];
       textToIds[item.text].push(item.id);
     });
@@ -359,6 +395,7 @@ app.post('/api/translate', async (req, res) => {
       "unique_1": { ... }
     }`;
 
+    console.log(`Translating ${uniqueItems.length} newly added unique items with Gemini API...`);
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
@@ -373,34 +410,81 @@ app.post('/api/translate', async (req, res) => {
     }
 
     const uniqueResults = JSON.parse(responseText);
-    const finalResults: Record<string, Record<string, string>> = {};
+    let cacheUpdated = false;
+
     uniqueItems.forEach(uItem => {
       const trans = uniqueResults[uItem.id];
       if (trans) {
+        const hash = getTranslationHashSync(uItem.text);
+        if (hash) {
+          translationCache[hash] = {
+            hi: trans.hi || '',
+            ur: trans.ur || '',
+            ml: trans.ml || '',
+            bn: trans.bn || '',
+            tl: trans.tl || '',
+            hiIndications: trans.hi || '',
+            urIndications: trans.ur || '',
+            mlIndications: trans.ml || '',
+            bnIndications: trans.bn || '',
+            tlIndications: trans.tl || '',
+            sourceText: uItem.text,
+            updatedAt: new Date().toISOString()
+          };
+          cacheUpdated = true;
+        }
+
         textToIds[uItem.text].forEach(originalId => {
           finalResults[originalId] = trans;
         });
       }
     });
 
+    if (cacheUpdated) {
+      try {
+        fs.writeFileSync(TRANSLATION_CACHE_FILE, JSON.stringify(translationCache, null, 2));
+        console.log(`Successfully stored ${Object.keys(uniqueItems).length} new translations on the server.`);
+      } catch (writeErr) {
+        console.warn('Failed to save translation cache file:', writeErr);
+      }
+    }
+
     res.json(finalResults);
   } catch (error: any) {
-    console.error('Translation endpoint error:', error);
     let errMsg = error.message || 'Internal translation failure';
-    
     const lowerMsg = errMsg.toLowerCase();
-    if (
+    const isQuotaExhausted = 
       lowerMsg.includes('prepayment') || 
       lowerMsg.includes('depleted') || 
       lowerMsg.includes('resource_exhausted') || 
       lowerMsg.includes('429') || 
       lowerMsg.includes('quota') || 
-      lowerMsg.includes('billing')
-    ) {
-      errMsg = "The AI translation service is temporarily unavailable due to depleted prepay credits or rate limits on the Gemini API. You can still save and manage medications manually. To restore AI translations, please top up your balance or update your API key in AI Studio.";
+      lowerMsg.includes('billing');
+
+    if (isQuotaExhausted) {
+      console.warn('Translation endpoint gracefully handled Gemini API quota/pre-payment limit.');
+    } else {
+      console.error('Translation endpoint error:', error);
     }
     
-    res.status(500).json({ error: errMsg });
+    // Graceful fallback: return already cached items, and empty translations for the remaining requested items
+    const fallbackResults: Record<string, Record<string, string>> = {};
+    const reqItems = req.body.items || [];
+    const targetLangs = req.body.targetLanguages || [];
+    reqItems.forEach((item: any) => {
+      if (item && item.id) {
+        if (finalResults[item.id]) {
+          fallbackResults[item.id] = finalResults[item.id];
+        } else {
+          fallbackResults[item.id] = targetLangs.reduce((acc: any, lang: string) => {
+            acc[lang] = '';
+            return acc;
+          }, {});
+        }
+      }
+    });
+
+    res.json(fallbackResults);
   }
 });
 
