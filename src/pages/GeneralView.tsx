@@ -331,22 +331,15 @@ export default function GeneralView() {
     <div className="space-y-6 md:space-y-8" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">{t.title}</h1>
-            <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
-              <UploadCloud className="w-3 h-3" />
-              <span className="opacity-60 text-[#141414]">Last Update:</span>
-              <span className="text-[#F27D26]">
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
-              </span>
-            </div>
+        <div className="w-full">
+          <div className="flex items-center justify-between gap-3 mb-2 w-full">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight">{t.title}</h1>
             
             {/* Language Selector Dropdown */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <button 
                 onClick={() => setShowLanguageSelector(!showLanguageSelector)} 
-                className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#141414]/5 text-[#141414]/60 text-[10px] font-bold hover:bg-[#141414]/10 transition-all border border-[#141414]/5"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#141414]/5 text-[#141414]/60 text-[10px] font-bold hover:bg-[#141414]/10 transition-all border border-[#141414]/5"
               >
                 <Globe size={12} />
                 {LANGUAGES.find(l => l.id === language)?.label}
@@ -358,7 +351,7 @@ export default function GeneralView() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className={`absolute ${isRtl ? 'right-0' : 'left-0'} top-full mt-2 w-48 bg-white border border-[#141414]/10 rounded-2xl shadow-xl z-[150] overflow-hidden p-1 shadow-[#141414]/5`}
+                    className={`absolute ${isRtl ? 'left-0' : 'right-0'} md:${isRtl ? 'right-0' : 'left-0'} top-full mt-2 w-48 bg-white border border-[#141414]/10 rounded-2xl shadow-xl z-[150] overflow-hidden p-1 shadow-[#141414]/5`}
                   >
                     {LANGUAGES.map(lang => (
                       <button
@@ -377,7 +370,18 @@ export default function GeneralView() {
               </AnimatePresence>
             </div>
           </div>
-          <p className="text-[#141414]/60 max-w-xl text-sm md:text-base">
+
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[9px] font-bold text-[#F27D26] uppercase tracking-wider border border-[#F27D26]/10">
+              <UploadCloud className="w-3 h-3 text-[#F27D26]" />
+              <span className="opacity-60 text-[#141414]">Last Update:</span>
+              <span className="text-[#F27D26]">
+                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+              </span>
+            </div>
+          </div>
+
+          <p className="text-[#141414]/60 max-w-xl text-xs sm:text-sm md:text-base">
             {t.description}
           </p>
         </div>
@@ -815,13 +819,22 @@ export default function GeneralView() {
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 
-                    className="font-bold text-[#141414] text-sm group-active:text-[#F27D26] cursor-pointer hover:underline"
-                    onClick={() => setSelectedMedicationForReminder(med)}
-                  >
+                <div 
+                  className="cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => setSelectedMedicationForReminder(med)}
+                >
+                  <h3 className="font-bold text-[#141414] text-sm md:text-base leading-snug">
                     {med.itemName}
                   </h3>
+                  {med.generic && (
+                    <p className="text-[10px] md:text-xs italic text-[#141414]/40 leading-tight mt-0.5">
+                      {med.generic}
+                    </p>
+                  )}
+                </div>
+                
+                {/* Badges and action buttons container */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   {med.isRefrigerated && (
                     <button
                       type="button"
@@ -829,34 +842,33 @@ export default function GeneralView() {
                         e.stopPropagation();
                         setSelectedMedForRefrigeration(med);
                       }}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 active:scale-95 text-white rounded-full text-[9px] font-black uppercase tracking-tight shadow-md border border-white/20 cursor-pointer hover:bg-blue-700 transition-all"
+                      className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-lg text-[9px] font-black uppercase tracking-tight border border-blue-200 shadow-sm transition-all hover:bg-blue-200 hover:scale-[1.02] active:scale-95 cursor-pointer"
                     >
-                      <ThermometerSnowflake size={10} />
-                      REF
+                      <ThermometerSnowflake size={10} className="text-blue-600 animate-pulse" />
+                      <span>{t.refrigerated}</span>
                     </button>
                   )}
                   {(med.enIndications || med.arIndications) && (
                     <button 
                       onClick={() => setSelectedMedForIndications(med)}
-                      className="p-1 px-2 bg-[#F27D26]/5 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/info shadow-sm"
+                      className="p-1 px-1.5 bg-[#F27D26]/5 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 shadow-sm border border-[#F27D26]/10"
                       title={t.indicationsTitle}
                     >
-                      <Info size={12} className="group-hover/info:scale-110 transition-transform" />
+                      <Info size={10} />
                       <span className="text-[8px] font-black uppercase tracking-tighter">{t.indicationsInfo}</span>
                     </button>
                   )}
                   {med.to && (
                     <button 
                       onClick={() => setSelectedMedForLinks(med)}
-                      className="p-1 px-2 bg-[#F27D26]/10 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/btn"
+                      className="p-1 px-1.5 bg-[#F27D26]/10 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1"
                       title="View Linked Brand/Generic Items"
                     >
-                      <ArrowRightLeft size={10} className="group-hover/btn:rotate-180 transition-transform duration-500" />
+                      <ArrowRightLeft size={8} />
                       <span className="text-[8px] font-black uppercase tracking-tighter">Linked Info</span>
                     </button>
                   )}
                 </div>
-                {med.generic && <p className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</p>}
               </div>
               <span className={`inline-flex items-center px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest ${
                 med.qoh <= 0 
