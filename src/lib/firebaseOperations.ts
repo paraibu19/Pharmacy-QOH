@@ -14,13 +14,16 @@ function cleanUndefined<T>(obj: T): T {
     return obj.map(item => cleanUndefined(item)) as any;
   }
   
-  const isPlainObject = (val: any) => {
-    if (typeof val !== 'object' || val === null) return false;
-    const proto = Object.getPrototypeOf(val);
-    return proto === null || proto === Object.prototype;
-  };
+  if (typeof obj !== 'object') {
+    return obj;
+  }
+  
+  const constructor = (obj as any).constructor;
+  const isPlain = typeof constructor === 'function' 
+    ? (constructor === Object || constructor.name === 'Object') 
+    : (constructor === undefined);
 
-  if (!isPlainObject(obj)) {
+  if (!isPlain) {
     return obj;
   }
 
