@@ -93,7 +93,10 @@ export function useMedications(locationId?: PharmacyLocation) {
           err.message.toLowerCase().includes('permission-denied')
         ) {
           if (typeof window !== 'undefined') {
-            window.localStorage.setItem('firestore_fallback', 'true');
+            if (window.localStorage.getItem('firestore_fallback')) {
+              window.localStorage.removeItem('firestore_fallback');
+            }
+            window.sessionStorage.setItem('firestore_fallback', 'true');
             console.warn('Auto-switching useMedications to Local Server database mode.');
             setTimeout(() => {
               window.location.reload();

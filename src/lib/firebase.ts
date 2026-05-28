@@ -6,7 +6,11 @@ import firebaseConfig from '../../firebase-applet-config.json';
 // Check if user manually opted to use Local Server Mode or if Firestore is over quota
 const checkQuotaOver = () => {
   if (typeof window !== 'undefined') {
-    return window.localStorage.getItem('firestore_fallback') === 'true';
+    // Clear legacy permanent local storage fallback so they aren't stuck across sessions
+    if (window.localStorage.getItem('firestore_fallback') === 'true') {
+      window.localStorage.removeItem('firestore_fallback');
+    }
+    return window.sessionStorage.getItem('firestore_fallback') === 'true';
   }
   return false;
 };
@@ -94,7 +98,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     errMsg.toLowerCase().includes('permission-denied')
   ) {
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem('firestore_fallback', 'true');
+      if (window.localStorage.getItem('firestore_fallback')) {
+        window.localStorage.removeItem('firestore_fallback');
+      }
+      window.sessionStorage.setItem('firestore_fallback', 'true');
       console.warn('Auto-switching to Local Server database mode because Firestore limit or quota was exceeded.');
       setTimeout(() => {
         window.location.reload();

@@ -24,17 +24,22 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setIsLocalMode(window.localStorage.getItem('firestore_fallback') === 'true');
+      if (window.localStorage.getItem('firestore_fallback') === 'true') {
+        window.localStorage.removeItem('firestore_fallback');
+      }
+      setIsLocalMode(window.sessionStorage.getItem('firestore_fallback') === 'true');
     }
   }, []);
 
   const handleToggleDatabaseMode = () => {
-    if (isLocalMode) {
-      window.localStorage.removeItem('firestore_fallback');
-    } else {
-      window.localStorage.setItem('firestore_fallback', 'true');
+    if (typeof window !== 'undefined') {
+      if (isLocalMode) {
+        window.sessionStorage.removeItem('firestore_fallback');
+      } else {
+        window.sessionStorage.setItem('firestore_fallback', 'true');
+      }
+      window.location.reload();
     }
-    window.location.reload();
   };
 
   useEffect(() => {
