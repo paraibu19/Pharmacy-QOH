@@ -954,6 +954,7 @@ export default function AdminInventory() {
                 setTimeout(() => setSuccess(null), 3000);
               } catch (err: any) {
                 setError(err.message || 'Update failed');
+                throw err;
               } finally {
                 setIsUpdating(false);
               }

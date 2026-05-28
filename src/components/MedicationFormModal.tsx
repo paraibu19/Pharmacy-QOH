@@ -48,6 +48,7 @@ export default function MedicationFormModal({
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,9 +61,10 @@ export default function MedicationFormModal({
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const MAX_WIDTH = 400;
-        const scaleSize = MAX_WIDTH / img.width;
+        const imgWidth = img.width > 0 ? img.width : 400;
+        const scaleSize = MAX_WIDTH / imgWidth;
         canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scaleSize;
+        canvas.height = Math.round(img.height > 0 ? img.height * scaleSize : 300);
 
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -76,6 +78,7 @@ export default function MedicationFormModal({
   };
 
   useEffect(() => {
+    setError(null);
     if (initialData) {
       // If the image URL changed in parent (from camera capture), only sync that to avoid wiping typed fields
       if (initialData.imageUrl && initialData.imageUrl !== form.imageUrl) {
@@ -112,9 +115,13 @@ export default function MedicationFormModal({
     e.preventDefault();
     if (!form.itemCode || !form.itemName) return;
     setIsSaving(true);
+    setError(null);
     try {
       await onSave(form);
       onClose();
+    } catch (err: any) {
+      console.error("Save failure in modal:", err);
+      setError(err?.message || "Failed to save. Please review the form or try again.");
     } finally {
       setIsSaving(false);
     }
@@ -404,6 +411,16 @@ export default function MedicationFormModal({
               </div>
             </div>
           </div>
+
+          {error && (
+            <div className="mx-6 mt-2 mb-2 p-3 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-2.5 text-red-600 shrink-0">
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-black uppercase tracking-tight text-red-800">Save Error</p>
+                <p className="text-[10px] text-red-700 font-semibold leading-relaxed">{error}</p>
+              </div>
+            </div>
+          )}
 
           {/* Footer Buttons */}
             <div className="p-4 md:p-6 bg-white border-t border-[#141414]/5 flex flex-col md:flex-row gap-2 md:gap-3 shrink-0 pb-10 md:pb-6">

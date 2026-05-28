@@ -2823,8 +2823,7 @@ export default function AdminDashboard() {
               );
 
               if (isDuplicate) {
-                setError(`Duplicate Item Code: "${data.itemCode}" already exists in this location.`);
-                return;
+                throw new Error(`Duplicate Item Code: "${data.itemCode}" already exists in this location.`);
               }
 
               setError(null);

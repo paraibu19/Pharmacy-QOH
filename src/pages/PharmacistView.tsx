@@ -1524,6 +1524,7 @@ export default function UserHome() {
                 }
               } catch (err: any) {
                 setError(err.message || 'Update failed');
+                throw err;
               } finally {
                 setIsUpdating(false);
               }

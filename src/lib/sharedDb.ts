@@ -12,6 +12,10 @@ export const sharedDb = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(med)
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown error');
+      throw new Error(`Server failed to add medication: ${errText}`);
+    }
     return res.json();
   },
 
@@ -21,6 +25,10 @@ export const sharedDb = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown error');
+      throw new Error(`Server failed to update medication: ${errText}`);
+    }
     return res.json();
   },
 

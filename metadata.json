@@ -2,5 +2,5 @@
   "name": "AW-PharmaStock Pro",
   "description": "Centralized inventory and expiration tracking for Adult Emergency, Pediatric, and Mesaieed OPD pharmacies with automated updates and reporting.",
   "requestFramePermissions": ["camera"],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

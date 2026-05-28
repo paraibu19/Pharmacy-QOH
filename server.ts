@@ -3,6 +3,29 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+import { GoogleGenAI } from "@google/genai";
+
+dotenv.config();
+
+let aiClient: any = null;
+function getGeminiClient() {
+  if (!aiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is not configured. Please add it to Settings > Secrets in AI Studio.");
+    }
+    aiClient = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+  }
+  return aiClient;
+}
 
 const app = express();
 const PORT = 3000;
@@ -288,6 +311,83 @@ app.post('/api/system/reset', (req, res) => {
   fs.writeFileSync(AUDITS_FILE, '[]');
   fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
   res.json({ success: true });
+});
+
+app.post('/api/translate', async (req, res) => {
+  try {
+    const { items, targetLanguages } = req.body;
+    if (!Array.isArray(items) || !Array.isArray(targetLanguages)) {
+      return res.status(400).json({ error: 'Missing items array or targetLanguages array' });
+    }
+
+    const validItems = items.filter(item => item.text && item.text.trim());
+    if (validItems.length === 0) {
+      return res.json({});
+    }
+
+    // Lazy initialization of Gemini
+    const ai = getGeminiClient();
+
+    // Deduplicate
+    const textToIds: Record<string, string[]> = {};
+    validItems.forEach(item => {
+      if (!textToIds[item.text]) textToIds[item.text] = [];
+      textToIds[item.text].push(item.id);
+    });
+
+    const uniqueTexts = Object.keys(textToIds);
+    const uniqueItems = uniqueTexts.map((text, idx) => ({ id: `unique_${idx}`, text }));
+
+    const prompt = `Translate the following medical drug indications from English to these languages: ${targetLanguages.join(', ')}.
+    
+    I will provide a list of items with their IDs and the English text. 
+    Return a JSON object where the keys are the item IDs. 
+    Each value should be another object where the keys are the language codes (${targetLanguages.join(', ')}) and the values are the translations.
+    
+    Items to translate:
+    ${uniqueItems.map(item => `ID: "${item.id}"\nText: "${item.text}"`).join('\n---\n')}
+    
+    Format your response like this:
+    {
+      "unique_0": {
+        "hi": "...",
+        "ur": "...",
+        "ml": "...",
+        "bn": "...",
+        "tl": "..."
+      },
+      "unique_1": { ... }
+    }`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+
+    let responseText = response.text || '{}';
+    if (responseText.includes('```')) {
+      responseText = responseText.replace(/```json\n?|```/g, '').trim();
+    }
+
+    const uniqueResults = JSON.parse(responseText);
+    const finalResults: Record<string, Record<string, string>> = {};
+    uniqueItems.forEach(uItem => {
+      const trans = uniqueResults[uItem.id];
+      if (trans) {
+        textToIds[uItem.text].forEach(originalId => {
+          finalResults[originalId] = trans;
+        });
+      }
+    });
+
+    res.json(finalResults);
+  } catch (error: any) {
+    console.error('Translation endpoint error:', error);
+    res.status(500).json({ error: error.message || 'Internal translation failure' });
+  }
 });
 
 // Static assets from public folder (fallback)
