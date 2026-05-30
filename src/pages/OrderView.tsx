@@ -719,19 +719,28 @@ export default function OrderView() {
             </span>
           )}
           {typeFilter !== null && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1.5">
               Type: <span className="text-[#F27D26] uppercase">{typeFilter === 'generic' ? 'Generics' : 'Brands'}</span>
+              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0).length} items to order
+              </span>
             </span>
           )}
           {refFilter && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1">
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1.5">
               <ThermometerSnowflake className="w-2.5 h-2.5 text-[#F27D26]" /> 
               Storage: <span className="text-[#F27D26] uppercase">Refrigerated</span>
+              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0).length} items to order
+              </span>
             </span>
           )}
           {orderTarget !== 1 && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1.5">
               Target: <span className="text-[#F27D26]">{orderTarget === 0 ? 'ALL' : `${orderTarget * 100}%`}</span>
+              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0).length} items to order
+              </span>
             </span>
           )}
           {(expStart || expEnd) && (
