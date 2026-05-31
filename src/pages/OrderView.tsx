@@ -365,21 +365,97 @@ export default function OrderView() {
     }
   };
 
+  const getActiveFiltersList = () => {
+    const filters: { label: string; value: string; count?: number }[] = [];
+    
+    if (typeFilter) {
+      let val = "";
+      let cnt = 0;
+      if (typeFilter === 'generic') {
+        val = "GENERIC";
+        cnt = availableGenericsCount;
+      } else if (typeFilter === 'brand') {
+        val = "BRAND";
+        cnt = availableBrandsCount;
+      } else if (typeFilter === 'non-generic-and-non-brand') {
+        val = "NON-GENERIC & NON-BRAND";
+        cnt = availableNonGenericAndNonBrandCount;
+      }
+      filters.push({ label: "Type:", value: val, count: cnt });
+    }
+
+    if (refFilter !== 'all') {
+      const val = refFilter === 'refrigerated' ? 'REFRIGERATED' : 'NON-REFRIGERATED';
+      const cnt = refFilter === 'refrigerated' ? filterCounts.refrigerated : filterCounts.nonRefrigerated;
+      filters.push({ label: "Storage:", value: val, count: cnt });
+    }
+
+    if (consumptionFilter !== 'all') {
+      const val = consumptionFilter === 'positive' ? '> 0 CONSUMPTION' : '0 CONSUMPTION';
+      filters.push({ label: "Consumption:", value: val });
+    }
+
+    if (classificationFilter) {
+      const val = classificationFilter === 'qatari' ? 'QATARI' : 'RESTRICTED';
+      const cnt = classificationFilter === 'qatari' ? filterCounts.qatari : filterCounts.restricted;
+      filters.push({ label: "Classification:", value: val, count: cnt });
+    }
+
+    if (stockFilter !== 'all') {
+      let val = "";
+      let cnt = 0;
+      if (stockFilter === 'in') {
+        val = "IN STOCK";
+        cnt = filterCounts.inStock;
+      } else if (stockFilter === 'low') {
+        val = "LOW STOCK";
+        cnt = filterCounts.lowStock;
+      } else if (stockFilter === 'out') {
+        val = "OUT OF STOCK";
+        cnt = filterCounts.outOfStock;
+      }
+      filters.push({ label: "Stock Status:", value: val, count: cnt });
+    }
+
+    if (searchQuery) {
+      filters.push({ label: "Search:", value: `"${searchQuery.toUpperCase()}"` });
+    }
+
+    return filters;
+  };
+
   const downloadCSV = () => {
     const orderItems = sortedMeds.filter(m => m.orderQty > 0);
-    const headers = ['Serial no.', 'Item code', 'Item name', 'Order quantity', 'Exp1'];
+    const activeFilters = getActiveFiltersList();
+    const headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
     const rows = orderItems.map((m, i) => [
       i + 1,
       m.itemCode,
-      m.itemName,
+      `${m.itemName} [${m.consumption || 0}]`,
+      m.qoh,
       m.orderQty,
       m.expiration1 || '-'
     ]);
 
+    const metaRows: string[] = [];
+    if (activeFilters.length > 0) {
+      metaRows.push('ACTIVE FILTERS:');
+      activeFilters.forEach(f => {
+        metaRows.push(f.label);
+        metaRows.push(f.value);
+        if (f.count !== undefined) {
+          metaRows.push(`[${f.count}]`);
+        }
+      });
+      metaRows.push(`${orderItems.length} items to order`);
+      metaRows.push(''); // blank row separator
+    }
+
     const csvContent = [
+      ...metaRows.map(row => `"${row}"`),
       headers.join(','),
       ...rows.map(r => r.map((field, idx) => {
-        if (idx === 3 && typeof field === 'number') return `"${formatNumber(field)}"`;
+        if ((idx === 3 || idx === 4) && typeof field === 'number') return `"${formatNumber(field)}"`;
         return `"${field}"`;
       }).join(','))
     ].join('\n');
@@ -394,15 +470,37 @@ export default function OrderView() {
 
   const downloadExcel = () => {
     const orderItems = sortedMeds.filter(m => m.orderQty > 0);
-    const data = orderItems.map((m, i) => ({
-      'Serial no.': i + 1,
-      'Item code': m.itemCode,
-      'Item name': m.itemName,
-      'Order quantity': m.orderQty,
-      'Exp1': m.expiration1 || '-'
-    }));
+    const activeFilters = getActiveFiltersList();
+    const aoa: any[][] = [];
 
-    const ws = XLSX.utils.json_to_sheet(data);
+    if (activeFilters.length > 0) {
+      aoa.push(['ACTIVE FILTERS:']);
+      activeFilters.forEach(f => {
+        aoa.push([f.label]);
+        aoa.push([f.value]);
+        if (f.count !== undefined) {
+          aoa.push([`[${f.count}]`]);
+        }
+      });
+      aoa.push([`${orderItems.length} items to order`]);
+      aoa.push([]); // blank row
+    }
+
+    const headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
+    aoa.push(headers);
+
+    orderItems.forEach((m, i) => {
+      aoa.push([
+        i + 1,
+        m.itemCode,
+        `${m.itemName} [${m.consumption || 0}]`,
+        m.qoh,
+        m.orderQty,
+        m.expiration1 || '-'
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Store_Order");
     
@@ -412,6 +510,7 @@ export default function OrderView() {
   const downloadPDF = () => {
     const doc = new jsPDF() as any;
     const orderItems = sortedMeds.filter(m => m.orderQty > 0);
+    const activeFilters = getActiveFiltersList();
     
     doc.setFontSize(20);
     doc.text('Pharmacy Store Order', 14, 22);
@@ -422,11 +521,52 @@ export default function OrderView() {
     doc.text(`Generated: ${format(new Date(), 'EEEE, dd-MM-yyyy, hh:mm a').toUpperCase()}`, 14, 35);
     doc.text(`Total Items to Order: ${orderItems.length}`, 14, 40);
 
-    const headers = [['S.No', 'Item Code', 'Item Name', 'Order Qty', 'Exp 1']];
+    let currentY = 48;
+    if (activeFilters.length > 0) {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(20, 20, 20);
+      doc.text('ACTIVE FILTERS:', 14, currentY);
+      currentY += 5;
+
+      activeFilters.forEach(f => {
+        // Label
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.text(f.label, 14, currentY);
+        currentY += 4.5;
+
+        // Value
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(40, 40, 40);
+        doc.text(f.value, 14, currentY);
+        currentY += 4.5;
+
+        // Count (Bold)
+        if (f.count !== undefined) {
+          doc.setFont("Helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(20, 20, 20);
+          doc.text(`[${f.count}]`, 14, currentY);
+          currentY += 5;
+        }
+      });
+
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(40, 40, 40);
+      doc.text(`${orderItems.length} items to order`, 14, currentY);
+      currentY += 8; // spatial padding
+    }
+
+    const headers = [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1']];
     const data = orderItems.map((m, i) => [
       i + 1,
       m.itemCode,
-      m.itemName,
+      `${m.itemName} [${m.consumption || 0}]`,
+      formatNumber(m.qoh),
       formatNumber(m.orderQty),
       m.expiration1 || '-'
     ]);
@@ -439,7 +579,7 @@ export default function OrderView() {
     };
 
     autoTable(doc, {
-      startY: 45,
+      startY: activeFilters.length > 0 ? currentY : 45,
       head: headers,
       body: data,
       theme: 'grid',
@@ -449,10 +589,94 @@ export default function OrderView() {
         0: { cellWidth: 15 },
         1: { cellWidth: 25 },
         3: { cellWidth: 20 },
-        4: { cellWidth: 25 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 25 },
       },
       didDrawCell: (data) => {
-        if (data.section === 'body' && data.column.index === 4) {
+        if (data.section === 'body' && data.column.index === 2) {
+          const med = orderItems[data.row.index];
+          if (med) {
+            const paddingLeft = data.cell.padding('left');
+            const paddingRight = data.cell.padding('right');
+            const writableWidth = data.cell.width - paddingLeft - paddingRight;
+
+            const fullText = `${med.itemName} [${med.consumption || 0}]`;
+            
+            doc.setFont("Helvetica", "normal");
+            doc.setFontSize(8);
+            const lines = doc.splitTextToSize(fullText, writableWidth) as string[];
+            const numLines = lines.length;
+
+            // Draw solid inset background matching cell background to paint over default text
+            const fillColor = data.cell.styles.fillColor;
+            if (Array.isArray(fillColor)) {
+              doc.setFillColor(...fillColor);
+            } else if (typeof fillColor === 'string') {
+              doc.setFillColor(fillColor);
+            } else {
+              doc.setFillColor(255, 255, 255);
+            }
+            doc.rect(data.cell.x + 0.5, data.cell.y + 0.5, data.cell.width - 1, data.cell.height - 1, 'F');
+
+            doc.setTextColor(20, 20, 20);
+
+            // Calculate vertical center and spacing in mm
+            const lineHeightMm = 3.2;
+            const startY = data.cell.y + data.cell.height / 2 - ((numLines - 1) * lineHeightMm) / 2 + 1.2;
+
+            for (let j = 0; j < numLines; j++) {
+              const lineY = startY + j * lineHeightMm;
+              const lineText = lines[j];
+              const x = data.cell.x + paddingLeft;
+
+              if (j === numLines - 1) {
+                // Last line contains our bracket component
+                const suffix = `[${med.consumption || 0}]`;
+                const suffixWithSpace = ` [${med.consumption || 0}]`;
+
+                let textBeforeBracket = lineText;
+                let hasSuffix = false;
+                let spaceBefore = false;
+
+                if (lineText.endsWith(suffix)) {
+                  hasSuffix = true;
+                  if (lineText.endsWith(suffixWithSpace)) {
+                    spaceBefore = true;
+                    textBeforeBracket = lineText.slice(0, -suffixWithSpace.length);
+                  } else {
+                    textBeforeBracket = lineText.slice(0, -suffix.length);
+                  }
+                }
+
+                if (hasSuffix) {
+                  // Draw Name (Normal font)
+                  doc.setFont("Helvetica", "normal");
+                  doc.text(textBeforeBracket, x, lineY);
+
+                  // Measure normal text width
+                  const textWidth = doc.getTextWidth(textBeforeBracket);
+
+                  // Draw Brackets (Bold font)
+                  doc.setFont("Helvetica", "bold");
+                  const bracketStr = spaceBefore ? suffixWithSpace : suffix;
+                  doc.text(bracketStr, x + textWidth, lineY);
+                } else {
+                  doc.setFont("Helvetica", "normal");
+                  doc.text(lineText, x, lineY);
+                }
+              } else {
+                // Normal lines
+                doc.setFont("Helvetica", "normal");
+                doc.text(lineText, x, lineY);
+              }
+            }
+
+            // Restore normal font styling context
+            doc.setFont("Helvetica", "normal");
+          }
+        }
+
+        if (data.section === 'body' && data.column.index === 5) {
           const color = getExpirationPDFColor(data.cell.raw as string);
           if (color) {
             doc.setFillColor(...color);
