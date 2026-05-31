@@ -67,12 +67,20 @@ export function useAudits(maxItems: number = 50) {
         setError(err.message);
         setLoading(false);
         
-        if (
+        const isQuotaOrDenied = 
           err.message.toLowerCase().includes('quota') || 
           err.message.toLowerCase().includes('limit') || 
           err.message.toLowerCase().includes('exceeded') || 
-          err.message.toLowerCase().includes('permission-denied')
-        ) {
+          err.message.toLowerCase().includes('permission-denied');
+        
+        const isConnectionError = 
+          (err as any).code === 'unavailable' || 
+          err.message.toLowerCase().includes('unavailable') || 
+          err.message.toLowerCase().includes('could not reach') || 
+          err.message.toLowerCase().includes('connection failed') || 
+          err.message.toLowerCase().includes('failed to connect');
+
+        if (isQuotaOrDenied || isConnectionError) {
           if (typeof window !== 'undefined') {
             if (window.localStorage.getItem('firestore_fallback')) {
               window.localStorage.removeItem('firestore_fallback');

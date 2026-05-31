@@ -771,6 +771,7 @@ export default function AdminDashboard() {
               restriction,
               qatari,
               qoh: Number(getRowValue(row, ['qoh', 'Quantity', 'Qty', 'Stock', 'Inventory', 'Total', 'Available']) || 0),
+              consumption: Number(getRowValue(row, ['consumption', 'Consumption', 'Cons', 'Usage', 'Last 5 Months', 'Usage 5 Months', 'Consumption Last 5 Months']) || 0),
               minQty: Number(getRowValue(row, ['minQty', 'Min', 'Order Min', 'Minimum']) || 0),
               maxQty: Number(getRowValue(row, ['maxQty', 'Max', 'Order Max', 'Maximum']) || 0),
               expiration1: formatExp(getRowValue(row, ['exp1', 'expir1', 'expir_1', 'expiry1', 'primary exp', 'expiration1', 'exp date 1'])),

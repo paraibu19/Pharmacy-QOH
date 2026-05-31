@@ -18,7 +18,7 @@ import LinkedItemsModal from '../components/LinkedItemsModal';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
-type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQty';
+type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQty' | 'consumption';
 type SortOrder = 'asc' | 'desc';
 
 export default function OrderView() {
@@ -45,8 +45,9 @@ export default function OrderView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
-  const [typeFilter, setTypeFilter] = useState<'generic' | 'brand' | null>(null);
-  const [refFilter, setRefFilter] = useState<boolean>(false);
+  const [typeFilter, setTypeFilter] = useState<'generic' | 'brand' | 'non-generic-and-non-brand' | null>(null);
+  const [refFilter, setRefFilter] = useState<'all' | 'refrigerated' | 'non-refrigerated'>('all');
+  const [consumptionFilter, setConsumptionFilter] = useState<'all' | 'zero' | 'positive'>('all');
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -239,13 +240,23 @@ export default function OrderView() {
         
         if (typeFilter === 'generic') return isGeneric;
         if (typeFilter === 'brand') return isBrand;
+        if (typeFilter === 'non-generic-and-non-brand') return !isGeneric && !isBrand;
         return true;
       });
     }
 
     // Refrigerated filter (Ref selection or unselect)
-    if (refFilter) {
+    if (refFilter === 'refrigerated') {
       result = result.filter(m => !!m.isRefrigerated);
+    } else if (refFilter === 'non-refrigerated') {
+      result = result.filter(m => !m.isRefrigerated);
+    }
+
+    // Consumption filter
+    if (consumptionFilter === 'zero') {
+      result = result.filter(m => (m.consumption || 0) === 0);
+    } else if (consumptionFilter === 'positive') {
+      result = result.filter(m => (m.consumption || 0) > 0);
     }
 
     if (expStart || expEnd) {
@@ -283,7 +294,7 @@ export default function OrderView() {
     return displayResult.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       
-      if (['qoh', 'orderQty', 'minQty', 'maxQty'].includes(sortField)) {
+      if (['qoh', 'orderQty', 'minQty', 'maxQty', 'consumption'].includes(sortField)) {
         const valA = Number(a[sortField as keyof typeof a]) || 0;
         const valB = Number(b[sortField as keyof typeof b]) || 0;
         return (valA - valB) * multiplier;
@@ -293,7 +304,7 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, sortField, sortOrder, orderTarget]);
+  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, consumptionFilter, expStart, expEnd, sortField, sortOrder, orderTarget]);
 
   const filterCounts = useMemo(() => {
     const all = medications.length;
@@ -304,13 +315,22 @@ export default function OrderView() {
     const restricted = medications.filter(m => m.restriction && m.restriction.trim() !== '' && m.qoh > 0).length;
     const generics = medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
     const brands = medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
+    const nonGenericAndNonBrand = medications.filter(m => {
+      const isGeneric = !!(m.generic && m.generic.toLowerCase().includes('generic'));
+      const isBrand = !!(m.generic && m.generic.toLowerCase().includes('brand'));
+      return !isGeneric && !isBrand && m.qoh > 0;
+    }).length;
     const refrigerated = medications.filter(m => m.isRefrigerated && m.qoh > 0).length;
+    const nonRefrigerated = medications.filter(m => !m.isRefrigerated && m.qoh > 0).length;
+    const zeroConsumption = medications.filter(m => (m.consumption || 0) === 0 && m.qoh > 0).length;
+    const positiveConsumption = medications.filter(m => (m.consumption || 0) > 0 && m.qoh > 0).length;
 
-    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, refrigerated };
+    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, nonGenericAndNonBrand, refrigerated, nonRefrigerated, zeroConsumption, positiveConsumption };
   }, [medications]);
 
   const availableGenericsCount = filterCounts.generics;
   const availableBrandsCount = filterCounts.brands;
+  const availableNonGenericAndNonBrandCount = filterCounts.nonGenericAndNonBrand;
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -702,34 +722,50 @@ export default function OrderView() {
         </div>
       </div>
 
-      {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd || orderTarget !== 1) && (
+      {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter !== 'all' || consumptionFilter !== 'all' || expStart || expEnd || orderTarget !== 1) && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10 animate-in slide-in-from-top-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-[#F27D26]/60 flex items-center gap-2">
             <Filter className="w-3 h-3" />
             Active Filters:
           </span>
           {stockFilter !== 'all' && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Stock: <span className="text-[#F27D26] uppercase">{stockFilter === 'in' ? 'In Stock' : stockFilter === 'low' ? 'Low Stock' : 'Out of Stock'}</span>
-            </span>
-          )}
-          {classificationFilter !== null && (
-            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10">
-              Class: <span className="text-[#F27D26] uppercase">{classificationFilter === 'qatari' ? 'Qatari' : 'Restricted'}</span>
-            </span>
-          )}
-          {typeFilter !== null && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1.5">
-              Type: <span className="text-[#F27D26] uppercase">{typeFilter === 'generic' ? 'Generics' : 'Brands'}</span>
+              Stock: <span className="text-[#F27D26] uppercase">{stockFilter === 'in' ? 'In Stock' : stockFilter === 'low' ? 'Low Stock' : 'Out of Stock'}</span>
               <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
                 {sortedMeds.filter(m => m.orderQty > 0).length} items to order
               </span>
             </span>
           )}
-          {refFilter && (
+          {classificationFilter !== null && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1.5">
+              Class: <span className="text-[#F27D26] uppercase">{classificationFilter === 'qatari' ? 'Qatari' : 'Restricted'}</span>
+              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0).length} items to order
+              </span>
+            </span>
+          )}
+          {typeFilter !== null && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1.5">
+              Type: <span className="text-[#F27D26] uppercase">
+                {typeFilter === 'generic' ? 'Generics' : typeFilter === 'brand' ? 'Brands' : 'Non-Generic & Non-Brand'}
+              </span>
+              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0).length} items to order
+              </span>
+            </span>
+          )}
+          {refFilter !== 'all' && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1.5">
               <ThermometerSnowflake className="w-2.5 h-2.5 text-[#F27D26]" /> 
-              Storage: <span className="text-[#F27D26] uppercase">Refrigerated</span>
+              Storage: <span className="text-[#F27D26] uppercase">{refFilter === 'refrigerated' ? 'Refrigerated' : 'Non-Refrigerated'}</span>
+              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0).length} items to order
+              </span>
+            </span>
+          )}
+          {consumptionFilter !== 'all' && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-[#F27D26]/10 flex items-center gap-1.5">
+              Consumption: <span className="text-[#F27D26] uppercase">{consumptionFilter === 'zero' ? '0 Consumption' : '> 0 Consumption'}</span>
               <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
                 {sortedMeds.filter(m => m.orderQty > 0).length} items to order
               </span>
@@ -746,10 +782,13 @@ export default function OrderView() {
           {(expStart || expEnd) && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
               Expiry: <span className="text-[#F27D26]">{expStart || 'Any'}</span> – <span className="text-[#F27D26]">{expEnd || 'Any'}</span>
+              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0).length} items to order
+              </span>
             </span>
           )}
           <button 
-            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter(false); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter('all'); setConsumptionFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -809,16 +848,68 @@ export default function OrderView() {
               </button>
               <button
                 onClick={() => {
-                  setRefFilter(prev => !prev);
+                  setTypeFilter(prev => prev === 'non-generic-and-non-brand' ? null : 'non-generic-and-non-brand');
                 }}
                 className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  refFilter 
+                  typeFilter === 'non-generic-and-non-brand' 
+                    ? 'bg-purple-600 text-white shadow-lg ring-2 ring-purple-600/20' 
+                    : 'bg-purple-50 text-purple-700 border border-purple-100 hover:bg-purple-100 shadow-sm'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                Non-Generic & Non-Brand ({availableNonGenericAndNonBrandCount})
+              </button>
+              <button
+                onClick={() => {
+                  setRefFilter(prev => prev === 'refrigerated' ? 'all' : 'refrigerated');
+                }}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  refFilter === 'refrigerated' 
                     ? 'bg-blue-400 text-white shadow-lg ring-2 ring-blue-400/20' 
                     : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 shadow-sm'
                 }`}
               >
                 <ThermometerSnowflake className="w-3.5 h-3.5" />
                 Ref ({filterCounts.refrigerated})
+              </button>
+              <button
+                onClick={() => {
+                  setRefFilter(prev => prev === 'non-refrigerated' ? 'all' : 'non-refrigerated');
+                }}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  refFilter === 'non-refrigerated' 
+                    ? 'bg-cyan-500 text-white shadow-lg ring-2 ring-cyan-500/20' 
+                    : 'bg-cyan-50 text-cyan-700 border border-cyan-100 hover:bg-cyan-100 shadow-sm'
+                }`}
+              >
+                <ThermometerSnowflake className="w-3.5 h-3.5" />
+                Non-Ref ({filterCounts.nonRefrigerated})
+              </button>
+              <button
+                onClick={() => {
+                  setConsumptionFilter(prev => prev === 'zero' ? 'all' : 'zero');
+                }}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  consumptionFilter === 'zero' 
+                    ? 'bg-slate-700 text-white shadow-lg ring-2 ring-slate-700/20' 
+                    : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 shadow-sm'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                0 Consumption ({filterCounts.zeroConsumption})
+              </button>
+              <button
+                onClick={() => {
+                  setConsumptionFilter(prev => prev === 'positive' ? 'all' : 'positive');
+                }}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  consumptionFilter === 'positive' 
+                    ? 'bg-lime-600 text-white shadow-lg ring-2 ring-lime-600/20' 
+                    : 'bg-lime-50 text-lime-700 border border-lime-100 hover:bg-lime-100 shadow-sm'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                &gt; 0 Consumption ({filterCounts.positiveConsumption})
               </button>
             </div>
 
@@ -856,7 +947,7 @@ export default function OrderView() {
             <button 
               onClick={() => setShowFilters(!showFilters)}
               className={`w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd || orderTarget !== 1
+                showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter !== 'all' || expStart || expEnd || orderTarget !== 1
                 ? 'bg-[#F27D26] text-white shadow-lg'
                 : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
               }`}
@@ -1005,7 +1096,8 @@ export default function OrderView() {
                     <div className="flex flex-wrap gap-1.5">
                       {[
                         { id: 'generic', label: 'Generics', count: filterCounts.generics, activeColor: 'bg-yellow-500 text-white border-yellow-500' },
-                        { id: 'brand', label: 'Brands', count: filterCounts.brands, activeColor: 'bg-orange-500 text-white border-orange-500' }
+                        { id: 'brand', label: 'Brands', count: filterCounts.brands, activeColor: 'bg-orange-500 text-white border-orange-500' },
+                        { id: 'non-generic-and-non-brand', label: 'Non-Generic & Non-Brand', count: filterCounts.nonGenericAndNonBrand, activeColor: 'bg-purple-600 text-white border-purple-600' }
                       ].map((f) => {
                         const active = typeFilter === f.id;
                         return (
@@ -1032,15 +1124,55 @@ export default function OrderView() {
                     <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Storage</span>
                     <div className="flex flex-wrap gap-1.5">
                       <button
-                        onClick={() => setRefFilter(prev => !prev)}
+                        onClick={() => setRefFilter(prev => prev === 'refrigerated' ? 'all' : 'refrigerated')}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
-                          refFilter
+                          refFilter === 'refrigerated'
                             ? 'bg-blue-500 text-white border-blue-500'
                             : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
                         }`}
                       >
                         <ThermometerSnowflake className="w-3 h-3" />
                         Ref Storage ({filterCounts.refrigerated})
+                      </button>
+                      <button
+                        onClick={() => setRefFilter(prev => prev === 'non-refrigerated' ? 'all' : 'non-refrigerated')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                          refFilter === 'non-refrigerated'
+                            ? 'bg-[#06B6D4] text-white border-[#06B6D4]'
+                            : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        <ThermometerSnowflake className="w-3 h-3" />
+                        Non-Ref Storage ({filterCounts.nonRefrigerated})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Consumption Category */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Consumption</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => setConsumptionFilter(prev => prev === 'zero' ? 'all' : 'zero')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                          consumptionFilter === 'zero'
+                            ? 'bg-slate-700 text-white border-slate-700'
+                            : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        0 Consumption ({filterCounts.zeroConsumption})
+                      </button>
+                      <button
+                        onClick={() => setConsumptionFilter(prev => prev === 'positive' ? 'all' : 'positive')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                          consumptionFilter === 'positive'
+                            ? 'bg-lime-600 text-white border-lime-600'
+                            : 'bg-white text-[#141414]/56 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        &gt; 0 Consumption ({filterCounts.positiveConsumption})
                       </button>
                     </div>
                   </div>
@@ -1079,7 +1211,8 @@ export default function OrderView() {
                         setStockFilter('all');
                         setClassificationFilter(null);
                         setTypeFilter(null);
-                        setRefFilter(false);
+                        setRefFilter('all');
+                        setConsumptionFilter('all');
                         setExpStart('');
                         setExpEnd('');
                         setSearchQuery('');
@@ -1100,7 +1233,7 @@ export default function OrderView() {
       </div>
 
       {/* Main Content View - Table on desktop, Cards on mobile */}
-      <div className="bg-white rounded-3xl border border-[#141414]/10 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-3xl border border-[#141414]/10 shadow-sm overflow-hidden animate-in fade-in duration-300">
         {loading ? (
           <div className="p-24 flex flex-col items-center justify-center gap-4">
             <Loader2 className="w-10 h-10 text-[#141414]/20 animate-spin" />
@@ -1108,6 +1241,25 @@ export default function OrderView() {
           </div>
         ) : (
           <>
+            {/* Filter Result Counter Bar */}
+            <div className="px-6 py-4 border-b border-[#141414]/5 bg-[#141414]/[0.01] flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5 text-[#F27D26]" />
+                  Filtered List Info:
+                </span>
+                <span className="px-2.5 py-1 bg-[#141414]/5 border border-[#141414]/10 rounded-xl text-xs font-bold text-[#141414]/80">
+                  Total Items Matching: <strong className="text-[#F27D26]">{sortedMeds.length}</strong>
+                </span>
+                <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                  Items to Order (in downloaded PDF/Excel/CSV): <strong className="text-emerald-600 font-extrabold text-sm">{sortedMeds.filter(m => m.orderQty > 0).length}</strong>
+                </span>
+              </div>
+              <div className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest">
+                Showing {sortedMeds.length} of {medications.length} items for {PHARMACY_NAMES[selectedLocation]}
+              </div>
+            </div>
+
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto max-h-[75vh]">
               <table className="w-full text-left border-collapse">
@@ -1138,6 +1290,15 @@ export default function OrderView() {
                       <div className="flex items-center gap-1">
                         QOH
                         {sortField === 'qoh' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                      onClick={() => toggleSort('consumption')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Consumption
+                        {sortField === 'consumption' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
                       </div>
                     </th>
                     <th 
@@ -1245,6 +1406,15 @@ export default function OrderView() {
                             {med.qoh <= 0 ? 'Out of Stock' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'Low Stock' : 'In Stock')}
                           </span>
                         </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 rounded text-xs font-bold font-mono ${
+                            (med.consumption || 0) > 0 
+                              ? 'bg-lime-50 text-lime-700 border border-lime-200' 
+                              : 'bg-slate-50 text-slate-500 border border-slate-200'
+                          }`}>
+                            {med.consumption !== undefined ? formatNumber(med.consumption) : '0'}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 bg-[#F27D26]/[0.02]">
                           <span className="font-medium text-[#141414]/60">{formatNumber(med.minQty || 0)}</span>
                         </td>
@@ -1321,6 +1491,15 @@ export default function OrderView() {
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-[8px] font-black uppercase tracking-tighter">
                                   <ThermometerSnowflake size={8} />
                                   Refrigerated
+                                </span>
+                              )}
+                              {med.consumption !== undefined && (
+                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter ${
+                                  (med.consumption || 0) > 0 
+                                    ? 'bg-lime-50 text-lime-700 border border-lime-200' 
+                                    : 'bg-slate-50 text-slate-500 border border-slate-200'
+                                }`}>
+                                  Consumption: {formatNumber(med.consumption)}
                                 </span>
                               )}
                             </button>

@@ -85,13 +85,21 @@ export function useMedications(locationId?: PharmacyLocation) {
         console.error("Firestore onSnapshot error:", err);
         setError(err.message);
         
-        // Auto-detect quota exceeded error and automatically trigger local storage fallback!
-        if (
+        // Auto-detect quota exceeded, permission-denied, or connection-unavailable errors and automatically trigger local storage fallback!
+        const isQuotaOrDenied = 
           err.message.toLowerCase().includes('quota') || 
           err.message.toLowerCase().includes('limit') || 
           err.message.toLowerCase().includes('exceeded') || 
-          err.message.toLowerCase().includes('permission-denied')
-        ) {
+          err.message.toLowerCase().includes('permission-denied');
+        
+        const isConnectionError = 
+          (err as any).code === 'unavailable' || 
+          err.message.toLowerCase().includes('unavailable') || 
+          err.message.toLowerCase().includes('could not reach') || 
+          err.message.toLowerCase().includes('connection failed') || 
+          err.message.toLowerCase().includes('failed to connect');
+
+        if (isQuotaOrDenied || isConnectionError) {
           if (typeof window !== 'undefined') {
             if (window.localStorage.getItem('firestore_fallback')) {
               window.localStorage.removeItem('firestore_fallback');

@@ -90,19 +90,29 @@ export interface FirestoreErrorInfo {
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errMsg = error instanceof Error ? error.message : String(error);
   
-  // Auto-detect quota exceeded or database-restricted error and automatically switch to Local Server mode!
-  if (
+  // Auto-detect quota exceeded, database-restricted, or connection errors and automatically switch to Local Server mode!
+  const isQuotaOrDenied = (
     errMsg.toLowerCase().includes('quota') || 
     errMsg.toLowerCase().includes('limit') || 
     errMsg.toLowerCase().includes('exceeded') || 
     errMsg.toLowerCase().includes('permission-denied')
-  ) {
+  );
+  
+  const isConnectionError = (
+    (error && (error as any).code === 'unavailable') ||
+    errMsg.toLowerCase().includes('unavailable') ||
+    errMsg.toLowerCase().includes('could not reach') ||
+    errMsg.toLowerCase().includes('connection failed') ||
+    errMsg.toLowerCase().includes('failed to connect')
+  );
+
+  if (isQuotaOrDenied || isConnectionError) {
     if (typeof window !== 'undefined') {
       if (window.localStorage.getItem('firestore_fallback')) {
         window.localStorage.removeItem('firestore_fallback');
       }
       window.sessionStorage.setItem('firestore_fallback', 'true');
-      console.warn('Auto-switching to Local Server database mode because Firestore limit or quota was exceeded.');
+      console.warn('Auto-switching to Local Server database mode because of Firestore error/unreachability:', errMsg);
       setTimeout(() => {
         window.location.reload();
       }, 500);

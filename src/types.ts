@@ -31,6 +31,7 @@ export interface Medication {
   imageUrl?: string;
   to?: string;
   isRefrigerated?: boolean;
+  consumption?: number;
   enIndications?: string;
   arIndications?: string;
   hiIndications?: string;

@@ -153,6 +153,32 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             
             {/* Desktop Nav */}
             <div className="hidden lg:flex gap-4 items-center">
+              <button
+                onClick={handleToggleDatabaseMode}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all border ${
+                  isLocalMode 
+                    ? 'bg-amber-50/80 border-amber-200 text-amber-700 hover:bg-amber-100' 
+                    : 'bg-emerald-50/80 border-emerald-200 text-emerald-700 hover:bg-emerald-110'
+                }`}
+                title={isLocalMode ? "Click to switch back to Cloud Firestore" : "Click to switch to Local Offline-First Database"}
+              >
+                {isLocalMode ? <CloudOff className="w-3.5 h-3.5 text-amber-600" /> : <Cloud className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />}
+                <span>{isLocalMode ? 'Local Dev DB' : 'Cloud DB'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  window.location.reload();
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold text-[#F27D26] bg-[#F27D26]/5 hover:bg-[#F27D26]/12 hover:scale-102 transition-all border border-[#F27D26]/10 active:scale-95 shadow-sm"
+                title="Refresh App"
+              >
+                <RefreshCw className="w-4 h-4 animate-hover-spin" />
+                <span>Refresh</span>
+              </button>
+
+              <div className="w-px h-6 bg-[#141414]/10" />
+
               <NavLinks />
 
               <div className="w-px h-6 bg-[#141414]/10 mx-2" />
@@ -178,13 +204,25 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
               )}
             </div>
 
-            {/* Mobile Menu Toggle */}
-            <button 
-              className="lg:hidden p-2.5 bg-[#141414]/5 rounded-xl text-[#141414] hover:bg-[#141414]/10 transition-colors"
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            >
-              {isMobileMenuOpen ? <XIcon className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
+            {/* Mobile Actions Container */}
+            <div className="lg:hidden flex items-center gap-2">
+              <button 
+                onClick={() => {
+                  window.location.reload();
+                }}
+                className="p-2.5 bg-[#F27D26]/10 rounded-xl text-[#F27D26] hover:bg-[#F27D26]/20 transition-all active:scale-95 border border-[#F27D26]/10"
+                title="Refresh App"
+              >
+                <RefreshCw className="w-5 h-5" />
+              </button>
+              
+              <button 
+                className="p-2.5 bg-[#141414]/5 rounded-xl text-[#141414] hover:bg-[#141414]/10 transition-colors"
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              >
+                {isMobileMenuOpen ? <XIcon className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -203,8 +241,31 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                   <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
                   {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data Uploaded'}
                 </div>
+
+                <button
+                  onClick={handleToggleDatabaseMode}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border ${
+                    isLocalMode 
+                      ? 'bg-amber-50 border-amber-200 text-amber-700' 
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  }`}
+                >
+                  {isLocalMode ? <CloudOff className="w-4 h-4 text-amber-600" /> : <Cloud className="w-4 h-4 text-emerald-600 animate-pulse" />}
+                  <span>DB Mode: {isLocalMode ? 'Local Dev DB (Offline-Ready)' : 'Cloud DB (Firestore Live)'}</span>
+                </button>
                 
                 <NavLinks />
+
+                <button 
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    window.location.reload();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#F27D26]/5 text-[#F27D26] rounded-xl text-sm font-bold border border-[#F27D26]/12 transition-all hover:bg-[#F27D26]/10"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Refresh App Data
+                </button>
 
                 <button 
                   onClick={() => {
