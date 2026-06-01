@@ -179,8 +179,8 @@ export default function OrderView() {
   const targetCounts = useMemo(() => {
     return {
       full: medications.filter(m => calculateOrder(m, 1) > 0).length,
-      seventy: medications.filter(m => calculateOrder(m, 0.7) > 0).length,
-      fifty: medications.filter(m => calculateOrder(m, 0.5) > 0).length,
+      seventy: medications.filter(m => (m.qoh || 0) < 0.7 * (m.maxQty || 0) && calculateOrder(m, 1) > 0).length,
+      fifty: medications.filter(m => (m.qoh || 0) < 0.5 * (m.maxQty || 0) && calculateOrder(m, 1) > 0).length,
     };
   }, [medications]);
 
@@ -281,14 +281,20 @@ export default function OrderView() {
 
     const mapped = result.map(m => ({
       ...m,
-      orderQty: calculateOrder(m, orderTarget || 1),
+      orderQty: calculateOrder(m, 1),
       isNew: m.addedAt ? differenceInDays(new Date(), (m.addedAt as any).toDate?.() || new Date(m.addedAt)) < 10 : false
     }));
 
     // Filter by order quantity if a specific target is selected (not 'All')
     let displayResult = mapped;
     if (orderTarget !== 0) {
-      displayResult = displayResult.filter(m => m.orderQty > 0);
+      if (orderTarget === 1) {
+        displayResult = displayResult.filter(m => m.orderQty > 0);
+      } else if (orderTarget === 0.7) {
+        displayResult = displayResult.filter(m => (m.qoh || 0) < 0.7 * (m.maxQty || 0) && m.orderQty > 0);
+      } else if (orderTarget === 0.5) {
+        displayResult = displayResult.filter(m => (m.qoh || 0) < 0.5 * (m.maxQty || 0) && m.orderQty > 0);
+      }
     }
 
     return displayResult.sort((a, b) => {
