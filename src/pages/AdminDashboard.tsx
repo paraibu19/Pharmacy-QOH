@@ -48,7 +48,6 @@ export default function AdminDashboard() {
   const [showFilters, setShowFilters] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
-  const [bulkInput, setBulkInput] = useState('');
   const [importPhotoStrategy, setImportPhotoStrategy] = useState<'keep' | 'remove'>('keep');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [alertThreshold, setAlertThreshold] = useState<number>(90);
@@ -967,46 +966,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handlePasteImport = async () => {
-    try {
-      setIsImporting(true);
-      setError(null);
-      const rows = bulkInput.split('\n');
-      const newMedsList = rows.map((row) => {
-        const parts = row.split(/\t|,/);
-        if (parts.length < 3) return null;
-        return {
-          itemCode: parts[0]?.trim(),
-          itemName: parts[1]?.trim(),
-          qoh: Number(parts[2]?.trim()) || 0,
-          generic: parts[3]?.trim() || '',
-          minQty: Number(parts[4]?.trim()) || 0,
-          maxQty: Number(parts[5]?.trim()) || 0,
-          expiration1: parts[6]?.trim() || '',
-          expiration2: parts[7]?.trim() || '',
-          expiration3: parts[8]?.trim() || '',
-          isRefrigerated: 
-            row.toLowerCase().includes('refrig') || 
-            row.toLowerCase().includes('fridge') || 
-            row.toLowerCase().includes('cold') || 
-            row.toLowerCase().includes('2-8') ||
-            (parts[9]?.trim()?.toLowerCase() === 'yes' || parts[9]?.trim()?.toLowerCase() === 'true'),
-          locationId: selectedLocation,
-        };
-      }).filter(m => m !== null) as any[];
-
-      await medicationOps.bulkAdd(newMedsList);
-      await refresh();
-      setBulkInput('');
-      setSuccess(`Successfully imported ${newMedsList.length} items.`);
-      setIsBulkMode(false);
-    } catch (error: any) {
-      setError(error.message);
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
   const handleSave = async (id?: string) => {
     if (!form.itemCode || !form.itemName) return;
     
@@ -1854,7 +1813,7 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <h3 className="text-lg md:text-xl font-bold">Bulk Stock Import</h3>
-                    <p className="text-white/40 text-[10px] md:text-sm">Upload Excel or paste a list of items</p>
+                    <p className="text-white/40 text-[10px] md:text-sm">Upload Excel workbook to import items</p>
                   </div>
                 </div>
                 <button 
@@ -1865,13 +1824,13 @@ export default function AdminDashboard() {
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+              <div className="max-w-xl mx-auto w-full">
                 <div className="space-y-6">
                   <div className="p-4 md:p-6 bg-white/5 rounded-2xl border border-white/10 flex flex-col items-center text-center">
                     <div className="w-12 h-12 md:w-16 md:h-16 bg-[#F27D26]/10 rounded-full flex items-center justify-center mb-4">
                       <Upload className="w-6 h-6 md:w-8 md:h-8 text-[#F27D26]" />
                     </div>
-                    <p className="text-xs font-bold text-white mb-2 uppercase tracking-widest">Option 1: Excel File</p>
+                    <p className="text-xs font-bold text-white mb-2 uppercase tracking-widest">Excel File Upload</p>
                     <p className="text-[10px] md:text-xs text-white/40 mb-6 leading-relaxed">
                       Upload an Excel workbook with sheets named <br className="hidden md:block"/>
                       <span className="text-[#F27D26] font-bold">"Adult"</span>, 
@@ -1928,29 +1887,6 @@ export default function AdminDashboard() {
                       accept=".xlsx, .xls"
                       className="hidden"
                     />
-                  </div>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="p-4 md:p-6 bg-white/5 rounded-2xl border border-white/10">
-                    <p className="text-[10px] font-bold text-white mb-4 uppercase tracking-widest">Option 2: Paste List</p>
-                    <textarea 
-                      value={bulkInput}
-                      onChange={(e) => setBulkInput(e.target.value)}
-                      placeholder="code,name,qoh,min,max,exp1,exp2,exp3..."
-                      className="w-full h-32 md:h-40 bg-[#141414] border border-white/10 rounded-xl p-4 text-[10px] font-mono focus:outline-none focus:border-[#F27D26] transition-colors resize-none"
-                    />
-                    <button 
-                      onClick={handlePasteImport}
-                      disabled={!bulkInput.trim() || isImporting}
-                      className="w-full mt-4 py-4 bg-[#F27D26] hover:bg-[#F27D26]/90 rounded-2xl text-sm font-bold transition-all disabled:opacity-50 shadow-xl shadow-[#F27D26]/20 flex items-center justify-center gap-2"
-                    >
-                      {isImporting ? <Loader2 className="animate-spin w-4 h-4" /> : null}
-                      Process to {selectedLocation.split('-').pop()}
-                    </button>
-                    <p className="text-[9px] text-white/30 text-center mt-3 lowercase italic font-mono">
-                      * Paste uses current selected location ({selectedLocation})
-                    </p>
                   </div>
                 </div>
               </div>
