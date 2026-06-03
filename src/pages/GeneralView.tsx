@@ -13,6 +13,8 @@ import { db } from '../lib/firebase';
 import { localDb } from '../lib/localStorageDb';
 import { storage } from '../lib/storage';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
+import { translateIndications } from '../services/translationService';
+import { medicationOps } from '../lib/firebaseOperations';
 
 export default function GeneralView() {
   const navigate = useNavigate();
@@ -41,6 +43,7 @@ export default function GeneralView() {
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
   const [selectedMedForIndications, setSelectedMedForIndications] = useState<Medication | null>(null);
   const [selectedMedForRefrigeration, setSelectedMedForRefrigeration] = useState<Medication | null>(null);
+  const [isTranslatingLocal, setIsTranslatingLocal] = useState(false);
   
   // Reminder State
   const [selectedMedicationForReminder, setSelectedMedicationForReminder] = useState<Medication | null>(null);
@@ -67,6 +70,50 @@ export default function GeneralView() {
   useEffect(() => {
     storage.setItem('app_language', language);
   }, [language]);
+
+  useEffect(() => {
+    if (!selectedMedForIndications) return;
+    
+    const med = selectedMedForIndications;
+    const currentLangKey = `${language}Indications` as keyof Medication;
+    const sourceText = med.enIndications?.trim() || med.arIndications?.trim() || '';
+    
+    if (!sourceText) return;
+    
+    const isMissing = !med[currentLangKey] || med[currentLangKey]?.trim() === '';
+    
+    if (isMissing && !isTranslatingLocal) {
+      const runDynamicTranslation = async () => {
+        try {
+          setIsTranslatingLocal(true);
+          const trans = await translateIndications(sourceText, ['en', 'ar', 'hi', 'ur', 'ml', 'bn', 'tl']);
+          if (trans) {
+            const updatedFields: Partial<Medication> = {
+              enIndications: trans.en || med.enIndications || '',
+              arIndications: trans.ar || med.arIndications || '',
+              hiIndications: trans.hi || med.hiIndications || '',
+              urIndications: trans.ur || med.urIndications || '',
+              mlIndications: trans.ml || med.mlIndications || '',
+              bnIndications: trans.bn || med.bnIndications || '',
+              tlIndications: trans.tl || med.tlIndications || '',
+            };
+            
+            // Save to Firestore so it's cached/persisted forever
+            await medicationOps.update(med.id, updatedFields);
+            
+            // Update local state instantly so the user sees the translated text with a beautiful fade-in
+            setSelectedMedForIndications(prev => prev && prev.id === med.id ? { ...prev, ...updatedFields } : prev);
+          }
+        } catch (err) {
+          console.error("Auto-translation inside view failed:", err);
+        } finally {
+          setIsTranslatingLocal(false);
+        }
+      };
+      
+      runDynamicTranslation();
+    }
+  }, [selectedMedForIndications?.id, language]);
 
   useEffect(() => {
     if (fetchError) {
@@ -1228,12 +1275,31 @@ export default function GeneralView() {
 
               <div className="p-5 md:p-6 space-y-6 flex-1 overflow-y-auto">
                 <div className="p-5 bg-[#F27D26]/5 rounded-2xl border border-[#F27D26]/10 min-h-[150px] md:min-h-[200px] flex flex-col">
-                  <span className={`text-[9px] md:text-[10px] font-bold text-[#F27D26] uppercase tracking-widest mb-3 ${isRtl ? 'text-right' : 'text-left'}`}>
-                    {t.indicationsInfo}
-                  </span>
-                  <div className={`text-xs md:text-sm font-medium text-[#141414] leading-relaxed whitespace-pre-wrap ${isRtl ? 'text-right' : 'text-left'}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className={`text-[9px] md:text-[10px] font-bold text-[#F27D26] uppercase tracking-widest ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {t.indicationsInfo}
+                    </span>
+                    {isTranslatingLocal && (
+                      <span className="flex items-center gap-1 text-[9px] md:text-[10px] text-[#F27D26] font-bold animate-pulse">
+                        <Loader2 className="w-3 h-3 animate-spin text-[#F27D26]" />
+                        Translating...
+                      </span>
+                    )}
+                  </div>
+                  <div className={`text-xs md:text-sm font-medium text-[#141414] leading-relaxed whitespace-pre-wrap ${isRtl ? 'text-right' : 'text-left'} ${isTranslatingLocal ? 'opacity-50 transition-opacity' : ''}`}>
                     {(() => {
                       const med = selectedMedForIndications;
+                      const currentLangKey = `${language}Indications` as keyof Medication;
+                      const transVal = med[currentLangKey];
+
+                      if (transVal && transVal.trim() !== '') {
+                        return transVal;
+                      }
+
+                      if (isTranslatingLocal) {
+                        return med.enIndications || med.arIndications || t.noIndications;
+                      }
+
                       if (language === 'ar' && med.arIndications) return med.arIndications;
                       if (language === 'hi' && med.hiIndications) return med.hiIndications;
                       if (language === 'ur' && med.urIndications) return med.urIndications;
