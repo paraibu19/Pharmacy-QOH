@@ -813,19 +813,10 @@ export default function AdminDashboard() {
         const uploadedLocs = new Set(allMedsList.map(m => m.locationId));
         const filteredLatest = latestMeds.filter(m => uploadedLocs.has(m.locationId));
 
-        const untranslatedCount = filteredLatest.filter(m => {
-          const hasSource = (m.enIndications && m.enIndications.trim() !== '') || (m.arIndications && m.arIndications.trim() !== '');
-          if (!hasSource) return false;
-          return (
-            !m.enIndications || m.enIndications.trim() === '' ||
-            !m.arIndications || m.arIndications.trim() === '' ||
-            !m.hiIndications || m.hiIndications.trim() === '' ||
-            !m.urIndications || m.urIndications.trim() === '' ||
-            !m.mlIndications || m.mlIndications.trim() === '' ||
-            !m.bnIndications || m.bnIndications.trim() === '' ||
-            !m.tlIndications || m.tlIndications.trim() === ''
-          );
-        }).length;
+        const untranslatedCount = filteredLatest.filter(m => 
+          ((m.enIndications && m.enIndications.trim() !== '') || (m.arIndications && m.arIndications.trim() !== '')) && 
+          (!m.hiIndications || m.hiIndications.trim() === '')
+        ).length;
 
         if (untranslatedCount > 0) {
           setSuccess(`Imported ${allMedsList.length} items. ${untranslatedCount} items need translation. Click 'AI Translate Missing' to process them.`);
@@ -993,31 +984,16 @@ export default function AdminDashboard() {
     try {
       setError(null);
       
-      // Auto-translate if English/Arabic is provided and any translation is missing
+      // Auto-translate if only EN provided
       const dataToSave = { ...form };
-      const hasSourceText = (dataToSave.enIndications && dataToSave.enIndications.trim() !== '') || (dataToSave.arIndications && dataToSave.arIndications.trim() !== '');
-      const isAnyTranslationMissing = 
-        !dataToSave.enIndications || dataToSave.enIndications.trim() === '' ||
-        !dataToSave.arIndications || dataToSave.arIndications.trim() === '' ||
-        !dataToSave.hiIndications || dataToSave.hiIndications.trim() === '' ||
-        !dataToSave.urIndications || dataToSave.urIndications.trim() === '' ||
-        !dataToSave.mlIndications || dataToSave.mlIndications.trim() === '' ||
-        !dataToSave.bnIndications || dataToSave.bnIndications.trim() === '' ||
-        !dataToSave.tlIndications || dataToSave.tlIndications.trim() === '';
-
-      if (hasSourceText && isAnyTranslationMissing) {
+      if (dataToSave.enIndications && !dataToSave.hiIndications) {
         try {
-          const sourceText = (dataToSave.enIndications && dataToSave.enIndications.trim() !== '') ? dataToSave.enIndications : dataToSave.arIndications || '';
-          const trans = await translateIndications(sourceText, ['en', 'ar', 'hi', 'ur', 'ml', 'bn', 'tl']);
-          if (trans) {
-            dataToSave.enIndications = trans.en || dataToSave.enIndications || '';
-            dataToSave.arIndications = trans.ar || dataToSave.arIndications || '';
-            dataToSave.hiIndications = trans.hi || dataToSave.hiIndications || '';
-            dataToSave.urIndications = trans.ur || dataToSave.urIndications || '';
-            dataToSave.mlIndications = trans.ml || dataToSave.mlIndications || '';
-            dataToSave.bnIndications = trans.bn || dataToSave.bnIndications || '';
-            dataToSave.tlIndications = trans.tl || dataToSave.tlIndications || '';
-          }
+          const trans = await translateIndications(dataToSave.enIndications!, ['hi', 'ur', 'ml', 'bn', 'tl']);
+          dataToSave.hiIndications = trans?.hi || '';
+          dataToSave.urIndications = trans?.ur || '';
+          dataToSave.mlIndications = trans?.ml || '';
+          dataToSave.bnIndications = trans?.bn || '';
+          dataToSave.tlIndications = trans?.tl || '';
         } catch (e) {
           console.warn("Manual translation failed", e);
         }
@@ -1142,20 +1118,11 @@ export default function AdminDashboard() {
     // Refresh medications list to be sure we have latest
     await refresh(true);
     
-    // Filter items that need translation (have English or Arabic text but any of the 7 languages is missing)
-    const medsToTranslate = medications.filter(m => {
-      const hasSource = (m.enIndications && m.enIndications.trim() !== '') || (m.arIndications && m.arIndications.trim() !== '');
-      if (!hasSource) return false;
-      return (
-        !m.enIndications || m.enIndications.trim() === '' ||
-        !m.arIndications || m.arIndications.trim() === '' ||
-        !m.hiIndications || m.hiIndications.trim() === '' ||
-        !m.urIndications || m.urIndications.trim() === '' ||
-        !m.mlIndications || m.mlIndications.trim() === '' ||
-        !m.bnIndications || m.bnIndications.trim() === '' ||
-        !m.tlIndications || m.tlIndications.trim() === ''
-      );
-    });
+    // Filter items that need translation (have English or Arabic text but missing Hindi)
+    const medsToTranslate = medications.filter(m => 
+      ((m.enIndications && m.enIndications.trim() !== '') || (m.arIndications && m.arIndications.trim() !== '')) && 
+      (!m.hiIndications || m.hiIndications.trim() === '')
+    );
 
     if (medsToTranslate.length === 0) {
       setSuccess("No items in this location need translation. Ensure items have 'EN Indications' or 'AR Indications' correctly set in the list below.");
@@ -1186,8 +1153,6 @@ export default function AdminDashboard() {
           cacheUpdates.push({
             id: med.id,
             data: {
-              enIndications: cacheHit.enIndications || cacheHit.en || med.enIndications || '',
-              arIndications: cacheHit.arIndications || cacheHit.ar || med.arIndications || '',
               hiIndications: cacheHit.hiIndications || cacheHit.hi || '',
               urIndications: cacheHit.urIndications || cacheHit.ur || '',
               mlIndications: cacheHit.mlIndications || cacheHit.ml || '',
@@ -1230,7 +1195,7 @@ export default function AdminDashboard() {
         }));
         
         console.log(`Processing translation batch ${Math.floor(i / batchSize) + 1}...`);
-        const translationsMap = await batchTranslateIndications(itemsToTranslate, ['en', 'ar', 'hi', 'ur', 'ml', 'bn', 'tl']);
+        const translationsMap = await batchTranslateIndications(itemsToTranslate, ['hi', 'ur', 'ml', 'bn', 'tl']);
         
         // Prepare bulk update data for medications & cache storage
         const updates: { id: string; data: Partial<Medication> }[] = [];
@@ -1240,8 +1205,6 @@ export default function AdminDashboard() {
           const trans = translationsMap[med.id];
           if (trans) {
             const dataToSet = {
-              enIndications: trans.en || med.enIndications || '',
-              arIndications: trans.ar || med.arIndications || '',
               hiIndications: trans.hi || '',
               urIndications: trans.ur || '',
               mlIndications: trans.ml || '',
@@ -2807,31 +2770,16 @@ export default function AdminDashboard() {
 
               setError(null);
               
-              // Auto-translate if English/Arabic is provided and any translation is missing
+              // Auto-translate if only EN provided
               const dataToSave = { ...data };
-              const hasSourceText = (dataToSave.enIndications && dataToSave.enIndications.trim() !== '') || (dataToSave.arIndications && dataToSave.arIndications.trim() !== '');
-              const isAnyTranslationMissing = 
-                !dataToSave.enIndications || dataToSave.enIndications.trim() === '' ||
-                !dataToSave.arIndications || dataToSave.arIndications.trim() === '' ||
-                !dataToSave.hiIndications || dataToSave.hiIndications.trim() === '' ||
-                !dataToSave.urIndications || dataToSave.urIndications.trim() === '' ||
-                !dataToSave.mlIndications || dataToSave.mlIndications.trim() === '' ||
-                !dataToSave.bnIndications || dataToSave.bnIndications.trim() === '' ||
-                !dataToSave.tlIndications || dataToSave.tlIndications.trim() === '';
-
-              if (hasSourceText && isAnyTranslationMissing) {
+              if (dataToSave.enIndications && !dataToSave.hiIndications) {
                 try {
-                  const sourceText = (dataToSave.enIndications && dataToSave.enIndications.trim() !== '') ? dataToSave.enIndications : dataToSave.arIndications || '';
-                  const trans = await translateIndications(sourceText, ['en', 'ar', 'hi', 'ur', 'ml', 'bn', 'tl']);
-                  if (trans) {
-                    dataToSave.enIndications = trans.en || dataToSave.enIndications || '';
-                    dataToSave.arIndications = trans.ar || dataToSave.arIndications || '';
-                    dataToSave.hiIndications = trans.hi || dataToSave.hiIndications || '';
-                    dataToSave.urIndications = trans.ur || dataToSave.urIndications || '';
-                    dataToSave.mlIndications = trans.ml || dataToSave.mlIndications || '';
-                    dataToSave.bnIndications = trans.bn || dataToSave.bnIndications || '';
-                    dataToSave.tlIndications = trans.tl || dataToSave.tlIndications || '';
-                  }
+                  const trans = await translateIndications(dataToSave.enIndications!, ['hi', 'ur', 'ml', 'bn', 'tl']);
+                  dataToSave.hiIndications = trans?.hi || '';
+                  dataToSave.urIndications = trans?.ur || '';
+                  dataToSave.mlIndications = trans?.ml || '';
+                  dataToSave.bnIndications = trans?.bn || '';
+                  dataToSave.tlIndications = trans?.tl || '';
                 } catch (e) {
                   console.warn("Manual translation failed", e);
                 }

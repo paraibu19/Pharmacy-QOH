@@ -343,10 +343,8 @@ app.post('/api/translate', async (req, res) => {
       const hash = getTranslationHashSync(item.text);
       const cached = translationCache[hash];
       if (cached && (cached.hi || cached.hiIndications || cached.ur || cached.urIndications)) {
-        // Cache hit! Map keys properly for all 7 application languages
+        // Cache hit! Map keys properly
         finalResults[item.id] = {
-          en: cached.en || cached.enIndications || '',
-          ar: cached.ar || cached.arIndications || '',
           hi: cached.hi || cached.hiIndications || '',
           ur: cached.ur || cached.urIndications || '',
           ml: cached.ml || cached.mlIndications || '',
@@ -376,31 +374,18 @@ app.post('/api/translate', async (req, res) => {
     const uniqueTexts = Object.keys(textToIds);
     const uniqueItems = uniqueTexts.map((text, idx) => ({ id: `unique_${idx}`, text }));
 
-    const prompt = `You are an expert medical translator. Translate the following medical drug indications/descriptions to all the following target languages:
-    - en (English)
-    - ar (Arabic)
-    - hi (Hindi)
-    - ur (Urdu)
-    - ml (Malayalam)
-    - bn (Bengali)
-    - tl (Tagalog)
-
-    For each item, detect the source language (which will typically be English or Arabic). 
-    Provide accurate, culturally and contextually appropriate translations for each of the 7 languages.
-    If the target language matches the source language, set the value to the original source text.
-
-    I will provide a list of items with their IDs and the text. 
+    const prompt = `Translate the following medical drug indications from English to these languages: ${targetLanguages.join(', ')}.
+    
+    I will provide a list of items with their IDs and the English text. 
     Return a JSON object where the keys are the item IDs. 
-    Each value must be another object where the keys are the language codes (en, ar, hi, ur, ml, bn, tl) and the values are the respective translations.
+    Each value should be another object where the keys are the language codes (${targetLanguages.join(', ')}) and the values are the translations.
     
     Items to translate:
     ${uniqueItems.map(item => `ID: "${item.id}"\nText: "${item.text}"`).join('\n---\n')}
     
-    Format your response exactly as a JSON object like this:
+    Format your response like this:
     {
       "unique_0": {
-        "en": "...",
-        "ar": "...",
         "hi": "...",
         "ur": "...",
         "ml": "...",
@@ -433,15 +418,11 @@ app.post('/api/translate', async (req, res) => {
         const hash = getTranslationHashSync(uItem.text);
         if (hash) {
           translationCache[hash] = {
-            en: trans.en || '',
-            ar: trans.ar || '',
             hi: trans.hi || '',
             ur: trans.ur || '',
             ml: trans.ml || '',
             bn: trans.bn || '',
             tl: trans.tl || '',
-            enIndications: trans.en || '',
-            arIndications: trans.ar || '',
             hiIndications: trans.hi || '',
             urIndications: trans.ur || '',
             mlIndications: trans.ml || '',
