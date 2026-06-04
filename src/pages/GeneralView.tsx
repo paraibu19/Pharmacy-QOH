@@ -1040,20 +1040,47 @@ export default function GeneralView() {
                       ))}
                     </div>
 
-                    <div className="flex items-center gap-6 p-4 bg-[#141414]/5 rounded-2xl">
-                      <div className="flex-1">
-                        <span className={`text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block mb-2`}>{t.howMany} {reminderDurationType === 'days' ? t.days : reminderDurationType === 'weeks' ? t.weeks : t.months}?</span>
+                    <div className="flex flex-col gap-2 p-4 bg-[#141414]/5 rounded-2xl">
+                      <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block">
+                        {t.howMany} {reminderDurationType === 'days' ? t.days : reminderDurationType === 'weeks' ? t.weeks : t.months}?
+                      </span>
+                      <div className="flex gap-2 items-center">
+                        <button
+                          type="button"
+                          onClick={() => setReminderDurationValue(prev => Math.max(1, prev - 1))}
+                          className="w-10 h-10 bg-white border border-[#141414]/10 rounded-xl flex items-center justify-center font-bold text-lg text-[#141414]/60 hover:bg-[#F27D26]/5 hover:text-[#F27D26] hover:border-[#F27D26]/20 transition-all select-none shadow-sm"
+                        >
+                          -
+                        </button>
                         <input 
-                          type="range" 
+                          type="number" 
                           min={1} 
                           max={reminderDurationType === 'days' ? 90 : reminderDurationType === 'weeks' ? 52 : 24} 
                           value={reminderDurationValue}
-                          onChange={(e) => setReminderDurationValue(parseInt(e.target.value))}
-                          className="w-full accent-[#F27D26]"
+                          onChange={(e) => {
+                            const maxVal = reminderDurationType === 'days' ? 90 : reminderDurationType === 'weeks' ? 52 : 24;
+                            const val = parseInt(e.target.value);
+                            if (isNaN(val)) {
+                              setReminderDurationValue(1);
+                            } else {
+                              setReminderDurationValue(Math.max(1, Math.min(maxVal, val)));
+                            }
+                          }}
+                          className="flex-1 p-2 h-10 bg-white border border-[#141414]/10 rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26] focus:outline-none transition-all text-center text-sm font-black text-[#F27D26]"
                         />
-                      </div>
-                      <div className="w-16 h-12 bg-white rounded-xl border border-[#141414]/10 flex items-center justify-center font-black text-xl text-[#F27D26]">
-                        {reminderDurationValue}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const maxVal = reminderDurationType === 'days' ? 90 : reminderDurationType === 'weeks' ? 52 : 24;
+                            setReminderDurationValue(prev => Math.min(maxVal, prev + 1));
+                          }}
+                          className="w-10 h-10 bg-white border border-[#141414]/10 rounded-xl flex items-center justify-center font-bold text-lg text-[#141414]/60 hover:bg-[#F27D26]/5 hover:text-[#F27D26] hover:border-[#F27D26]/20 transition-all select-none shadow-sm"
+                        >
+                          +
+                        </button>
+                        <span className="text-xs font-black uppercase text-[#141414]/40 tracking-wider w-16 text-center">
+                          {reminderDurationType === 'days' ? t.days : reminderDurationType === 'weeks' ? t.weeks : t.months}
+                        </span>
                       </div>
                     </div>
 
@@ -1354,6 +1381,7 @@ export default function GeneralView() {
             medication={selectedMedForLinks}
             allMedications={medications}
             onClose={() => setSelectedMedForLinks(null)}
+            showQoh={false}
           />
         )}
       </AnimatePresence>

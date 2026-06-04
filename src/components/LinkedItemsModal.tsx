@@ -8,9 +8,10 @@ interface LinkedItemsModalProps {
   medication: Medication | null;
   allMedications: Medication[];
   onClose: () => void;
+  showQoh?: boolean;
 }
 
-export default function LinkedItemsModal({ medication, allMedications, onClose }: LinkedItemsModalProps) {
+export default function LinkedItemsModal({ medication, allMedications, onClose, showQoh = true }: LinkedItemsModalProps) {
   if (!medication) return null;
 
   // Split linked codes by comma or space
@@ -129,11 +130,13 @@ export default function LinkedItemsModal({ medication, allMedications, onClose }
                       </div>
 
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-[#141414]/5">
-                        <div className="col-span-1">
-                          <p className="text-[8px] md:text-[9px] font-bold text-[#141414]/30 uppercase tracking-widest mb-1">QOH</p>
-                          <p className="text-xs md:text-sm font-black text-[#141414]">{formatNumber(item.qoh)}</p>
-                        </div>
-                        <div className="col-span-1 md:col-span-2">
+                        {showQoh && (
+                          <div className="col-span-1">
+                            <p className="text-[8px] md:text-[9px] font-bold text-[#141414]/30 uppercase tracking-widest mb-1">QOH</p>
+                            <p className="text-xs md:text-sm font-black text-[#141414]">{formatNumber(item.qoh)}</p>
+                          </div>
+                        )}
+                        <div className={showQoh ? "col-span-1 md:col-span-2" : "col-span-1 md:col-span-3"}>
                           <p className="text-[8px] md:text-[9px] font-bold text-[#141414]/30 uppercase tracking-widest mb-1">Primary Expiry</p>
                           <p className={`text-xs md:text-sm font-black ${item.expiration1 ? 'text-[#141414]' : 'text-[#141414]/20'}`}>
                             {item.expiration1 || 'N/A'}
