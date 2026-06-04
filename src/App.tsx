@@ -15,13 +15,20 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(() => {
     return storage.getItem('admin_session') === 'true';
   });
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path === '/' || path === '/pharmacist' || path === '/order') return false;
+      if (storage.getItem('admin_session') === 'true') return false;
+    }
+    return true;
+  });
 
   useEffect(() => {
-    // Safety timeout for Safari if Firebase hangs in iframe
+    // Shorter safety timeout if Firebase hangs in iframe/sandbox environments
     const timeout = setTimeout(() => {
       setAuthLoading(false);
-    }, 3000);
+    }, 800);
 
     if (!auth) {
       clearTimeout(timeout);

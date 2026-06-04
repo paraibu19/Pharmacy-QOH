@@ -76,12 +76,10 @@ export default function AdminLogin({ onLogin }: AdminLoginProps) {
 
       if (res.ok) {
         if (auth) {
-          // Sign in anonymously to Firebase to allow database writes
-          try {
-            await signInAnonymously(auth);
-          } catch (err) {
+          // Sign in anonymously to Firebase to allow database writes (non-blocking to prevent UI lag)
+          signInAnonymously(auth).catch((err) => {
             console.warn('Anonymous sign-in failed (ensure it is enabled in Firebase Console):', err);
-          }
+          });
         }
         onLogin();
         navigate('/admin/dashboard');
