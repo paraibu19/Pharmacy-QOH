@@ -282,17 +282,6 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                   <button 
                     onClick={() => {
                       setIsMobileMenuOpen(false);
-                      window.location.reload();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#F27D26]/5 text-[#F27D26] rounded-xl text-sm font-bold border border-[#F27D26]/12 transition-all hover:bg-[#F27D26]/10"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Refresh Application
-                  </button>
-
-                  <button 
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
                       setIsInstallGuideOpen(true);
                     }}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold border border-blue-100 transition-all hover:bg-blue-100"
