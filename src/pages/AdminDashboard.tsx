@@ -57,6 +57,7 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [bulkImportProgress, setBulkImportProgress] = useState<{current: number, total: number, stage: string} | null>(null);
   const [isBulkPhotoUploading, setIsBulkPhotoUploading] = useState(false);
   const [bulkPhotoProgress, setBulkPhotoProgress] = useState<{current: number, total: number} | null>(null);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
@@ -289,7 +290,12 @@ export default function AdminDashboard() {
     to: '',
     isRefrigerated: false,
     enIndications: '',
-    arIndications: ''
+    arIndications: '',
+    hiIndications: '',
+    urIndications: '',
+    mlIndications: '',
+    bnIndications: '',
+    tlIndications: ''
   });
 
   // Check for draft on mount
@@ -621,6 +627,7 @@ export default function AdminDashboard() {
     reader.onload = async (evt) => {
       try {
         setIsImporting(true);
+        setBulkImportProgress({ current: 0, total: 100, stage: 'Reading Excel workbook...' });
         setError(null);
         setSuccess(null);
         const dataBuffer = evt.target?.result;
@@ -718,8 +725,13 @@ export default function AdminDashboard() {
             const itemName = String(getRowValue(row, ['itemName', 'Name', 'Description', 'ItemName', 'Item Name', 'Product']) || '');
             const generic = String(getRowValue(row, ['generic', 'Generic Name', 'GenericName', 'Generic', 'GenericName']) || '');
             const to = String(getRowValue(row, ['to', 'Linked', 'Cross Reference', 'BrandItem', 'GenericItem']) || '');
-            const enIndications = String(getRowValue(row, ['enIndications', 'EN Indications', 'EN_Indications', 'Indications EN', 'Indications (EN)', 'English Indications']) || '');
-            const arIndications = String(getRowValue(row, ['arIndications', 'AR Indications', 'AR_Indications', 'Indications AR', 'Indications (AR)', 'Arabic Indications']) || '');
+            const enIndications = String(getRowValue(row, ['enIndications', 'EN Indications', 'EN_Indications', 'Indications EN', 'Indications (EN)', 'English Indications', 'English', 'Indications English', 'Indications_English']) || '');
+            const arIndications = String(getRowValue(row, ['arIndications', 'AR Indications', 'AR_Indications', 'Indications AR', 'Indications (AR)', 'Arabic Indications', 'Arabic', 'Indications Arabic', 'Indications_Arabic']) || '');
+            const hiIndications = String(getRowValue(row, ['hiIndications', 'HI Indications', 'HI_Indications', 'Indications HI', 'Indications (HI)', 'Hindi Indications', 'Hindi', 'Indications Hindi', 'Indications_Hindi']) || '');
+            const urIndications = String(getRowValue(row, ['urIndications', 'UR Indications', 'UR_Indications', 'Indications UR', 'Indications (UR)', 'Urdu Indications', 'Urdu', 'Indications Urdu', 'Indications_Urdu']) || '');
+            const mlIndications = String(getRowValue(row, ['mlIndications', 'ML Indications', 'ML_Indications', 'Indications ML', 'Indications (ML)', 'Malayalam Indications', 'Malayalam', 'Indications Malayalam', 'Indications_Malayalam']) || '');
+            const bnIndications = String(getRowValue(row, ['bnIndications', 'BN Indications', 'BN_Indications', 'Indications BN', 'Indications (BN)', 'Bengali Indications', 'Bengali', 'Indications Bengali', 'Indications_Bengali']) || '');
+            const tlIndications = String(getRowValue(row, ['tlIndications', 'TL Indications', 'TL_Indications', 'Indications TL', 'Indications (TL)', 'Tagalog Indications', 'Tagalog', 'Indications Tagalog', 'Indications_Tagalog']) || '');
             
             // Strict Refrigerated Detection matching Column M ('Refridge' / 'isRefrigerated' / 'Refrig')
             let isRefrigerated = false;
@@ -778,6 +790,11 @@ export default function AdminDashboard() {
               expiration3: formatExp(getRowValue(row, ['exp3', 'expir3', 'expir_3', 'expiry3', 'final exp', 'expiration3', 'exp date 3'])),
               enIndications,
               arIndications,
+              hiIndications,
+              urIndications,
+              mlIndications,
+              bnIndications,
+              tlIndications,
               locationId: locationId!,
             };
           }).filter(Boolean) as any[];
@@ -792,7 +809,9 @@ export default function AdminDashboard() {
           throw new Error("No valid medication data found in the matched sheets.");
         }
 
-        await medicationOps.bulkAdd(allMedsList, { photoStrategy: importPhotoStrategy });
+        await medicationOps.bulkAdd(allMedsList, { photoStrategy: importPhotoStrategy }, (p) => {
+          setBulkImportProgress(p);
+        });
         await refresh();
         
         // Fetch up-to-date medications to correctly check for missing translations
@@ -828,6 +847,7 @@ export default function AdminDashboard() {
         setError(error.message);
       } finally {
         setIsImporting(false);
+        setBulkImportProgress(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
@@ -1014,7 +1034,7 @@ export default function AdminDashboard() {
       setForm({ 
         itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
         expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
-        enIndications: '', arIndications: ''
+        enIndications: '', arIndications: '', hiIndications: '', urIndications: '', mlIndications: '', bnIndications: '', tlIndications: ''
       });
       clearDraft();
     } catch (error: any) {
@@ -1051,7 +1071,12 @@ export default function AdminDashboard() {
       imageUrl: med.imageUrl || '',
       isRefrigerated: med.isRefrigerated || false,
       enIndications: med.enIndications || '',
-      arIndications: med.arIndications || ''
+      arIndications: med.arIndications || '',
+      hiIndications: med.hiIndications || '',
+      urIndications: med.urIndications || '',
+      mlIndications: med.mlIndications || '',
+      bnIndications: med.bnIndications || '',
+      tlIndications: med.tlIndications || ''
     });
   };
 
@@ -1375,7 +1400,7 @@ export default function AdminDashboard() {
               setForm({ 
                 itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
                 expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
-                enIndications: '', arIndications: ''
+                enIndications: '', arIndications: '', hiIndications: '', urIndications: '', mlIndications: '', bnIndications: '', tlIndications: ''
               });
               setIsAdding(true);
             }}
@@ -1827,58 +1852,105 @@ export default function AdminDashboard() {
               <div className="max-w-xl mx-auto w-full">
                 <div className="space-y-6">
                   <div className="p-4 md:p-6 bg-white/5 rounded-2xl border border-white/10 flex flex-col items-center text-center">
-                    <div className="w-12 h-12 md:w-16 md:h-16 bg-[#F27D26]/10 rounded-full flex items-center justify-center mb-4">
-                      <Upload className="w-6 h-6 md:w-8 md:h-8 text-[#F27D26]" />
-                    </div>
-                    <p className="text-xs font-bold text-white mb-2 uppercase tracking-widest">Excel File Upload</p>
-                    <p className="text-[10px] md:text-xs text-white/40 mb-6 leading-relaxed">
-                      Upload an Excel workbook with sheets named <br className="hidden md:block"/>
-                      <span className="text-[#F27D26] font-bold">"Adult"</span>, 
-                      <span className="text-[#F27D26] font-bold"> "Pediatric"</span>, or 
-                      <span className="text-[#F27D26] font-bold"> "Mesaieed"</span>.<br/>
-                      Columns: itemCode, itemName, QOH, Min, Max, Exp1, Exp2, Exp3
-                    </p>
-                    
-                    <div className="w-full space-y-4">
-                      <button 
-                        onClick={() => { setImportPhotoStrategy('keep'); fileInputRef.current?.click(); }}
-                        disabled={isImporting}
-                        className="w-full p-4 bg-white text-black hover:bg-white/90 rounded-2xl text-sm font-bold transition-all shadow-xl shadow-white/5 disabled:opacity-50 flex items-center justify-between group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
-                            <Cloud size={18} />
-                          </div>
-                          <div className="text-left">
-                            <p className="font-bold">Keep Photos & Translations</p>
-                            <p className="text-[10px] text-black/40 font-medium">Auto-sync photos and AI translations from cloud by item code</p>
+                    {isImporting ? (
+                      <div className="w-full py-6 flex flex-col items-center justify-center space-y-6">
+                        <div className="relative w-16 h-16 flex items-center justify-center">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-[#F27D26]/20 animate-ping opacity-75"></span>
+                          <div className="relative w-12 h-12 bg-[#F27D26]/10 rounded-full flex items-center justify-center border border-[#F27D26]/20">
+                            <FileSpreadsheet className="w-6 h-6 text-[#F27D26] animate-pulse" />
                           </div>
                         </div>
-                        <ChevronRight size={18} className="opacity-20 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                      </button>
+                        
+                        <div className="space-y-2 w-full text-center">
+                          <h4 className="text-sm font-bold text-white tracking-wide uppercase">Importing Excel Data</h4>
+                          <p className="text-xs text-white/50 font-medium max-w-sm mx-auto">
+                            {bulkImportProgress?.stage || "Processing inventory workbook..."}
+                          </p>
+                        </div>
 
-                      <div className="relative">
-                        <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/5"></span></div>
-                        <div className="relative flex justify-center text-[8px] uppercase tracking-widest"><span className="bg-[#141414] px-2 text-white/20 font-black tracking-[0.2em]">or</span></div>
+                        {bulkImportProgress && (
+                          <div className="w-full max-w-md space-y-2">
+                            <div className="flex justify-between items-center text-[10px] font-bold tracking-wider text-white/40 uppercase">
+                              <span>
+                                {bulkImportProgress.total > 100 
+                                  ? `${bulkImportProgress.current} / ${bulkImportProgress.total} records`
+                                  : `stage progress: ${bulkImportProgress.current}%`
+                                }
+                              </span>
+                              <span className="text-[#F27D26] font-extrabold">
+                                {bulkImportProgress.total > 0 
+                                  ? Math.round((bulkImportProgress.current / bulkImportProgress.total) * 100) 
+                                  : 0}%
+                              </span>
+                            </div>
+                            
+                            <div className="w-full bg-white/5 h-2.5 rounded-full overflow-hidden border border-white/5 relative">
+                              <motion.div 
+                                initial={{ width: 0 }}
+                                animate={{ width: `${bulkImportProgress.total > 0 ? Math.round((bulkImportProgress.current / bulkImportProgress.total) * 100) : 0}%` }}
+                                transition={{ ease: "easeOut", duration: 0.3 }}
+                                className="h-full bg-gradient-to-r from-[#F27D26] to-[#ffaa66] rounded-full"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
-
-                      <button 
-                        onClick={() => { setImportPhotoStrategy('remove'); fileInputRef.current?.click(); }}
-                        disabled={isImporting}
-                        className="w-full p-4 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl text-sm font-bold transition-all disabled:opacity-50 flex items-center justify-between group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-red-500/20 rounded-xl">
-                            <Trash2 size={18} />
-                          </div>
-                          <div className="text-left">
-                            <p className="font-bold">Remove items photos</p>
-                            <p className="text-[10px] opacity-60 font-medium">Wipe all photos for these items</p>
-                          </div>
+                    ) : (
+                      <>
+                        <div className="w-12 h-12 md:w-16 md:h-16 bg-[#F27D26]/10 rounded-full flex items-center justify-center mb-4">
+                          <Upload className="w-6 h-6 md:w-8 md:h-8 text-[#F27D26]" />
                         </div>
-                        <ChevronRight size={18} className="opacity-20 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                      </button>
-                    </div>
+                        <p className="text-xs font-bold text-white mb-2 uppercase tracking-widest">Excel File Upload</p>
+                        <p className="text-[10px] md:text-xs text-white/40 mb-6 leading-relaxed">
+                          Upload an Excel workbook with sheets named <br className="hidden md:block"/>
+                          <span className="text-[#F27D26] font-bold">"Adult"</span>, 
+                          <span className="text-[#F27D26] font-bold"> "Pediatric"</span>, or 
+                          <span className="text-[#F27D26] font-bold"> "Mesaieed"</span>.<br/>
+                          Columns: itemCode, itemName, QOH, Min, Max, Exp1, Exp2, Exp3
+                        </p>
+                        
+                        <div className="w-full space-y-4">
+                          <button 
+                            onClick={() => { setImportPhotoStrategy('keep'); fileInputRef.current?.click(); }}
+                            disabled={isImporting}
+                            className="w-full p-4 bg-white text-black hover:bg-white/90 rounded-2xl text-sm font-bold transition-all shadow-xl shadow-white/5 disabled:opacity-50 flex items-center justify-between group"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26]">
+                                <Cloud size={18} />
+                              </div>
+                              <div className="text-left">
+                                <p className="font-bold">Keep Photos & Translations</p>
+                                <p className="text-[10px] text-black/40 font-medium">Auto-sync photos and AI translations from cloud by item code</p>
+                              </div>
+                            </div>
+                            <ChevronRight size={18} className="opacity-20 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                          </button>
+
+                          <div className="relative">
+                            <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/5"></span></div>
+                            <div className="relative flex justify-center text-[8px] uppercase tracking-widest"><span className="bg-[#141414] px-2 text-white/20 font-black tracking-[0.2em]">or</span></div>
+                          </div>
+
+                          <button 
+                            onClick={() => { setImportPhotoStrategy('remove'); fileInputRef.current?.click(); }}
+                            disabled={isImporting}
+                            className="w-full p-4 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl text-sm font-bold transition-all disabled:opacity-50 flex items-center justify-between group"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-red-500/20 rounded-xl">
+                                <Trash2 size={18} />
+                              </div>
+                              <div className="text-left">
+                                <p className="font-bold">Remove items photos</p>
+                                <p className="text-[10px] opacity-60 font-medium">Wipe all photos for these items</p>
+                              </div>
+                            </div>
+                            <ChevronRight size={18} className="opacity-20 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                          </button>
+                        </div>
+                      </>
+                    )}
 
                     <input 
                       type="file"
@@ -2753,7 +2825,7 @@ export default function AdminDashboard() {
               setForm({ 
                 itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
                 expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
-                enIndications: '', arIndications: ''
+                enIndications: '', arIndications: '', hiIndications: '', urIndications: '', mlIndications: '', bnIndications: '', tlIndications: ''
               });
             }}
             onSave={async (data) => {
@@ -2800,7 +2872,7 @@ export default function AdminDashboard() {
               setForm({ 
                 itemCode: '', itemName: '', generic: '', to: '', qoh: 0, minQty: 0, maxQty: 0, 
                 expiration1: '', expiration2: '', expiration3: '', imageUrl: '', isRefrigerated: false,
-                enIndications: '', arIndications: ''
+                enIndications: '', arIndications: '', hiIndications: '', urIndications: '', mlIndications: '', bnIndications: '', tlIndications: ''
               });
               clearDraft();
             }}

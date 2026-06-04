@@ -757,7 +757,7 @@ export default function GeneralView() {
                           {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
                         </div>
                         <div className="flex items-center gap-1">
-                          {(med.enIndications || med.arIndications) && (
+                          {(med.enIndications || med.arIndications || med.hiIndications || med.urIndications || med.mlIndications || med.bnIndications || med.tlIndications) && (
                             <button 
                               onClick={() => setSelectedMedForIndications(med)}
                               className="p-1 px-2 bg-[#F27D26]/5 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 group/info shadow-sm"
@@ -848,7 +848,7 @@ export default function GeneralView() {
                       <span>{t.refrigerated}</span>
                     </button>
                   )}
-                  {(med.enIndications || med.arIndications) && (
+                  {(med.enIndications || med.arIndications || med.hiIndications || med.urIndications || med.mlIndications || med.bnIndications || med.tlIndications) && (
                     <button 
                       onClick={() => setSelectedMedForIndications(med)}
                       className="p-1 px-1.5 bg-[#F27D26]/5 text-[#F27D26] rounded-md hover:bg-[#F27D26] hover:text-white transition-all flex items-center gap-1 shadow-sm border border-[#F27D26]/10"

@@ -142,9 +142,20 @@ export const medicationOps = {
     }
   },
 
-  async bulkAdd(meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[], options: { photoStrategy: 'keep' | 'remove' } = { photoStrategy: 'keep' }) {
+  async bulkAdd(
+    meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[], 
+    options: { photoStrategy: 'keep' | 'remove' } = { photoStrategy: 'keep' },
+    onProgress?: (progress: { current: number; total: number; stage: string }) => void
+  ) {
     if (!db) {
-      return sharedDb.bulkAdd(meds);
+      if (onProgress) {
+        onProgress({ current: 50, total: 100, stage: 'Importing data (Local storage / Api)...' });
+      }
+      const res = await sharedDb.bulkAdd(meds);
+      if (onProgress) {
+        onProgress({ current: 100, total: 100, stage: 'Data successfully recorded!' });
+      }
+      return res;
     }
 
     if (meds.length === 0) return;
@@ -164,7 +175,22 @@ export const medicationOps = {
 
         for (let i = 0; i < uniqueCodes.length; i += chunkSize) {
           const chunk = uniqueCodes.slice(i, i + chunkSize);
+          if (onProgress) {
+            onProgress({
+              current: i,
+              total: uniqueCodes.length,
+              stage: `Sync check: Checking existing item codes (${i} / ${uniqueCodes.length})`
+            });
+          }
           registryPromises.push(getDocs(query(colRef, where('itemCode', 'in', chunk))));
+        }
+
+        if (onProgress) {
+          onProgress({
+            current: uniqueCodes.length,
+            total: uniqueCodes.length,
+            stage: 'Downloading and building synchronisation indexes...'
+          });
         }
 
         const snapshots = await Promise.all(registryPromises);
@@ -201,6 +227,7 @@ export const medicationOps = {
       // 2. Process writes in batches of 500 (Firestore limit)
       let currentBatch = writeBatch(db);
       let opCount = 0;
+      let processedCount = 0;
 
       for (const m of meds) {
         const existing = existingInLocation[m.locationId]?.[m.itemCode];
@@ -246,7 +273,15 @@ export const medicationOps = {
         }
 
         opCount++;
+        processedCount++;
         if (opCount >= 500) {
+          if (onProgress) {
+            onProgress({
+              current: processedCount,
+              total: meds.length,
+              stage: `Saving medications: batch commit (${processedCount} / ${meds.length})`
+            });
+          }
           await currentBatch.commit();
           currentBatch = writeBatch(db);
           opCount = 0;
@@ -254,9 +289,23 @@ export const medicationOps = {
       }
 
       if (opCount > 0) {
+        if (onProgress) {
+          onProgress({
+            current: meds.length,
+            total: meds.length,
+            stage: `Finalizing bulk import commit (${meds.length} / ${meds.length})`
+          });
+        }
         await currentBatch.commit();
       }
       
+      if (onProgress) {
+        onProgress({
+          current: meds.length,
+          total: meds.length,
+          stage: 'Syncing search catalog...'
+        });
+      }
       await systemOps.syncGlobalMetadata();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'medications/bulk');
