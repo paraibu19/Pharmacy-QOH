@@ -1029,13 +1029,14 @@ export default function OrderView() {
       {/* Controls */}
       <div className="bg-white p-4 md:p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-6">
         <div className="flex flex-col md:flex-row justify-between gap-4">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-4 w-full">
+            {/* Pharmacy Locations Selector - Styled responsive grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-auto">
               {LOCATIONS.map(loc => (
                 <button
                   key={loc.id}
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-                  className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all ${
+                  className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold transition-all text-center select-none ${
                     selectedLocation === loc.id 
                       ? loc.id === PharmacyLocation.ADULT
                         ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-md shadow-emerald-700/10'
@@ -1044,12 +1045,16 @@ export default function OrderView() {
                           : loc.id === PharmacyLocation.MESAIEED
                             ? 'bg-orange-100 text-orange-700 border border-orange-200 shadow-md shadow-orange-700/10'
                             : 'bg-[#141414] text-white shadow-lg'
-                      : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
+                      : 'text-[#141414]/50 hover:text-[#141414] hover:bg-white/45'
                   }`}
                 >
                   {loc.name.replace('Aw-', '')}
                 </button>
               ))}
+            </div>
+
+            {/* Other Quick Filters */}
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => {
                   setTypeFilter(prev => prev === 'generic' ? null : 'generic');
@@ -1761,16 +1766,16 @@ export default function OrderView() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-0 border border-[#141414]/5 rounded-xl overflow-hidden bg-[#141414]/[0.02]">
-                      <div className="p-2 border-right border-[#141414]/5 text-center bg-[#F27D26]/[0.03]">
+                    <div className="grid grid-cols-4 gap-0 border border-[#141414]/5 rounded-xl overflow-hidden bg-[#141414]/[0.02]">
+                      <div className="p-2 border-r border-[#141414]/5 text-center bg-[#F27D26]/[0.03]">
                         <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Min</p>
                         <p className="text-xs font-bold text-[#F27D26]">{formatNumber(med.minQty || 0)}</p>
                       </div>
-                      <div className="p-2 border-right border-[#141414]/5 text-center bg-[#F27D26]/[0.03]">
+                      <div className="p-2 border-r border-[#141414]/5 text-center bg-[#F27D26]/[0.03]">
                         <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Max</p>
                         <p className="text-xs font-bold text-[#F27D26]">{formatNumber(med.maxQty || 0)}</p>
                       </div>
-                      <div className="p-2 text-center bg-emerald-500/10">
+                      <div className="p-2 border-r border-[#141414]/5 text-center bg-emerald-500/10">
                         <p className="text-[8px] font-bold uppercase tracking-wider text-emerald-600/60 mb-0.5">Order</p>
                         <p className="text-xs font-black text-emerald-600">{med.orderQty ? formatNumber(med.orderQty) : '-'}</p>
                       </div>

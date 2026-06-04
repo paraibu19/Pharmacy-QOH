@@ -1716,9 +1716,15 @@ export default function AdminDashboard() {
                     onClick={() => {
                       const formattedItems = expiringItems.map(item => {
                         if (!item) return '';
+                        if (item.qoh <= 0) return '';
                         const formattedDate = format(item.nextExp, 'dd-MM-yyyy');
                         return `Item code: ${item.itemCode || 'N/A'}\nItem name: ${item.itemName}\nExpires on: ${formattedDate}\nIN: ${item.daysLeft}d\nQTY: ${formatNumber(item.qoh)}`;
                       }).filter(Boolean);
+                      
+                      if (formattedItems.length === 0) {
+                        setError('There are no expiring items with positive quantities (QTY > 0) to share.');
+                        return;
+                      }
                       
                       const textMessage = formattedItems.join('\n\nNext item\n\n');
                       const locationName = PHARMACY_NAMES[selectedLocation] || selectedLocation;
@@ -2005,9 +2011,9 @@ export default function AdminDashboard() {
             <h2 className="text-xl font-bold tracking-tight">Inventory Management</h2>
           </div>
           
-          <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
             {/* Search Bar */}
-            <div className="relative w-full md:w-64">
+            <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30" />
               <input 
                 type="text" 
@@ -2026,12 +2032,12 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            <div className="flex gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-fit overflow-x-auto no-scrollbar">
+            <div className="grid grid-cols-1 sm:flex gap-1.5 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-auto">
               {LOCATIONS.map(loc => (
                 <button
                   key={loc.id}
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-                  className={`flex-1 md:flex-none whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold transition-all text-center select-none ${
                     selectedLocation === loc.id 
                       ? loc.id === PharmacyLocation.ADULT
                         ? 'bg-emerald-100 border border-emerald-200 text-emerald-700 shadow-sm'
@@ -2040,7 +2046,7 @@ export default function AdminDashboard() {
                           : loc.id === PharmacyLocation.MESAIEED
                             ? 'bg-orange-100 border border-orange-200 text-[#F27D26] shadow-sm'
                             : 'bg-white shadow-sm text-[#141414]'
-                      : 'text-[#141414]/40 hover:text-[#141414]'
+                      : 'text-[#141414]/50 hover:text-[#141414] hover:bg-white/45'
                   }`}
                 >
                   {loc.name.replace('Aw-', '')}
@@ -2050,7 +2056,7 @@ export default function AdminDashboard() {
 
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
+              className={`flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
                 showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd
                   ? 'bg-[#141414] text-white shadow-lg'
                   : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'

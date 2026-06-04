@@ -56,23 +56,26 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
     return () => unsubscribe();
   }, []);
 
-  const NavLinks = () => (
+  const NavLinks = ({ isMobile = false }: { isMobile?: boolean }) => (
     <>
       <NavLink 
         to="/" 
         onClick={() => setIsMobileMenuOpen(false)}
         className={({ isActive }) => 
-          `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+          `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
         }
       >
-        Homepage
+        <span className="flex items-center gap-2">
+          <ClipboardList className="w-4 h-4" />
+          Homepage
+        </span>
       </NavLink>
 
       <NavLink 
         to="/pharmacist" 
         onClick={() => setIsMobileMenuOpen(false)}
         className={({ isActive }) => 
-          `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+          `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
         }
       >
         <Pill className="w-4 h-4" />
@@ -83,23 +86,25 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
         to="/order" 
         onClick={() => setIsMobileMenuOpen(false)}
         className={({ isActive }) => 
-          `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+          `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
         }
       >
         <Wrench className="w-4 h-4" />
         Order
       </NavLink>
 
-      <button
-        onClick={() => {
-          setIsMobileMenuOpen(false);
-          setIsInstallGuideOpen(true);
-        }}
-        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all hover:bg-[#141414]/5 text-[#141414]/60"
-      >
-        <Smartphone className="w-4 h-4" />
-        Mobile App
-      </button>
+      {!isAdmin && (
+        <NavLink 
+          to="/admin/login" 
+          onClick={() => setIsMobileMenuOpen(false)}
+          className={({ isActive }) => 
+            `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#F27D26] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
+          }
+        >
+          <ShieldCheck className="w-4 h-4" />
+          Admin Login
+        </NavLink>
+      )}
 
       {isAdmin && (
         <>
@@ -107,7 +112,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             to="/admin/dashboard" 
             onClick={() => setIsMobileMenuOpen(false)}
             className={({ isActive }) => 
-              `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+              `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#F27D26] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
             }
           >
             <LayoutDashboard className="w-4 h-4" />
@@ -117,7 +122,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             to="/admin/inventory" 
             onClick={() => setIsMobileMenuOpen(false)}
             className={({ isActive }) => 
-              `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+              `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
             }
           >
             <ClipboardList className="w-4 h-4" />
@@ -158,7 +163,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all border ${
                   isLocalMode 
                     ? 'bg-amber-50/80 border-amber-200 text-amber-700 hover:bg-amber-100' 
-                    : 'bg-emerald-50/80 border-emerald-200 text-emerald-700 hover:bg-emerald-110'
+                    : 'bg-emerald-50/80 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                 }`}
                 title={isLocalMode ? "Click to switch back to Cloud Firestore" : "Click to switch to Local Offline-First Database"}
               >
@@ -183,24 +188,25 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
 
               <div className="w-px h-6 bg-[#141414]/10 mx-2" />
 
-              {onLogout ? (
-                <button 
-                  onClick={onLogout}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 transition-all active:scale-95"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Logout
-                </button>
-              ) : !isAdmin && (
-                <NavLink 
-                  to="/admin/login" 
-                  className={({ isActive }) => 
-                    `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
-                  }
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  Admin Login
-                </NavLink>
+              <button
+                onClick={() => setIsInstallGuideOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-[#141414]/60 hover:bg-[#141414]/5 transition-all active:scale-95"
+              >
+                <Smartphone className="w-4 h-4 text-[#141414]/40" />
+                Mobile App
+              </button>
+
+              {onLogout && (
+                <>
+                  <div className="w-px h-6 bg-[#141414]/10 mx-2" />
+                  <button 
+                    onClick={onLogout}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:bg-red-50 transition-all active:scale-95"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Logout
+                  </button>
+                </>
               )}
             </div>
 
@@ -235,51 +241,69 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
               exit={{ opacity: 0, height: 0 }}
               className="lg:hidden border-t border-[#141414]/10 bg-white overflow-hidden shadow-xl"
             >
-              <div className="px-4 pt-4 pb-8 space-y-3">
-                <div className="flex lg:hidden items-center gap-2 px-4 py-2 bg-[#F27D26]/5 rounded-xl text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
-                  <UploadCloud className="w-3 h-3" />
-                  <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
-                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data Uploaded'}
+              <div className="px-4 pt-4 pb-8 space-y-4">
+                <div className="flex lg:hidden flex-col gap-1 px-4 py-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10">
+                  <span className="text-[8px] font-bold text-[#F27D26] uppercase tracking-widest">Metadata Reference</span>
+                  <div className="flex items-center gap-1.5 text-[9px] font-bold text-[#141414]/60 uppercase">
+                    <UploadCloud className="w-3.5 h-3.5 text-[#F27D26]" />
+                    <span>Last Update:</span>
+                    <span className="text-[#141414] font-black">
+                      {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a').toUpperCase() : 'NO DATA'}
+                    </span>
+                  </div>
                 </div>
 
-                <button
-                  onClick={handleToggleDatabaseMode}
-                  className={`w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border ${
-                    isLocalMode 
-                      ? 'bg-amber-50 border-amber-200 text-amber-700' 
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                  }`}
-                >
-                  {isLocalMode ? <CloudOff className="w-4 h-4 text-amber-600" /> : <Cloud className="w-4 h-4 text-emerald-600 animate-pulse" />}
-                  <span>DB Mode: {isLocalMode ? 'Local Dev DB (Offline-Ready)' : 'Cloud DB (Firestore Live)'}</span>
-                </button>
+                <div className="space-y-1">
+                  <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Database Environment</span>
+                  <button
+                    onClick={handleToggleDatabaseMode}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border ${
+                      isLocalMode 
+                        ? 'bg-amber-50 border-amber-200 text-amber-700' 
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {isLocalMode ? <CloudOff className="w-4 h-4 text-amber-600" /> : <Cloud className="w-4 h-4 text-emerald-600 animate-pulse" />}
+                      <span className="font-extrabold">DB Mode: {isLocalMode ? 'Local Dev (Offline)' : 'Cloud DB (Live)'}</span>
+                    </div>
+                    <span className="text-[9px] px-2 py-0.5 rounded bg-white/60 font-black border uppercase tracking-widest">Switch</span>
+                  </button>
+                </div>
                 
-                <NavLinks />
+                <div className="space-y-1">
+                  <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Navigation Menu</span>
+                  <div className="flex flex-col gap-2">
+                    <NavLinks isMobile={true} />
+                  </div>
+                </div>
 
-                <button 
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    window.location.reload();
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#F27D26]/5 text-[#F27D26] rounded-xl text-sm font-bold border border-[#F27D26]/12 transition-all hover:bg-[#F27D26]/10"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Refresh App Data
-                </button>
+                <div className="space-y-2 pt-2 border-t border-[#141414]/5">
+                  <button 
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      window.location.reload();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-[#F27D26]/5 text-[#F27D26] rounded-xl text-sm font-bold border border-[#F27D26]/12 transition-all hover:bg-[#F27D26]/10"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Refresh Application
+                  </button>
 
-                <button 
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    setIsInstallGuideOpen(true);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold border border-blue-100 transition-all hover:bg-blue-100"
-                >
-                  <Smartphone className="w-4 h-4" />
-                  Add Mobile App to Home Screen
-                </button>
+                  <button 
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setIsInstallGuideOpen(true);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold border border-blue-100 transition-all hover:bg-blue-100"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    Mobile App Install Guide
+                  </button>
+                </div>
 
-                <div className="pt-4 border-t border-[#141414]/10">
-                  {onLogout ? (
+                {onLogout && (
+                  <div className="pt-2 border-t border-[#141414]/5">
                     <button 
                       onClick={() => {
                         setIsMobileMenuOpen(false);
@@ -290,19 +314,8 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                       <LogOut className="w-4 h-4" />
                       Logout
                     </button>
-                  ) : !isAdmin && (
-                    <NavLink 
-                      to="/admin/login" 
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className={({ isActive }) => 
-                        `w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
-                      }
-                    >
-                      <ShieldCheck className="w-4 h-4" />
-                      Admin Login
-                    </NavLink>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           )}
