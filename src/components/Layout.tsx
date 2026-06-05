@@ -179,7 +179,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 title="Connect Phone or PC - View Setup Instructions"
                 id="header-install-guide-btn"
               >
-                <Pill className="w-5 h-5 text-[#F27D26]" />
+                <Smartphone className="w-5 h-5 text-[#F27D26]" />
               </button>
 
               <div className="w-px h-6 bg-[#141414]/10" />
@@ -223,7 +223,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 title="Connect Phone or PC - View Setup Instructions"
                 id="mobile-install-guide-btn"
               >
-                <Pill className="w-5 h-5 text-[#F27D26]" />
+                <Smartphone className="w-5 h-5 text-[#F27D26]" />
               </button>
 
               <button 
@@ -295,7 +295,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                     className="w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border border-orange-200 bg-orange-50/50 text-[#F27D26] hover:bg-orange-100 cursor-pointer"
                   >
                     <div className="flex items-center gap-2">
-                      <Pill className="w-4 h-4 text-[#F27D26]" />
+                      <Smartphone className="w-4 h-4 text-[#F27D26]" />
                       <span className="font-extrabold">Phone & PC Installation Guide</span>
                     </div>
                     <span className="text-[9px] px-2 py-0.5 rounded bg-white font-black border uppercase tracking-widest text-[#F27D26]">View</span>
@@ -365,7 +365,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
               onClick={() => setIsInstallGuideOpen(true)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-[#141414]/5 text-[#141414]/40 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-[#141414]/10 transition-all border border-transparent hover:border-[#141414]/10"
             >
-              <Pill className="w-3 h-3" />
+              <Smartphone className="w-3 h-3" />
               Download Mobile App Guide
             </button>
           </div>

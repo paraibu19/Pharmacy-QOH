@@ -51,11 +51,13 @@ export default function AdminInventory() {
       const qoh = match ? match.qoh : 0;
       const name = loc === PharmacyLocation.ADULT ? 'Adult' : loc === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
       
-      let isAvailable = qoh > 0;
       let label = '';
       let badgeClass = '';
 
-      if (isAvailable) {
+      if (!match) {
+        label = `${name}: Not In The List`;
+        badgeClass = 'bg-stone-50 text-[#141414]/30 border border-stone-200/40';
+      } else if (qoh > 0) {
         if (showQoh) {
           label = `${name}: ${qoh}`;
         } else {
@@ -64,7 +66,7 @@ export default function AdminInventory() {
         badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
       } else {
         label = `${name}: Out of Stock`;
-        badgeClass = 'bg-stone-50 text-[#141414]/40 border border-stone-200/60';
+        badgeClass = 'bg-red-50 text-red-700 border border-red-100';
       }
 
       return (

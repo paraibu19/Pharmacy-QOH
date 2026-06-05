@@ -30,6 +30,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MedicationFormModal from '../components/MedicationFormModal';
+import MultiLocationLookupModal from '../components/MultiLocationLookupModal';
 
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
@@ -48,6 +49,7 @@ export default function AdminDashboard() {
   const [expStart, setExpStart] = useState('');
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showSourcingTransferOnly, setShowSourcingTransferOnly] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [importPhotoStrategy, setImportPhotoStrategy] = useState<'keep' | 'remove'>('keep');
@@ -173,6 +175,164 @@ export default function AdminDashboard() {
     });
 
     doc.save(`Expiration_Rearrangement_Report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+  };
+
+  const downloadInventoryCSV = () => {
+    let listToExport = [...sortedMedications];
+    const headers = showSourcingTransferOnly
+      ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Sourcing Partners (QOH > 50% Order Qty)']
+      : ['Serial no.', 'Item code', 'Item name', 'Location', 'QOH', 'Min Qty', 'Max Qty', 'Exp1', 'Exp2', 'Exp3'];
+
+    const rows = listToExport.map((m, i) => {
+      if (showSourcingTransferOnly) {
+        const oQty = calculateOrder(m, 1);
+        return [
+          i + 1,
+          m.itemCode,
+          m.itemName,
+          m.qoh,
+          oQty,
+          getSourcingLocationsText(m.itemCode, oQty)
+        ];
+      } else {
+        return [
+          i + 1,
+          m.itemCode,
+          m.itemName,
+          PHARMACY_NAMES[m.locationId] || m.locationId,
+          m.qoh,
+          m.minQty || 0,
+          m.maxQty || 0,
+          m.expiration1 || '-',
+          m.expiration2 || '-',
+          m.expiration3 || '-'
+        ];
+      }
+    });
+
+    const csvContent = [
+      headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
+      ...rows.map(r => r.map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadInventoryExcel = () => {
+    let listToExport = [...sortedMedications];
+    const aoa: any[][] = [];
+    
+    const headers = showSourcingTransferOnly
+      ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Sourcing Partners (QOH > 50% Order Qty)']
+      : ['Serial no.', 'Item code', 'Item name', 'Location', 'QOH', 'Min Qty', 'Max Qty', 'Exp1', 'Exp2', 'Exp3'];
+    aoa.push(headers);
+
+    listToExport.forEach((m, i) => {
+      if (showSourcingTransferOnly) {
+        const oQty = calculateOrder(m, 1);
+        aoa.push([
+          i + 1,
+          m.itemCode,
+          m.itemName,
+          m.qoh,
+          oQty,
+          getSourcingLocationsText(m.itemCode, oQty)
+        ]);
+      } else {
+        aoa.push([
+          i + 1,
+          m.itemCode,
+          m.itemName,
+          PHARMACY_NAMES[m.locationId] || m.locationId,
+          m.qoh,
+          m.minQty || 0,
+          m.maxQty || 0,
+          m.expiration1 || '-',
+          m.expiration2 || '-',
+          m.expiration3 || '-'
+        ]);
+      }
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory_Report");
+    XLSX.writeFile(wb, `${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+  };
+
+  const downloadInventoryPDF = () => {
+    let listToExport = [...sortedMedications];
+    const doc = new jsPDF() as any;
+    
+    doc.setFontSize(16);
+    doc.text(showSourcingTransferOnly ? "STOCK TRANSFER / SOURCING REPORT" : "STUDIO PHARMACY MEDICATIONS LIST", 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Location: ${PHARMACY_NAMES[selectedLocation]}`, 14, 22);
+    doc.text(`Generated At: ${format(new Date(), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase()}`, 14, 27);
+
+    const headers = showSourcingTransferOnly
+      ? [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Sourcing Partners (QOH > 50%)']]
+      : [['S.No', 'Item Code', 'Item Name', 'Location', 'QOH', 'Min', 'Max', 'Exp 1']];
+
+    const tableData = listToExport.map((m, i) => {
+      if (showSourcingTransferOnly) {
+        const oQty = calculateOrder(m, 1);
+        return [
+          i + 1,
+          m.itemCode,
+          m.itemName,
+          formatNumber(m.qoh),
+          formatNumber(oQty),
+          getSourcingLocationsText(m.itemCode, oQty)
+        ];
+      } else {
+        return [
+          i + 1,
+          m.itemCode,
+          m.itemName,
+          (PHARMACY_NAMES[m.locationId] || m.locationId).replace('Aw-', ''),
+          formatNumber(m.qoh),
+          formatNumber(m.minQty || 0),
+          formatNumber(m.maxQty || 0),
+          m.expiration1 || '-'
+        ];
+      }
+    });
+
+    autoTable(doc, {
+      startY: 34,
+      head: headers,
+      body: tableData,
+      headStyles: { fillColor: showSourcingTransferOnly ? [16, 185, 129] : [242, 125, 38] },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+      columnStyles: showSourcingTransferOnly ? {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 55 },
+        3: { cellWidth: 15 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 65 }
+      } : {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 55 },
+        3: { cellWidth: 32 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 12 },
+        6: { cellWidth: 12 },
+        7: { cellWidth: 22 }
+      }
+    });
+
+    doc.save(`${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   const handleRefreshExpirationReport = async () => {
@@ -313,6 +473,7 @@ export default function AdminDashboard() {
 
    const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
+  const [selectedMedForLookup, setSelectedMedForLookup] = useState<Medication | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
@@ -325,11 +486,13 @@ export default function AdminDashboard() {
       const qoh = match ? match.qoh : 0;
       const name = loc === PharmacyLocation.ADULT ? 'Adult' : loc === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
       
-      let isAvailable = qoh > 0;
       let label = '';
       let badgeClass = '';
 
-      if (isAvailable) {
+      if (!match) {
+        label = `${name}: Not In The List`;
+        badgeClass = 'bg-stone-50 text-[#141414]/30 border border-stone-200/40';
+      } else if (qoh > 0) {
         if (showQoh) {
           label = `${name}: ${qoh}`;
         } else {
@@ -338,7 +501,7 @@ export default function AdminDashboard() {
         badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
       } else {
         label = `${name}: Out of Stock`;
-        badgeClass = 'bg-stone-50 text-[#141414]/40 border border-stone-200/60';
+        badgeClass = 'bg-red-50 text-red-700 border border-red-100';
       }
 
       return (
@@ -661,6 +824,31 @@ export default function AdminDashboard() {
     return null;
   };
 
+  const calculateOrder = (med: Medication, target: number = 1) => {
+    const qoh = med.qoh || 0;
+    const max = med.maxQty || 0;
+    const min = med.minQty || 0;
+    const targetMax = max * target;
+    
+    if (targetMax === 0 || min === 0) return 0;
+    
+    if (targetMax <= qoh || (targetMax - qoh) < min) {
+      return 0;
+    }
+    
+    return Math.floor((targetMax - qoh) / min) * min;
+  };
+
+  const getSourcingLocationsText = (itemCode: string, orderVal: number) => {
+    const matches = (allMedications || []).filter(om => om.itemCode === itemCode && om.locationId !== selectedLocation);
+    const eligible = matches.filter(om => om.qoh > 0.5 * orderVal);
+    if (eligible.length === 0) return 'None';
+    return eligible.map(om => {
+      const locName = om.locationId === PharmacyLocation.ADULT ? 'Adult' : om.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
+      return `${locName} (${om.qoh} Box)`;
+    }).join(' | ');
+  };
+
   const getExpirationColor = (dateStr: string) => {
     const date = parseExpDate(dateStr);
     if (!date) return '';
@@ -857,6 +1045,21 @@ export default function AdminDashboard() {
       });
     }
 
+    if (showSourcingTransferOnly) {
+      result = result.filter(m => {
+        const isOut = m.qoh <= 0;
+        const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+        if (!isOut && !isLow) return false;
+
+        const oQty = calculateOrder(m, 1);
+        if (oQty <= 0) return false;
+
+        // Check if other locations have qoh > 50% of this orderQty
+        const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+        return matches.some(om => om.qoh > 0.5 * oQty);
+      });
+    }
+
     return result.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       
@@ -884,7 +1087,7 @@ export default function AdminDashboard() {
       if (valA > valB) return 1 * multiplier;
       return 0;
     });
-  }, [medications, sortField, sortOrder, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, searchQuery]);
+  }, [medications, sortField, sortOrder, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, searchQuery, showSourcingTransferOnly, allMedications, selectedLocation]);
 
   const filterCounts = useMemo(() => {
     const all = medications.length;
@@ -899,6 +1102,20 @@ export default function AdminDashboard() {
 
     return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, refrigerated };
   }, [medications]);
+
+  const sourcingTransferCount = useMemo(() => {
+    return (medications || []).filter(m => {
+      const isOut = m.qoh <= 0;
+      const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+      if (!isOut && !isLow) return false;
+
+      const oQty = calculateOrder(m, 1);
+      if (oQty <= 0) return false;
+
+      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      return matches.some(om => om.qoh > 0.5 * oQty);
+    }).length;
+  }, [medications, allMedications, selectedLocation]);
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2612,6 +2829,18 @@ export default function AdminDashboard() {
             </div>
 
             <button
+              onClick={() => setShowSourcingTransferOnly(!showSourcingTransferOnly)}
+              className={`flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap border ${
+                showSourcingTransferOnly
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
+              }`}
+            >
+              <ArrowLeftRight className="w-4 h-4" />
+              Sourcing Plan ({sourcingTransferCount})
+            </button>
+
+            <button
               onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap ${
                 showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd
@@ -2626,7 +2855,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Active Filters Bar */}
-        {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd) && (
+        {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd || showSourcingTransferOnly) && (
           <div className="flex flex-wrap items-center gap-2 p-3 bg-[#141414]/[0.02] rounded-2xl border border-[#141414]/5 animate-in slide-in-from-top-2">
             <span className="text-[9px] font-bold uppercase tracking-widest text-[#141414]/40 flex items-center gap-1">
               Active:
@@ -2657,8 +2886,13 @@ export default function AdminDashboard() {
                 Exp Range: {expStart || '*'} to {expEnd || '*'}
               </span>
             )}
+            {showSourcingTransferOnly && (
+              <span className="px-2 py-0.5 bg-white text-emerald-700 rounded-md text-[9px] font-bold shadow-sm border border-emerald-200">
+                Sourcing Plan: Active
+              </span>
+            )}
             <button 
-              onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter(false); setExpStart(''); setExpEnd(''); }}
+              onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter(false); setExpStart(''); setExpEnd(''); setShowSourcingTransferOnly(false); }}
               className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
             >
               Clear All
@@ -2814,6 +3048,7 @@ export default function AdminDashboard() {
                     setExpStart('');
                     setExpEnd('');
                     setSearchQuery('');
+                    setShowSourcingTransferOnly(false);
                   }}
                   className="w-full h-10 flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 rounded-xl text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
                 >
@@ -2825,6 +3060,36 @@ export default function AdminDashboard() {
 
           </div>
         )}
+      </div>
+
+      {/* Sourcing Export Suite */}
+      <div className="flex flex-col sm:flex-row justify-between items-center bg-[#141414]/[0.02] p-4 rounded-3xl border border-[#141414]/5 mb-4 gap-3">
+        <span className="text-xs font-bold text-[#141414]/60">
+          Showing {sortedMedications.length} items. Select format to export:
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={downloadInventoryCSV}
+            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" />
+            Export CSV
+          </button>
+          <button
+            onClick={downloadInventoryExcel}
+            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            Export Excel
+          </button>
+          <button
+            onClick={downloadInventoryPDF}
+            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <ClipboardList className="w-3.5 h-3.5 text-red-600" />
+            Export PDF
+          </button>
+        </div>
       </div>
 
       {/* Table Container */}
@@ -3129,7 +3394,7 @@ export default function AdminDashboard() {
                         )}
                       </div>
                       <button 
-                        onClick={() => startEdit(med)}
+                        onClick={() => setSelectedMedForLookup(med)}
                         className="flex flex-col items-start gap-0.5 group/name"
                       >
                         <span className="text-sm font-bold text-[#141414] group-hover/name:text-[#F27D26] transition-colors text-left">{med.itemName}</span>
@@ -3325,7 +3590,7 @@ export default function AdminDashboard() {
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
                         <button 
-                          onClick={() => med.to ? setSelectedMedForLinks(med) : startEdit(med)}
+                          onClick={() => setSelectedMedForLookup(med)}
                           className="font-bold text-[#141414] leading-tight text-left hover:text-[#F27D26] transition-colors flex flex-col items-start gap-1"
                         >
                           {med.itemName}
@@ -3489,13 +3754,13 @@ export default function AdminDashboard() {
 
       <AnimatePresence>
         {showCorrectionModal && selectedMedForEdit && (
-          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-6 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center p-0 md:p-6 bg-black/40 backdrop-blur-sm overflow-y-auto">
             <motion.div 
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="bg-white p-6 md:p-8 rounded-t-[2.5rem] md:rounded-3xl shadow-2xl max-w-sm w-full"
+              className="bg-white p-6 md:p-8 rounded-t-[2.5rem] md:rounded-3xl shadow-2xl max-w-sm w-full max-h-[92vh] overflow-y-auto flex flex-col"
             >
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
@@ -3905,6 +4170,15 @@ export default function AdminDashboard() {
           </div>
         )}
       </AnimatePresence>
+
+      <MultiLocationLookupModal
+        isOpen={!!selectedMedForLookup}
+        onClose={() => setSelectedMedForLookup(null)}
+        medication={selectedMedForLookup}
+        allMedications={allMedications || []}
+        onEditOption={selectedMedForLookup ? () => startEdit(selectedMedForLookup) : undefined}
+        onLinksOption={selectedMedForLookup && selectedMedForLookup.to ? () => setSelectedMedForLinks(selectedMedForLookup) : undefined}
+      />
     </div>
   );
 }

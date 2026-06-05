@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
-  Eye, EyeOff, Settings, Key, LogOut, KeyRound, ThermometerSnowflake, UploadCloud
+  Eye, EyeOff, Settings, Key, LogOut, KeyRound, ThermometerSnowflake, UploadCloud,
+  ArrowRightLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -15,6 +16,7 @@ import { useMedications } from '../hooks/useMedications';
 import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
 import LinkedItemsModal from '../components/LinkedItemsModal';
+import MultiLocationLookupModal from '../components/MultiLocationLookupModal';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
@@ -54,6 +56,7 @@ export default function OrderView() {
   const [sortField, setSortField] = useState<SortField>('itemName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [orderTarget, setOrderTarget] = useState<number>(1);
+  const [showSourcingTransferOnly, setShowSourcingTransferOnly] = useState(false);
   
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -77,11 +80,13 @@ export default function OrderView() {
       const qoh = match ? match.qoh : 0;
       const name = loc === PharmacyLocation.ADULT ? 'Adult' : loc === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
       
-      let isAvailable = qoh > 0;
       let label = '';
       let badgeClass = '';
 
-      if (isAvailable) {
+      if (!match) {
+        label = `${name}: Not In The List`;
+        badgeClass = 'bg-stone-50 text-[#141414]/30 border border-stone-200/40';
+      } else if (qoh > 0) {
         if (showQoh) {
           label = `${name}: ${qoh}`;
         } else {
@@ -90,7 +95,7 @@ export default function OrderView() {
         badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
       } else {
         label = `${name}: Out of Stock`;
-        badgeClass = 'bg-stone-50 text-[#141414]/40 border border-stone-200/60';
+        badgeClass = 'bg-red-50 text-red-700 border border-red-100';
       }
 
       return (
@@ -99,6 +104,16 @@ export default function OrderView() {
         </span>
       );
     });
+  };
+
+  const getSourcingLocationsText = (itemCode: string, orderVal: number) => {
+    const matches = (allMedications || []).filter(om => om.itemCode === itemCode && om.locationId !== selectedLocation);
+    const eligible = matches.filter(om => om.qoh > 0.5 * orderVal);
+    if (eligible.length === 0) return 'None';
+    return eligible.map(om => {
+      const locName = om.locationId === PharmacyLocation.ADULT ? 'Adult' : om.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
+      return `${locName} (${om.qoh} Box)`;
+    }).join(' | ');
   };
   
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -109,6 +124,7 @@ export default function OrderView() {
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
+  const [selectedMedForLookup, setSelectedMedForLookup] = useState<Medication | null>(null);
 
   React.useEffect(() => {
     technicianAuthOps.getPassword('order').then(setPersistedPassword);
@@ -332,6 +348,21 @@ export default function OrderView() {
       }
     }
 
+    if (showSourcingTransferOnly) {
+      displayResult = displayResult.filter(m => {
+        const isOut = m.qoh <= 0;
+        const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+        if (!isOut && !isLow) return false;
+
+        const oQty = m.orderQty || 0;
+        if (oQty <= 0) return false;
+
+        // Check if other locations have qoh > 50% of this orderQty
+        const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+        return matches.some(om => om.qoh > 0.5 * oQty);
+      });
+    }
+
     return displayResult.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       
@@ -345,7 +376,7 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, consumptionFilter, expStart, expEnd, sortField, sortOrder, orderTarget]);
+  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, consumptionFilter, expStart, expEnd, sortField, sortOrder, orderTarget, showSourcingTransferOnly, allMedications]);
 
   const filterCounts = useMemo(() => {
     const all = medications.length;
@@ -372,6 +403,20 @@ export default function OrderView() {
   const availableGenericsCount = filterCounts.generics;
   const availableBrandsCount = filterCounts.brands;
   const availableNonGenericAndNonBrandCount = filterCounts.nonGenericAndNonBrand;
+
+  const sourcingTransferCount = useMemo(() => {
+    return (medications || []).filter(m => {
+      const isOut = m.qoh <= 0;
+      const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+      if (!isOut && !isLow) return false;
+
+      const oQty = calculateOrder(m, 1);
+      if (oQty <= 0) return false;
+
+      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      return matches.some(om => om.qoh > 0.5 * oQty);
+    }).length;
+  }, [medications, allMedications, selectedLocation]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -468,15 +513,26 @@ export default function OrderView() {
   const downloadCSV = () => {
     const orderItems = sortedMeds.filter(m => m.orderQty > 0);
     const activeFilters = getActiveFiltersList();
-    const headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
-    const rows = orderItems.map((m, i) => [
-      i + 1,
-      m.itemCode,
-      `${m.itemName} [${m.consumption || 0}]`,
-      m.qoh,
-      m.orderQty,
-      m.expiration1 || '-'
-    ]);
+    if (showSourcingTransferOnly) {
+      activeFilters.push({ label: 'Sourcing Mode:', value: 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)' });
+    }
+    const headers = showSourcingTransferOnly
+      ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1', 'Sourcing Partners (QOH > 50% Order Qty)']
+      : ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
+    const rows = orderItems.map((m, i) => {
+      const row = [
+        i + 1,
+        m.itemCode,
+        `${m.itemName} [${m.consumption || 0}]`,
+        m.qoh,
+        m.orderQty,
+        m.expiration1 || '-'
+      ];
+      if (showSourcingTransferOnly) {
+        row.push(getSourcingLocationsText(m.itemCode, m.orderQty));
+      }
+      return row;
+    });
 
     const metaRows: string[] = [];
     if (activeFilters.length > 0) {
@@ -505,13 +561,16 @@ export default function OrderView() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Store_Order_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.download = `${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
   };
 
   const downloadExcel = () => {
     const orderItems = sortedMeds.filter(m => m.orderQty > 0);
     const activeFilters = getActiveFiltersList();
+    if (showSourcingTransferOnly) {
+      activeFilters.push({ label: 'Sourcing Mode:', value: 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)' });
+    }
     const aoa: any[][] = [];
 
     if (activeFilters.length > 0) {
@@ -527,40 +586,49 @@ export default function OrderView() {
       aoa.push([]); // blank row
     }
 
-    const headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
+    const headers = showSourcingTransferOnly
+      ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1', 'Sourcing Partners (QOH > 50% Order Qty)']
+      : ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
     aoa.push(headers);
 
     orderItems.forEach((m, i) => {
-      aoa.push([
+      const row = [
         i + 1,
         m.itemCode,
         `${m.itemName} [${m.consumption || 0}]`,
         m.qoh,
         m.orderQty,
         m.expiration1 || '-'
-      ]);
+      ];
+      if (showSourcingTransferOnly) {
+        row.push(getSourcingLocationsText(m.itemCode, m.orderQty));
+      }
+      aoa.push(row);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Store_Order");
     
-    XLSX.writeFile(wb, `Store_Order_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+    XLSX.writeFile(wb, `${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
 
   const downloadPDF = () => {
     const doc = new jsPDF() as any;
     const orderItems = sortedMeds.filter(m => m.orderQty > 0);
     const activeFilters = getActiveFiltersList();
+    if (showSourcingTransferOnly) {
+      activeFilters.push({ label: 'Sourcing Mode:', value: 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)' });
+    }
     
     doc.setFontSize(20);
-    doc.text('Pharmacy Store Order', 14, 22);
+    doc.text(showSourcingTransferOnly ? 'Stock Transfer / Sourcing Report' : 'Pharmacy Store Order', 14, 22);
     
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Location: ${PHARMACY_NAMES[selectedLocation]}`, 14, 30);
     doc.text(`Generated: ${format(new Date(), 'EEEE, dd-MM-yyyy, hh:mm a').toUpperCase()}`, 14, 35);
-    doc.text(`Total Items to Order: ${orderItems.length}`, 14, 40);
+    doc.text(showSourcingTransferOnly ? `Total Transfer items: ${orderItems.length}` : `Total Items to Order: ${orderItems.length}`, 14, 40);
 
     let currentY = 48;
     if (activeFilters.length > 0) {
@@ -602,15 +670,23 @@ export default function OrderView() {
       currentY += 8; // spatial padding
     }
 
-    const headers = [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1']];
-    const data = orderItems.map((m, i) => [
-      i + 1,
-      m.itemCode,
-      `${m.itemName} [${m.consumption || 0}]`,
-      formatNumber(m.qoh),
-      formatNumber(m.orderQty),
-      m.expiration1 || '-'
-    ]);
+    const headers = showSourcingTransferOnly
+      ? [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1', 'Sourcing Partners (QOH > 50%)']]
+      : [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1']];
+    const data = orderItems.map((m, i) => {
+      const row = [
+        i + 1,
+        m.itemCode,
+        `${m.itemName} [${m.consumption || 0}]`,
+        formatNumber(m.qoh),
+        formatNumber(m.orderQty),
+        m.expiration1 || '-'
+      ];
+      if (showSourcingTransferOnly) {
+        row.push(getSourcingLocationsText(m.itemCode, m.orderQty));
+      }
+      return row;
+    });
 
     const formatIndicatorMonth = (date: Date) => {
       const m = date.getMonth();
@@ -624,9 +700,16 @@ export default function OrderView() {
       head: headers,
       body: data,
       theme: 'grid',
-      headStyles: { fillColor: [242, 125, 38], textColor: 255, fontStyle: 'bold' },
+      headStyles: { fillColor: showSourcingTransferOnly ? [16, 185, 129] : [242, 125, 38], textColor: 255, fontStyle: 'bold' },
       styles: { fontSize: 8, cellPadding: 3 },
-      columnStyles: {
+      columnStyles: showSourcingTransferOnly ? {
+        0: { cellWidth: 12 },
+        1: { cellWidth: 22 },
+        3: { cellWidth: 15 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 18 },
+        6: { cellWidth: 48 }
+      } : {
         0: { cellWidth: 15 },
         1: { cellWidth: 25 },
         3: { cellWidth: 20 },
@@ -772,7 +855,7 @@ export default function OrderView() {
       }
     });
 
-    doc.save(`Store_Order_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    doc.save(`${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   const handleVerifyAdmin = async (e: React.FormEvent) => {
@@ -1044,6 +1127,15 @@ export default function OrderView() {
               </span>
             </span>
           )}
+          {showSourcingTransferOnly && (
+            <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-emerald-500/10 flex items-center gap-1.5">
+              <ArrowRightLeft className="w-2.5 h-2.5 text-emerald-600" />
+              Sourcing Mode: <span className="text-emerald-600 uppercase">CROSS-LOCATION FINDER</span>
+              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0).length} items
+              </span>
+            </span>
+          )}
           {(expStart || expEnd) && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm flex items-center gap-1.5 border border-[#F27D26]/10">
               Expiry: <span className="text-[#F27D26]">{expStart || 'Any'}</span> – <span className="text-[#F27D26]">{expEnd || 'Any'}</span>
@@ -1053,7 +1145,7 @@ export default function OrderView() {
             </span>
           )}
           <button 
-            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter('all'); setConsumptionFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); }}
+            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter('all'); setConsumptionFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); setShowSourcingTransferOnly(false); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -1090,6 +1182,19 @@ export default function OrderView() {
 
             {/* Other Quick Filters */}
             <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setShowSourcingTransferOnly(prev => !prev);
+                }}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
+                  showSourcingTransferOnly 
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
+                }`}
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                Sourcing Plan ({sourcingTransferCount})
+              </button>
               <button
                 onClick={() => {
                   setTypeFilter(prev => prev === 'generic' ? null : 'generic');
@@ -1627,11 +1732,7 @@ export default function OrderView() {
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (med.to) {
-                                    setSelectedMedForLinks(med);
-                                  } else {
-                                    startEdit(med);
-                                  }
+                                  setSelectedMedForLookup(med);
                                 }}
                                 className="flex flex-col group/name text-left hover:opacity-80 transition-all"
                               >
@@ -1755,8 +1856,7 @@ export default function OrderView() {
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (med.to) setSelectedMedForLinks(med);
-                                else startEdit(med);
+                                setSelectedMedForLookup(med);
                               }}
                               className="font-bold text-[#141414] text-left hover:text-[#F27D26] transition-colors flex flex-col items-start gap-1"
                             >
@@ -1986,13 +2086,13 @@ export default function OrderView() {
       {/* Quantity Correction Window */}
       <AnimatePresence>
         {showCorrectionModal && selectedMedForEdit && (
-          <div className="fixed inset-0 z-[110] flex items-end md:items-center justify-center p-0 md:p-6 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[110] flex items-end md:items-center justify-center p-0 md:p-6 bg-black/40 backdrop-blur-sm overflow-y-auto">
             <motion.div 
               initial={{ y: "100%", opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: "100%", opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="bg-white p-6 md:p-8 rounded-t-[2.5rem] md:rounded-3xl shadow-2xl max-w-sm w-full"
+              className="bg-white p-6 md:p-8 rounded-t-[2.5rem] md:rounded-3xl shadow-2xl max-w-sm w-full max-h-[92vh] overflow-y-auto flex flex-col"
             >
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
@@ -2112,6 +2212,14 @@ export default function OrderView() {
           />
         )}
       </AnimatePresence>
+      <MultiLocationLookupModal
+        isOpen={!!selectedMedForLookup}
+        onClose={() => setSelectedMedForLookup(null)}
+        medication={selectedMedForLookup}
+        allMedications={allMedications || []}
+        onEditOption={selectedMedForLookup ? () => startEdit(selectedMedForLookup) : undefined}
+        onLinksOption={selectedMedForLookup && selectedMedForLookup.to ? () => setSelectedMedForLinks(selectedMedForLookup) : undefined}
+      />
     </div>
   );
 }
