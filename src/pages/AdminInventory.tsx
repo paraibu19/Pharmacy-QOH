@@ -32,6 +32,7 @@ export default function AdminInventory() {
   const [refFilter, setRefFilter] = useState<boolean>(false);
   
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const { medications: allMedications } = useMedications();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,6 +40,40 @@ export default function AdminInventory() {
       setError(`Fetch Error: ${fetchError}`);
     }
   }, [fetchError]);
+
+  const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
+    const matches = (allMedications || []).filter(m => m.itemCode === itemCode && m.locationId !== currentLocationId);
+    const otherLocs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED]
+      .filter(loc => loc !== currentLocationId);
+
+    return otherLocs.map(loc => {
+      const match = matches.find(m => m.locationId === loc);
+      const qoh = match ? match.qoh : 0;
+      const name = loc === PharmacyLocation.ADULT ? 'Adult' : loc === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
+      
+      let isAvailable = qoh > 0;
+      let label = '';
+      let badgeClass = '';
+
+      if (isAvailable) {
+        if (showQoh) {
+          label = `${name}: ${qoh}`;
+        } else {
+          label = `${name}: Available`;
+        }
+        badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+      } else {
+        label = `${name}: Out of Stock`;
+        badgeClass = 'bg-stone-50 text-[#141414]/40 border border-stone-200/60';
+      }
+
+      return (
+        <span key={loc} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ${badgeClass}`}>
+          {label}
+        </span>
+      );
+    });
+  };
 
   const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>({});
   const [showSyncPulse, setShowSyncPulse] = useState(false);
@@ -760,6 +795,10 @@ export default function AdminInventory() {
                         {med.generic && (
                           <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>
                         )}
+                        <div className="flex flex-wrap gap-1 mt-1.5" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 self-center">Other locations:</span>
+                          {getOtherLocationsAvailability(med.itemCode, selectedLocation, true)}
+                        </div>
                         <span className="text-[9px] text-[#141414]/30 mt-1 uppercase italic">
                           Last Updated: {format(new Date(med.lastUpdatedAt), 'dd MMM, HH:mm')}
                         </span>
@@ -862,6 +901,13 @@ export default function AdminInventory() {
                         Refrigerated
                       </span>
                     )}
+                    {med.generic && (
+                      <p className="text-[10px] italic text-[#141414]/40 leading-none">{med.generic}</p>
+                    )}
+                    <div className="flex flex-wrap gap-1 mt-1.5 mb-1 bg-[#141414]/[0.02] p-1.5 rounded-lg border border-[#141414]/5" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 self-center">Other locations:</span>
+                      {getOtherLocationsAvailability(med.itemCode, selectedLocation, true)}
+                    </div>
                   </div>
                   <div className="text-right flex flex-col items-end gap-1">
                     <span className="text-sm font-black bg-[#141414]/5 px-2 py-1 rounded">{formatNumber(med.qoh)}</span>

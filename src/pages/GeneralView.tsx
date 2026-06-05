@@ -63,6 +63,7 @@ export default function GeneralView() {
   const [showSavedReminders, setShowSavedReminders] = useState(false);
   
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
+  const { medications: allMedications } = useMedications();
 
   useEffect(() => {
     storage.setItem('app_language', language);
@@ -73,6 +74,40 @@ export default function GeneralView() {
       console.error("GeneralView fetch error:", fetchError);
     }
   }, [fetchError]);
+
+  const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
+    const matches = (allMedications || []).filter(m => m.itemCode === itemCode && m.locationId !== currentLocationId);
+    const otherLocs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED]
+      .filter(loc => loc !== currentLocationId);
+
+    return otherLocs.map(loc => {
+      const match = matches.find(m => m.locationId === loc);
+      const qoh = match ? match.qoh : 0;
+      const name = loc === PharmacyLocation.ADULT ? 'Adult' : loc === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
+      
+      let isAvailable = qoh > 0;
+      let label = '';
+      let badgeClass = '';
+
+      if (isAvailable) {
+        if (showQoh) {
+          label = `${name}: ${qoh}`;
+        } else {
+          label = `${name}: Available`;
+        }
+        badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+      } else {
+        label = `${name}: Out of Stock`;
+        badgeClass = 'bg-stone-50 text-[#141414]/40 border border-stone-200/60';
+      }
+
+      return (
+        <span key={loc} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ${badgeClass}`}>
+          {label}
+        </span>
+      );
+    });
+  };
 
   const handleSaveSchedule = () => {
     if (!selectedMedicationForReminder) return;
@@ -755,6 +790,10 @@ export default function GeneralView() {
                             </button>
                           )}
                           {med.generic && <span className="text-[10px] italic text-[#141414]/40 leading-tight">{med.generic}</span>}
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 self-center">Other locations:</span>
+                            {getOtherLocationsAvailability(med.itemCode, selectedLocation, false)}
+                          </div>
                         </div>
                         <div className="flex items-center gap-1">
                           {(med.enIndications || med.arIndications || med.hiIndications || med.urIndications || med.mlIndications || med.bnIndications || med.tlIndications) && (
@@ -831,6 +870,10 @@ export default function GeneralView() {
                       {med.generic}
                     </p>
                   )}
+                </div>
+                <div className="flex flex-wrap gap-1 mt-1.5 mb-1 bg-[#141414]/[0.02] p-1.5 rounded-lg border border-[#141414]/5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 self-center">Other locations:</span>
+                  {getOtherLocationsAvailability(med.itemCode, selectedLocation, false)}
                 </div>
                 
                 {/* Badges and action buttons container */}

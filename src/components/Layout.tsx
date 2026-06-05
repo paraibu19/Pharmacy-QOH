@@ -93,19 +93,6 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
         Order
       </NavLink>
 
-      {!isAdmin && (
-        <NavLink 
-          to="/admin/login" 
-          onClick={() => setIsMobileMenuOpen(false)}
-          className={({ isActive }) => 
-            `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#F27D26] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
-          }
-        >
-          <ShieldCheck className="w-4 h-4" />
-          Admin Login
-        </NavLink>
-      )}
-
       {isAdmin && (
         <>
           <NavLink 
@@ -158,6 +145,19 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             
             {/* Desktop Nav */}
             <div className="hidden lg:flex gap-4 items-center">
+              <button 
+                onClick={() => {
+                  window.location.reload();
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold text-[#F27D26] bg-[#F27D26]/5 hover:bg-[#F27D26]/12 hover:scale-102 transition-all border border-[#F27D26]/10 active:scale-95 shadow-sm"
+                title="Refresh App"
+              >
+                <RefreshCw className="w-4 h-4 animate-hover-spin" />
+                <span>Refresh</span>
+              </button>
+
+              <div className="w-px h-6 bg-[#141414]/10" />
+
               <button
                 onClick={handleToggleDatabaseMode}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all border ${
@@ -171,30 +171,35 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                 <span>{isLocalMode ? 'Local Dev DB' : 'Cloud DB'}</span>
               </button>
 
+              <div className="w-px h-6 bg-[#141414]/10" />
+
               <button
-                onClick={() => {
-                  window.location.reload();
-                }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-bold text-[#F27D26] bg-[#F27D26]/5 hover:bg-[#F27D26]/12 hover:scale-102 transition-all border border-[#F27D26]/10 active:scale-95 shadow-sm"
-                title="Refresh App"
+                onClick={() => setIsInstallGuideOpen(true)}
+                className="relative p-2.5 bg-orange-50 hover:bg-orange-100 border border-orange-200/60 rounded-xl text-[#F27D26] transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-sm group"
+                title="Connect Phone or PC - View Setup Instructions"
+                id="header-install-guide-btn"
               >
-                <RefreshCw className="w-4 h-4 animate-hover-spin" />
-                <span>Refresh</span>
+                <Pill className="w-5 h-5 text-[#F27D26]" />
               </button>
 
               <div className="w-px h-6 bg-[#141414]/10" />
 
               <NavLinks />
 
-              <div className="w-px h-6 bg-[#141414]/10 mx-2" />
-
-              <button
-                onClick={() => setIsInstallGuideOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-[#141414]/60 hover:bg-[#141414]/5 transition-all active:scale-95"
-              >
-                <Smartphone className="w-4 h-4 text-[#141414]/40" />
-                Mobile App
-              </button>
+              {!isAdmin && (
+                <>
+                  <div className="w-px h-6 bg-[#141414]/10 mx-2" />
+                  <NavLink 
+                    to="/admin/login" 
+                    className={({ isActive }) => 
+                      `flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#F27D26] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60'}`
+                    }
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Admin Login
+                  </NavLink>
+                </>
+              )}
 
               {onLogout && (
                 <>
@@ -212,6 +217,15 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
 
             {/* Mobile Actions Container */}
             <div className="lg:hidden flex items-center gap-2">
+              <button
+                onClick={() => setIsInstallGuideOpen(true)}
+                className="relative p-2.5 bg-orange-50 border border-orange-200/60 rounded-xl text-[#F27D26] hover:bg-orange-100 active:scale-95 transition-all cursor-pointer shadow-sm"
+                title="Connect Phone or PC - View Setup Instructions"
+                id="mobile-install-guide-btn"
+              >
+                <Pill className="w-5 h-5 text-[#F27D26]" />
+              </button>
+
               <button 
                 onClick={() => {
                   window.location.reload();
@@ -270,6 +284,23 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                     <span className="text-[9px] px-2 py-0.5 rounded bg-white/60 font-black border uppercase tracking-widest">Switch</span>
                   </button>
                 </div>
+
+                <div className="space-y-1">
+                  <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Device Instructions</span>
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setIsInstallGuideOpen(true);
+                    }}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border border-orange-200 bg-orange-50/50 text-[#F27D26] hover:bg-orange-100 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Pill className="w-4 h-4 text-[#F27D26]" />
+                      <span className="font-extrabold">Phone & PC Installation Guide</span>
+                    </div>
+                    <span className="text-[9px] px-2 py-0.5 rounded bg-white font-black border uppercase tracking-widest text-[#F27D26]">View</span>
+                  </button>
+                </div>
                 
                 <div className="space-y-1">
                   <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Navigation Menu</span>
@@ -278,18 +309,20 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                   </div>
                 </div>
 
-                <div className="space-y-2 pt-2 border-t border-[#141414]/5">
-                  <button 
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      setIsInstallGuideOpen(true);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-blue-50 text-blue-600 rounded-xl text-sm font-bold border border-blue-100 transition-all hover:bg-blue-100"
-                  >
-                    <Smartphone className="w-4 h-4" />
-                    Mobile App Install Guide
-                  </button>
-                </div>
+                {!isAdmin && (
+                  <div className="space-y-2 pt-2 border-t border-[#141414]/5">
+                    <NavLink 
+                      to="/admin/login" 
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={({ isActive }) => 
+                        `w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#F27D26] text-white shadow-lg' : 'bg-[#141414]/5 text-[#141414]/60'}`
+                      }
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      Admin Login
+                    </NavLink>
+                  </div>
+                )}
 
                 {onLogout && (
                   <div className="pt-2 border-t border-[#141414]/5">
@@ -332,7 +365,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
               onClick={() => setIsInstallGuideOpen(true)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-[#141414]/5 text-[#141414]/40 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-[#141414]/10 transition-all border border-transparent hover:border-[#141414]/10"
             >
-              <Smartphone className="w-3 h-3" />
+              <Pill className="w-3 h-3" />
               Download Mobile App Guide
             </button>
           </div>

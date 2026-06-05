@@ -39,10 +39,105 @@ function cleanUndefined<T>(obj: T): T {
   return cleaned as T;
 }
 
+function parseExpDate(dateStr: string) {
+  if (!dateStr || dateStr === '-' || dateStr === '.') return null;
+  try {
+    const parts = dateStr.split(/[-/.]/);
+    if (parts.length === 3) {
+      const d = parseInt(parts[0]);
+      const m = parseInt(parts[1]);
+      const y = parseInt(parts[2]);
+      const fullYear = y < 100 ? 2000 + y : y;
+      const date = new Date(fullYear, m - 1, d);
+      if (!isNaN(date.getTime())) return date;
+    } else if (parts.length === 2) {
+      const m = parseInt(parts[0]);
+      const y = parseInt(parts[1]);
+      const fullYear = y < 100 ? 2000 + y : y;
+      const date = new Date(fullYear, m - 1, 1);
+      if (!isNaN(date.getTime())) return date;
+    }
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) return d;
+  } catch { }
+  return null;
+}
+
+function rearrangeMedicationExpiries(med: any) {
+  if (med.expiration1 === undefined && med.expiration2 === undefined && med.expiration3 === undefined) {
+    return null;
+  }
+
+  const origExp1 = med.expiration1 || '';
+  const origExp2 = med.expiration2 || '';
+  const origExp3 = med.expiration3 || '';
+
+  const d1 = parseExpDate(origExp1);
+  const d2 = parseExpDate(origExp2);
+  const d3 = parseExpDate(origExp3);
+
+  const list: { raw: string; date: Date | null }[] = [];
+  if (origExp1 && origExp1 !== '-' && origExp1 !== '.') {
+    list.push({ raw: origExp1, date: d1 });
+  }
+  if (origExp2 && origExp2 !== '-' && origExp2 !== '.') {
+    list.push({ raw: origExp2, date: d2 });
+  }
+  if (origExp3 && origExp3 !== '-' && origExp3 !== '.') {
+    list.push({ raw: origExp3, date: d3 });
+  }
+
+  const uniqueList: { raw: string; date: Date | null }[] = [];
+  for (const item of list) {
+    const isDuplicate = uniqueList.some(seen => {
+      if (item.date && seen.date) {
+        return item.date.getTime() === seen.date.getTime();
+      }
+      return item.raw.trim().toLowerCase() === seen.raw.trim().toLowerCase();
+    });
+    if (!isDuplicate) {
+      uniqueList.push(item);
+    }
+  }
+
+  const withDates = uniqueList.filter(item => item.date !== null) as { raw: string; date: Date }[];
+  const withoutDates = uniqueList.filter(item => item.date === null);
+
+  withDates.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  const rearrangedList = [
+    ...withDates.map(item => item.raw),
+    ...withoutDates.map(item => item.raw)
+  ];
+
+  while (rearrangedList.length < 3) {
+    rearrangedList.push('');
+  }
+
+  const [newExp1, newExp2, newExp3] = rearrangedList;
+
+  const wasRearranged = (origExp1 || '') !== (newExp1 || '') || 
+                       (origExp2 || '') !== (newExp2 || '') || 
+                       (origExp3 || '') !== (newExp3 || '');
+
+  return {
+    expiration1: newExp1,
+    expiration2: newExp2,
+    expiration3: newExp3,
+    originalExp1: origExp1,
+    originalExp2: origExp2,
+    originalExp3: origExp3,
+    wasRearranged: wasRearranged
+  };
+}
+
 export const medicationOps = {
   async add(med: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>) {
+    const rearranged = rearrangeMedicationExpiries(med);
+    const dataToSave = rearranged ? { ...med, ...rearranged } : med;
+
     if (!db) {
-      return sharedDb.addMedication(med);
+      return sharedDb.addMedication(dataToSave);
     }
     const path = 'medications';
     
@@ -59,7 +154,7 @@ export const medicationOps = {
       }
 
       const result = await addDoc(collection(db, path), cleanUndefined({
-        ...med,
+        ...dataToSave,
         addedAt: serverTimestamp(),
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
@@ -72,13 +167,16 @@ export const medicationOps = {
   },
 
   async update(id: string, data: Partial<Medication>, skipSync = false) {
+    const rearranged = rearrangeMedicationExpiries(data);
+    const dataToSave = rearranged ? { ...data, ...rearranged } : data;
+
     if (!db) {
-      return sharedDb.updateMedication(id, data);
+      return sharedDb.updateMedication(id, dataToSave);
     }
     const path = `medications/${id}`;
     try {
       const result = await updateDoc(doc(db, 'medications', id), cleanUndefined({
-        ...data,
+        ...dataToSave,
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
       }));
@@ -92,7 +190,9 @@ export const medicationOps = {
   async bulkUpdate(updates: { id: string; data: Partial<Medication> }[]) {
     if (!db) {
       for (const u of updates) {
-        await sharedDb.updateMedication(u.id, u.data);
+        const rearranged = rearrangeMedicationExpiries(u.data);
+        const dataToSave = rearranged ? { ...u.data, ...rearranged } : u.data;
+        await sharedDb.updateMedication(u.id, dataToSave);
       }
       return;
     }
@@ -104,9 +204,11 @@ export const medicationOps = {
       let count = 0;
 
       for (const u of updates) {
+        const rearranged = rearrangeMedicationExpiries(u.data);
+        const dataToSave = rearranged ? { ...u.data, ...rearranged } : u.data;
         const medRef = doc(db, 'medications', u.id);
         batch.update(medRef, cleanUndefined({
-          ...u.data,
+          ...dataToSave,
           lastUpdatedAt: serverTimestamp(),
           updatedBy: auth?.currentUser?.uid || 'system',
         }));

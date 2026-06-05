@@ -11,6 +11,8 @@ import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { format, differenceInDays, isBefore, startOfToday, isSameMonth, addMonths, startOfMonth } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { useAudits } from '../hooks/useAudits';
@@ -36,7 +38,7 @@ export default function AdminDashboard() {
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
     const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
-    const { medications: allMedications } = useMedications();
+    const { medications: allMedications, refresh: refreshAll, isSyncing: isSyncingAll } = useMedications();
     const { audits, loading: auditsLoading } = useAudits(10);
     const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
@@ -69,10 +71,283 @@ export default function AdminDashboard() {
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [skippedUploads, setSkippedUploads] = useState<string[]>([]);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
 
-  const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
+  const [rearrangedReportItems, setRearrangedReportItems] = useState<any[]>(() => {
+    try {
+      const raw = localStorage.getItem('rearranged_report_last_upload');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const exportToExcel = () => {
+    if (rearrangedReportItems.length === 0) return;
+    const data = rearrangedReportItems.map(item => ({
+      'Item Code': item.itemCode,
+      'Item Name': item.itemName,
+      'Location': item.locationId.toUpperCase(),
+      'Original Expiry 1': item.originalExp1 || '-',
+      'Original Expiry 2': item.originalExp2 || '-',
+      'Original Expiry 3': item.originalExp3 || '-',
+      'Rearranged Expiry 1': item.rearrangedExp1 || '-',
+      'Rearranged Expiry 2': item.rearrangedExp2 || '-',
+      'Rearranged Expiry 3': item.rearrangedExp3 || '-',
+      'Status': item.wasRearranged ? 'Rearranged' : 'Unchanged'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Rearrangement_Report");
+    XLSX.writeFile(wb, `Expiration_Rearrangement_Report_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+  };
+
+  const exportToCSV = () => {
+    if (rearrangedReportItems.length === 0) return;
+    const headers = ['Item Code', 'Item Name', 'Location', 'Original Expiry 1', 'Original Expiry 2', 'Original Expiry 3', 'Rearranged Expiry 1', 'Rearranged Expiry 2', 'Rearranged Expiry 3', 'Status'];
+    const rows = rearrangedReportItems.map(item => [
+      item.itemCode,
+      item.itemName,
+      item.locationId,
+      item.originalExp1 || '-',
+      item.originalExp2 || '-',
+      item.originalExp3 || '-',
+      item.rearrangedExp1 || '-',
+      item.rearrangedExp2 || '-',
+      item.rearrangedExp3 || '-',
+      item.wasRearranged ? 'Rearranged' : 'Unchanged'
+    ]);
+
+    const csvContent = [
+      headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
+      ...rows.map(r => r.map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Expiration_Rearrangement_Report_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportToPDF = () => {
+    if (rearrangedReportItems.length === 0) return;
+    const doc = new jsPDF() as any;
+    const displayDate = format(new Date(), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase();
+
+    doc.setFontSize(16);
+    doc.text("EXPIRATION DATE REARRANGEMENT REPORT", 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Generated At: ${displayDate}`, 14, 22);
+
+    const tableData = rearrangedReportItems.map(item => [
+      item.itemCode,
+      item.itemName.substring(0, 30) + (item.itemName.length > 30 ? '...' : ''),
+      item.locationId.toUpperCase(),
+      `${item.originalExp1 || '-'}\n${item.originalExp2 || '-'}\n${item.originalExp3 || '-'}`,
+      `${item.rearrangedExp1 || '-'}\n${item.rearrangedExp2 || '-'}\n${item.rearrangedExp3 || '-'}`,
+      item.wasRearranged ? 'Rearranged' : 'Unchanged'
+    ]);
+
+    autoTable(doc, {
+      startY: 30,
+      head: [['Code', 'Name', 'Location', 'Original Expiries (1/2/3)', 'Rearranged Expiries (1/2/3)', 'Status']],
+      body: tableData,
+      headStyles: { fillColor: [242, 125, 38] },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+      columnStyles: {
+        0: { cellWidth: 15 },
+        1: { cellWidth: 45 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 40 },
+        4: { cellWidth: 40 },
+        5: { cellWidth: 20 }
+      }
+    });
+
+    doc.save(`Expiration_Rearrangement_Report_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+  };
+
+  const handleRefreshExpirationReport = async () => {
+    setIsScanning(true);
+    let targetMeds: Medication[] = [];
+
+    try {
+      // Direct fresh fetch to avoid any stale state closures
+      if (db) {
+        const snapshot = await getDocs(collection(db, 'medications'));
+        const cloudMeds: Medication[] = [];
+        snapshot.forEach(docSnap => {
+          cloudMeds.push({ id: docSnap.id, ...docSnap.data() } as Medication);
+        });
+        targetMeds = cloudMeds;
+      } else {
+        targetMeds = await sharedDb.getMedications();
+      }
+    } catch (e) {
+      console.warn("Failed to fetch medications directly for scan:", e);
+      targetMeds = allMedications || [];
+    }
+
+    const tempReportList: any[] = [];
+    const updatesList: { id: string; data: Partial<Medication> }[] = [];
+    
+    targetMeds.forEach(med => {
+      const origExp1 = (med.originalExp1 !== undefined ? med.originalExp1 : med.expiration1) || '';
+      const origExp2 = (med.originalExp2 !== undefined ? med.originalExp2 : med.expiration2) || '';
+      const origExp3 = (med.originalExp3 !== undefined ? med.originalExp3 : med.expiration3) || '';
+
+      const d1 = parseExpDate(origExp1);
+      const d2 = parseExpDate(origExp2);
+      const d3 = parseExpDate(origExp3);
+
+      const list: { raw: string; date: Date | null }[] = [];
+      if (origExp1 && origExp1 !== '-' && origExp1 !== '.') {
+        list.push({ raw: origExp1, date: d1 });
+      }
+      if (origExp2 && origExp2 !== '-' && origExp2 !== '.') {
+        list.push({ raw: origExp2, date: d2 });
+      }
+      if (origExp3 && origExp3 !== '-' && origExp3 !== '.') {
+        list.push({ raw: origExp3, date: d3 });
+      }
+
+      const uniqueList: { raw: string; date: Date | null }[] = [];
+      for (const item of list) {
+        const isDuplicate = uniqueList.some(seen => {
+          if (item.date && seen.date) {
+            return item.date.getTime() === seen.date.getTime();
+          }
+          return item.raw.trim().toLowerCase() === seen.raw.trim().toLowerCase();
+        });
+        if (!isDuplicate) {
+          uniqueList.push(item);
+        }
+      }
+
+      const withDates = uniqueList.filter(item => item.date !== null) as { raw: string; date: Date }[];
+      const withoutDates = uniqueList.filter(item => item.date === null);
+
+      withDates.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+      const rearrangedList = [
+        ...withDates.map(item => item.raw),
+        ...withoutDates.map(item => item.raw)
+      ];
+
+      while (rearrangedList.length < 3) {
+        rearrangedList.push('');
+      }
+
+      const [newExp1, newExp2, newExp3] = rearrangedList;
+
+      const wasRearrangedOnTheFly = (origExp1 || '') !== (newExp1 || '') || 
+                                   (origExp2 || '') !== (newExp2 || '') || 
+                                   (origExp3 || '') !== (newExp3 || '');
+
+      if (wasRearrangedOnTheFly) {
+        updatesList.push({
+          id: med.id,
+          data: {
+            expiration1: newExp1,
+            expiration2: newExp2,
+            expiration3: newExp3,
+            originalExp1: origExp1,
+            originalExp2: origExp2,
+            originalExp3: origExp3,
+            wasRearranged: true
+          }
+        });
+      }
+
+      if (wasRearrangedOnTheFly || med.wasRearranged) {
+        tempReportList.push({
+          itemCode: med.itemCode,
+          itemName: med.itemName,
+          locationId: med.locationId,
+          originalExp1: origExp1 || '-',
+          originalExp2: origExp2 || '-',
+          originalExp3: origExp3 || '-',
+          rearrangedExp1: newExp1 || '-',
+          rearrangedExp2: newExp2 || '-',
+          rearrangedExp3: newExp3 || '-',
+          wasRearranged: true
+        });
+      }
+    });
+
+    // Write corrections back to DB if any abnormalities were detected
+    if (updatesList.length > 0) {
+      try {
+        await medicationOps.bulkUpdate(updatesList);
+        console.log(`Scan active: auto-corrected and updated ${updatesList.length} items with duplicates or sorting issues in the database.`);
+      } catch (err) {
+        console.warn("Failed to write scan corrections to database:", err);
+      }
+    }
+
+    setRearrangedReportItems(tempReportList);
+    try {
+      localStorage.setItem('rearranged_report_last_upload', JSON.stringify(tempReportList));
+    } catch (e) {
+      console.warn('Failed to save rearrangement report to localStorage:', e);
+    }
+    
+    // Explicitly refresh hooks to update UI with latest loaded values
+    try {
+      if (refreshAll) await refreshAll();
+      if (refresh) await refresh();
+    } catch (refreshErr) {
+      console.warn("Refresh post-scan warning:", refreshErr);
+    }
+
+    setIsScanning(false);
+  };
+
+   const [selectedMedForEdit, setSelectedMedForEdit] = useState<Medication | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
+    const matches = (allMedications || []).filter(m => m.itemCode === itemCode && m.locationId !== currentLocationId);
+    const otherLocs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED]
+      .filter(loc => loc !== currentLocationId);
+
+    return otherLocs.map(loc => {
+      const match = matches.find(m => m.locationId === loc);
+      const qoh = match ? match.qoh : 0;
+      const name = loc === PharmacyLocation.ADULT ? 'Adult' : loc === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
+      
+      let isAvailable = qoh > 0;
+      let label = '';
+      let badgeClass = '';
+
+      if (isAvailable) {
+        if (showQoh) {
+          label = `${name}: ${qoh}`;
+        } else {
+          label = `${name}: Available`;
+        }
+        badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+      } else {
+        label = `${name}: Out of Stock`;
+        badgeClass = 'bg-stone-50 text-[#141414]/40 border border-stone-200/60';
+      }
+
+      return (
+        <span key={loc} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold ${badgeClass}`}>
+          {label}
+        </span>
+      );
+    });
+  };
   
   const [isCapturing, setIsCapturing] = useState(false);
   const [isDirectRowCamera, setIsDirectRowCamera] = useState(false);
@@ -348,6 +623,12 @@ export default function AdminDashboard() {
       setError(`Fetch Error: ${fetchError}`);
     }
   }, [fetchError]);
+
+  useEffect(() => {
+    if (allMedications && allMedications.length > 0) {
+      handleRefreshExpirationReport();
+    }
+  }, [allMedications]);
 
   const isFirebaseConnected = !!db;
 
@@ -633,6 +914,7 @@ export default function AdminDashboard() {
         const dataBuffer = evt.target?.result;
         const wb = XLSX.read(dataBuffer, { type: 'array', cellDates: true });
         const allMedsList: any[] = [];
+        const tempReportList: any[] = [];
         let sheetsFound = 0;
 
         const getRowValue = (row: any, keys: string[]) => {
@@ -773,8 +1055,76 @@ export default function AdminDashboard() {
             const restriction = restrictionVal !== undefined && restrictionVal !== null ? String(restrictionVal).trim() : '';
             const qatari = qatariVal !== undefined && qatariVal !== null ? String(qatariVal).trim() : '';
 
+            const origExp1 = formatExp(getRowValue(row, ['exp1', 'expir1', 'expir_1', 'expiry1', 'primary exp', 'expiration1', 'exp date 1']));
+            const origExp2 = formatExp(getRowValue(row, ['exp2', 'expir2', 'expir_2', 'expiry2', 'secondary exp', 'expiration2', 'exp date 2']));
+            const origExp3 = formatExp(getRowValue(row, ['exp3', 'expir3', 'expir_3', 'expiry3', 'final exp', 'expiration3', 'exp date 3']));
+
+            const d1 = parseExpDate(origExp1);
+            const d2 = parseExpDate(origExp2);
+            const d3 = parseExpDate(origExp3);
+
+            const list: { raw: string; date: Date | null }[] = [];
+            if (origExp1 && origExp1 !== '-' && origExp1 !== '.') {
+              list.push({ raw: origExp1, date: d1 });
+            }
+            if (origExp2 && origExp2 !== '-' && origExp2 !== '.') {
+              list.push({ raw: origExp2, date: d2 });
+            }
+            if (origExp3 && origExp3 !== '-' && origExp3 !== '.') {
+              list.push({ raw: origExp3, date: d3 });
+            }
+
+            const uniqueList: { raw: string; date: Date | null }[] = [];
+            for (const item of list) {
+              const isDuplicate = uniqueList.some(seen => {
+                if (item.date && seen.date) {
+                  return item.date.getTime() === seen.date.getTime();
+                }
+                return item.raw.trim().toLowerCase() === seen.raw.trim().toLowerCase();
+              });
+              if (!isDuplicate) {
+                uniqueList.push(item);
+              }
+            }
+
+            const withDates = uniqueList.filter(item => item.date !== null) as { raw: string; date: Date }[];
+            const withoutDates = uniqueList.filter(item => item.date === null);
+
+            withDates.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+            const rearrangedList = [
+              ...withDates.map(item => item.raw),
+              ...withoutDates.map(item => item.raw)
+            ];
+
+            while (rearrangedList.length < 3) {
+              rearrangedList.push('');
+            }
+
+            const [newExp1, newExp2, newExp3] = rearrangedList;
+
+            const wasRearranged = (origExp1 || '') !== (newExp1 || '') || 
+                                 (origExp2 || '') !== (newExp2 || '') || 
+                                 (origExp3 || '') !== (newExp3 || '');
+
+            const finalItemCode = itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`;
+            if (locationId && wasRearranged) {
+              tempReportList.push({
+                itemCode: finalItemCode,
+                itemName,
+                locationId: locationId!,
+                originalExp1: origExp1,
+                originalExp2: origExp2,
+                originalExp3: origExp3,
+                rearrangedExp1: newExp1,
+                rearrangedExp2: newExp2,
+                rearrangedExp3: newExp3,
+                wasRearranged
+              });
+            }
+
             return {
-              itemCode: itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`,
+              itemCode: finalItemCode,
               itemName,
               generic,
               to,
@@ -785,9 +1135,9 @@ export default function AdminDashboard() {
               consumption: Number(getRowValue(row, ['consumption', 'Consumption', 'Cons', 'Usage', 'Last 5 Months', 'Usage 5 Months', 'Consumption Last 5 Months']) || 0),
               minQty: Number(getRowValue(row, ['minQty', 'Min', 'Order Min', 'Minimum']) || 0),
               maxQty: Number(getRowValue(row, ['maxQty', 'Max', 'Order Max', 'Maximum']) || 0),
-              expiration1: formatExp(getRowValue(row, ['exp1', 'expir1', 'expir_1', 'expiry1', 'primary exp', 'expiration1', 'exp date 1'])),
-              expiration2: formatExp(getRowValue(row, ['exp2', 'expir2', 'expir_2', 'expiry2', 'secondary exp', 'expiration2', 'exp date 2'])),
-              expiration3: formatExp(getRowValue(row, ['exp3', 'expir3', 'expir_3', 'expiry3', 'final exp', 'expiration3', 'exp date 3'])),
+              expiration1: newExp1,
+              expiration2: newExp2,
+              expiration3: newExp3,
               enIndications,
               arIndications,
               hiIndications,
@@ -837,10 +1187,22 @@ export default function AdminDashboard() {
           (!m.hiIndications || m.hiIndications.trim() === '')
         ).length;
 
+        setRearrangedReportItems(tempReportList);
+        try {
+          localStorage.setItem('rearranged_report_last_upload', JSON.stringify(tempReportList));
+        } catch (e) {
+          console.warn('Failed to save rearrangement report to localStorage:', e);
+        }
+
+        const rearrangedCount = tempReportList.filter(item => item.wasRearranged).length;
+        const successMsgPrefix = rearrangedCount > 0 
+          ? `Rearranged expiry dates for ${rearrangedCount} items. `
+          : '';
+
         if (untranslatedCount > 0) {
-          setSuccess(`Imported ${allMedsList.length} items. ${untranslatedCount} items need translation. Click 'AI Translate Missing' to process them.`);
+          setSuccess(`${successMsgPrefix}Imported ${allMedsList.length} items. ${untranslatedCount} items need translation. Click 'AI Translate Missing' to process them.`);
         } else {
-          setSuccess(`Success: Imported/Updated ${allMedsList.length} items to ${sheetsFound} locations.`);
+          setSuccess(`Success: ${successMsgPrefix}Imported/Updated ${allMedsList.length} items to ${sheetsFound} locations.`);
         }
         setIsBulkMode(false);
       } catch (error: any) {
@@ -1140,17 +1502,45 @@ export default function AdminDashboard() {
   const handleManualTranslate = async () => {
     if (isTranslating) return;
     
-    // Refresh medications list to be sure we have latest
-    await refresh(true);
+    // Refresh lists
+    try {
+      await refreshAll(true);
+      await refresh(true);
+    } catch (e) {
+      console.warn("Failed to pre-refresh for translation:", e);
+    }
+
+    let targetMeds: Medication[] = [];
+    try {
+      if (db) {
+        const snapshot = await getDocs(collection(db, 'medications'));
+        const cloudMeds: Medication[] = [];
+        snapshot.forEach(docSnap => {
+          cloudMeds.push({ id: docSnap.id, ...docSnap.data() } as Medication);
+        });
+        targetMeds = cloudMeds;
+      } else {
+        targetMeds = await sharedDb.getMedications();
+      }
+    } catch (e) {
+      console.warn("Failed to fetch medications directly for translation:", e);
+      targetMeds = allMedications || [];
+    }
     
-    // Filter items that need translation (have English or Arabic text but missing Hindi)
-    const medsToTranslate = medications.filter(m => 
-      ((m.enIndications && m.enIndications.trim() !== '') || (m.arIndications && m.arIndications.trim() !== '')) && 
-      (!m.hiIndications || m.hiIndications.trim() === '')
-    );
+    // Filter items that need translation (have English or Arabic text but missing any of the target language translations)
+    const medsToTranslate = targetMeds.filter(m => {
+      const hasSource = (m.enIndications && m.enIndications.trim() !== '') || (m.arIndications && m.arIndications.trim() !== '');
+      const missingTranslation = 
+        !m.hiIndications || m.hiIndications.trim() === '' ||
+        !m.urIndications || m.urIndications.trim() === '' ||
+        !m.mlIndications || m.mlIndications.trim() === '' ||
+        !m.bnIndications || m.bnIndications.trim() === '' ||
+        !m.tlIndications || m.tlIndications.trim() === '';
+      return hasSource && missingTranslation;
+    });
 
     if (medsToTranslate.length === 0) {
-      setSuccess("No items in this location need translation. Ensure items have 'EN Indications' or 'AR Indications' correctly set in the list below.");
+      setSuccess("No items across all pharmacy locations need translation. All items are fully translated in all target languages (Hindi, Urdu, Malayalam, Bengali, Tagalog).");
       return;
     }
 
@@ -1200,13 +1590,14 @@ export default function AdminDashboard() {
       }
 
       if (remainingMeds.length === 0) {
-        await refresh();
-        setSuccess(`Completed! All ${totalUpdated} items resolved from translation cache instantly.`);
+        await refreshAll(true);
+        await refresh(true);
+        setSuccess(`Completed! All ${totalUpdated} items across all locations resolved from translation cache instantly.`);
         return;
       }
 
       // If we have remaining newly added items, update only those with Gemini AI
-      setSuccess(`Cache hit for ${cacheUpdates.length} items. Translating ${remainingMeds.length} newly added items with AI...`);
+      setSuccess(`Cache hit for ${cacheUpdates.length} items. Translating ${remainingMeds.length} newly added items across all locations with Gemini AI...`);
       setTranslationProgress({ current: 0, total: remainingMeds.length });
       
       const batchSize = 10;
@@ -1268,8 +1659,9 @@ export default function AdminDashboard() {
         }
       }
       
-      await refresh();
-      setSuccess(`Completed! Successfully updated ${totalUpdated} items (including ${remainingMeds.length} translated via AI).`);
+      await refreshAll(true);
+      await refresh(true);
+      setSuccess(`Completed! Successfully updated ${totalUpdated} items across all pharmacy locations (including ${remainingMeds.length} translated via AI).`);
     } catch (err: any) {
       console.error("Translation logic error:", err);
       setError(`Translation failed: ${err.message || 'Unknown error'}. Common causes: API rate limits or quota.`);
@@ -1453,6 +1845,46 @@ export default function AdminDashboard() {
       </div>
 
       <AnimatePresence>
+        {isTranslating && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="p-5 bg-emerald-50/90 border border-emerald-200 rounded-2xl shadow-sm space-y-3"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-emerald-600 animate-spin shrink-0" />
+                <div>
+                  <h4 className="font-extrabold text-sm text-emerald-900">AI Medical Translation in Progress</h4>
+                  <p className="text-[11px] text-emerald-700/80">Processing missing indications across all pharmacy locations...</p>
+                </div>
+              </div>
+              {translationProgress && translationProgress.total > 0 ? (
+                <span className="text-xs sm:text-sm font-black text-emerald-800 font-mono">
+                  {Math.round((translationProgress.current / translationProgress.total) * 100)}%
+                </span>
+              ) : (
+                <span className="text-[11px] font-bold text-emerald-600 animate-pulse">Initializing...</span>
+              )}
+            </div>
+            
+            <div className="w-full bg-emerald-100/50 h-2 rounded-full overflow-hidden">
+              <div 
+                className="bg-emerald-600 h-full rounded-full transition-all duration-300 ease-out"
+                style={{ 
+                  width: `${translationProgress && translationProgress.total > 0 ? (translationProgress.current / translationProgress.total) * 100 : 10}%` 
+                }}
+              />
+            </div>
+            {translationProgress && (
+              <div className="flex justify-between items-center text-[10px] text-emerald-700/70 font-mono font-bold uppercase tracking-wider">
+                <span>Completed: {translationProgress.current} items</span>
+                <span>Total items: {translationProgress.total}</span>
+              </div>
+            )}
+          </motion.div>
+        )}
         {error && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -1698,6 +2130,131 @@ export default function AdminDashboard() {
         {/* Main Content Area */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-4 space-y-6">
+            {true && (
+              <div className="bg-white border border-[#141414]/10 rounded-2xl shadow-sm overflow-hidden mb-6">
+                <div className="p-4 bg-stone-50 border-b border-[#141414]/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-[#F27D26]/10 rounded-xl text-[#F27D26] shrink-0">
+                      <ArrowLeftRight size={18} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-sm text-[#141414]">Expiration Rearrangement Report</h3>
+                      <p className="text-xs text-[#141414]/50 mt-0.5">
+                        EXP1 sorted to be nearest expiry, EXP2 next, EXP3 latest. 
+                        Total rearranged items: <strong className="text-[#F27D26]">{rearrangedReportItems.length}</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 w-full sm:w-auto">
+                    <button
+                      onClick={exportToExcel}
+                      disabled={rearrangedReportItems.length === 0}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-40 disabled:hover:bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                      <FileSpreadsheet size={13} />
+                      <span>Excel</span>
+                    </button>
+                    <button
+                      onClick={exportToCSV}
+                      disabled={rearrangedReportItems.length === 0}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 disabled:hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                      <ClipboardPaste size={13} />
+                      <span>CSV</span>
+                    </button>
+                    <button
+                      onClick={exportToPDF}
+                      disabled={rearrangedReportItems.length === 0}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 disabled:opacity-40 disabled:hover:bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                      <ClipboardList size={13} />
+                      <span>PDF</span>
+                    </button>
+                    <button
+                      onClick={handleRefreshExpirationReport}
+                      disabled={isScanning || isSyncing || isSyncingAll}
+                      className="p-2 text-stone-400 hover:text-[#F27D26] hover:bg-[#F27D26]/10 rounded-xl transition-colors cursor-pointer flex items-center gap-1 border border-[#141414]/5 bg-white shadow-sm disabled:opacity-50"
+                      title="Scan Active Database for Rearranged Expiries"
+                    >
+                      <RefreshCw size={14} className={`${isScanning || isSyncing || isSyncingAll ? 'animate-spin' : 'animate-hover-spin'} text-[#F27D26]`} />
+                      <span className="text-[10px] font-black uppercase text-[#F27D26] px-1">
+                        {isScanning || isSyncing || isSyncingAll ? 'Scanning...' : 'Scan DB'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-0 max-h-64 overflow-y-auto custom-scrollbar">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-stone-50 border-b border-[#141414]/5 text-[#141414]/40 text-[9px] font-bold uppercase tracking-wider">
+                        <th className="py-2.5 px-4 font-bold">Item Code</th>
+                        <th className="py-2.5 px-4 font-bold">Item Name</th>
+                        <th className="py-2.5 px-4 font-bold">Location</th>
+                        <th className="py-2.5 px-4 text-center font-bold">Original Expiries (1 / 2 / 3)</th>
+                        <th className="py-2.5 px-4 text-center font-bold">Rearranged Expiries (1 / 2 / 3)</th>
+                        <th className="py-2.5 px-4 text-right font-bold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#141414]/5 text-xs">
+                      {rearrangedReportItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-[#141414]/40 font-bold bg-stone-50/50">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <RefreshCw size={24} className={`text-stone-300 mb-1 ${isScanning || isSyncing || isSyncingAll ? 'animate-spin' : 'animate-spin-slow'}`} />
+                              <span>{isScanning || isSyncing || isSyncingAll ? 'Scanning active system database fields...' : 'No rearranged expiration items loaded yet.'}</span>
+                              <button 
+                                onClick={handleRefreshExpirationReport}
+                                disabled={isScanning || isSyncing || isSyncingAll}
+                                className="mt-2 text-[10px] text-white bg-[#F27D26] hover:bg-[#F27D26]/90 disabled:bg-[#F27D26]/50 px-3 py-1.5 rounded-lg uppercase tracking-wider font-extrabold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                              >
+                                {(isScanning || isSyncing || isSyncingAll) && <RefreshCw size={12} className="animate-spin" />}
+                                <span>{isScanning || isSyncing || isSyncingAll ? 'Scanning Database...' : 'Scan System Inventory Now'}</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        rearrangedReportItems.slice(0, 50).map((item, idx) => (
+                          <tr key={`${item.itemCode}-${idx}`} className={`hover:bg-stone-50/50 ${item.wasRearranged ? 'bg-[#F27D26]/[0.02]' : ''}`}>
+                            <td className="py-2.5 px-4 font-mono font-bold text-[#141414]/60 text-[10px]">{item.itemCode}</td>
+                            <td className="py-2.5 px-4 font-medium text-[#141414]/80">{item.itemName}</td>
+                            <td className="py-2.5 px-4 font-bold text-[#141414]/50 capitalize">{item.locationId}</td>
+                            <td className="py-2.5 px-4 font-mono text-[10px] text-center text-stone-400">
+                              {item.originalExp1 || '-'} &nbsp;|&nbsp; {item.originalExp2 || '-'} &nbsp;|&nbsp; {item.originalExp3 || '-'}
+                            </td>
+                            <td className="py-2.5 px-4 font-mono text-[10px] text-center text-[#141414]/80">
+                              <span className={item.originalExp1 !== item.rearrangedExp1 && item.rearrangedExp1 ? 'text-[#F27D26] font-bold' : ''}>{item.rearrangedExp1 || '-'}</span> 
+                              &nbsp;|&nbsp; 
+                              <span className={item.originalExp2 !== item.rearrangedExp2 && item.rearrangedExp2 ? 'text-[#F27D26] font-bold' : ''}>{item.rearrangedExp2 || '-'}</span> 
+                              &nbsp;|&nbsp; 
+                              <span className={item.originalExp3 !== item.rearrangedExp3 && item.rearrangedExp3 ? 'text-[#F27D26] font-bold' : ''}>{item.rearrangedExp3 || '-'}</span>
+                            </td>
+                            <td className="py-2.5 px-4 text-right">
+                              {item.wasRearranged ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black bg-[#F27D26]/10 text-[#F27D26] uppercase tracking-wider">
+                                  Rearranged
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-stone-100 text-stone-400 uppercase tracking-wider">
+                                  Unchanged
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                  {rearrangedReportItems.length > 50 && (
+                    <div className="p-3 text-center bg-stone-50 border-t border-[#141414]/5 text-xs text-[#141414]/40 font-bold">
+                      Showing first 50 items of {rearrangedReportItems.length}. Download the report to see all items.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden">
             <div className="p-4 bg-[#F27D26]/5 border-b border-[#141414]/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex items-center justify-between w-full md:w-auto gap-4">
@@ -2587,6 +3144,10 @@ export default function AdminDashboard() {
                             {med.generic}
                           </span>
                         )}
+                        <div className="flex flex-wrap gap-1 mt-1.5" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 self-center">Other locations:</span>
+                          {getOtherLocationsAvailability(med.itemCode, selectedLocation, true)}
+                        </div>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {med.restriction && (
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-bold bg-[#141414]/5 text-[#141414]/60 border border-[#141414]/10 uppercase tracking-tight">
@@ -2794,6 +3355,10 @@ export default function AdminDashboard() {
                     )}
                   </div>
                   <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</p>
+                  <div className="flex flex-wrap gap-1 mt-1.5 mb-1 bg-[#141414]/[0.02] p-1.5 rounded-lg border border-[#141414]/5" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 self-center">Other locations:</span>
+                    {getOtherLocationsAvailability(med.itemCode, selectedLocation, true)}
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2">

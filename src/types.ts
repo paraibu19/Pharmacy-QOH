@@ -39,6 +39,10 @@ export interface Medication {
   mlIndications?: string;
   bnIndications?: string;
   tlIndications?: string;
+  originalExp1?: string;
+  originalExp2?: string;
+  originalExp3?: string;
+  wasRearranged?: boolean;
 }
 
 export interface InventoryAudit {
