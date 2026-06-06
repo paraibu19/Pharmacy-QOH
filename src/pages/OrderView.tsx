@@ -3,7 +3,7 @@ import {
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
   Eye, EyeOff, Settings, Key, LogOut, KeyRound, ThermometerSnowflake, UploadCloud,
-  ArrowRightLeft, ClipboardList
+  ArrowRightLeft, ClipboardList, Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -58,12 +58,43 @@ export default function OrderView() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [orderTarget, setOrderTarget] = useState<number>(1);
   const [showSourcingTransferOnly, setShowSourcingTransferOnly] = useState(false);
+  const [sourcingReportType, setSourcingReportType] = useState<'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp'>('qoh');
   
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
-  const { medications: allMedications } = useMedications();
+  const { medications: allMedications, refresh: refreshAll } = useMedications();
+
+  const handleSourcingToggle = (type: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp') => {
+    const isCurrentlyActive = showSourcingTransferOnly && sourcingReportType === type;
+    if (isCurrentlyActive) {
+      setShowSourcingTransferOnly(false);
+    } else {
+      setStockFilter('all');
+      setClassificationFilter(null);
+      setTypeFilter(null);
+      setRefFilter('all');
+      setConsumptionFilter('all');
+      setExpStart('');
+      setExpEnd('');
+      setSearchQuery('');
+      
+      if (type === 'qoh') {
+        setOrderTarget(1);
+      } else {
+        setOrderTarget(0);
+      }
+
+      setShowSourcingTransferOnly(true);
+      setSourcingReportType(type);
+      
+      refresh(false);
+      if (refreshAll) {
+        refreshAll(false).catch(err => console.warn("Background refreshAll error:", err));
+      }
+    }
+  };
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -108,13 +139,46 @@ export default function OrderView() {
     });
   };
 
-  const getSourcingLocationsText = (itemCode: string, orderVal: number) => {
+  const getSourcingLocationsText = (itemCode: string, orderVal: number, mode: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp' = 'qoh') => {
     const matches = (allMedications || []).filter(om => om.itemCode === itemCode && om.locationId !== selectedLocation);
-    const eligible = matches.filter(om => om.qoh > 0.5 * orderVal);
+    let eligible = matches;
+
+    if (mode === 'qoh') {
+      eligible = matches.filter(om => om.qoh > 0.5 * orderVal);
+    } else {
+      const now = new Date();
+      const currentY = now.getFullYear();
+      const currentM = now.getMonth();
+      
+      let targetStart: Date;
+      let targetEnd: Date;
+      
+      if (mode === 'current_exp') {
+        targetStart = new Date(currentY, currentM, 1);
+        targetEnd = new Date(currentY, currentM + 1, 0, 23, 59, 59);
+      } else if (mode === 'next_exp') {
+        targetStart = new Date(currentY, currentM + 1, 1);
+        targetEnd = new Date(currentY, currentM + 2, 0, 23, 59, 59);
+      } else {
+        targetStart = new Date(currentY, currentM + 2, 1);
+        targetEnd = new Date(currentY, currentM + 3, 0, 23, 59, 59);
+      }
+
+      eligible = matches.filter(om => {
+        if (om.qoh <= 0) return false;
+        const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+        if (omExpDate) {
+          const isExpiringInTargetRange = omExpDate >= targetStart && omExpDate <= targetEnd;
+          if (isExpiringInTargetRange) return false;
+        }
+        return true;
+      });
+    }
+
     if (eligible.length === 0) return 'None';
     return eligible.map(om => {
       const locName = om.locationId === PharmacyLocation.ADULT ? 'Adult' : om.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
-      return `${locName} (${om.qoh} Box)`;
+      return `${locName} (${om.qoh} Box${om.expiration1 ? ` - Exp1: ${om.expiration1}` : ''})`;
     }).join(' | ');
   };
   
@@ -340,7 +404,8 @@ export default function OrderView() {
 
     // Filter by order quantity if a specific target is selected (not 'All')
     let displayResult = mapped;
-    if (orderTarget !== 0) {
+    const isExpirySourcing = showSourcingTransferOnly && sourcingReportType !== 'qoh';
+    if (orderTarget !== 0 && !isExpirySourcing) {
       if (orderTarget === 1) {
         displayResult = displayResult.filter(m => m.orderQty > 0);
       } else if (orderTarget === 0.7) {
@@ -351,18 +416,55 @@ export default function OrderView() {
     }
 
     if (showSourcingTransferOnly) {
-      displayResult = displayResult.filter(m => {
-        const isOut = m.qoh <= 0;
-        const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
-        if (!isOut && !isLow) return false;
+      const now = new Date();
+      const currentY = now.getFullYear();
+      const currentM = now.getMonth();
 
-        const oQty = m.orderQty || 0;
-        if (oQty <= 0) return false;
+      if (sourcingReportType === 'qoh') {
+        displayResult = displayResult.filter(m => {
+          const isOut = m.qoh <= 0;
+          const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+          if (!isOut && !isLow) return false;
 
-        // Check if other locations have qoh > 50% of this orderQty
-        const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
-        return matches.some(om => om.qoh > 0.5 * oQty);
-      });
+          const oQty = m.orderQty || 0;
+          if (oQty <= 0) return false;
+
+          const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+          return matches.some(om => om.qoh > 0.5 * oQty);
+        });
+      } else {
+        let start: Date;
+        let end: Date;
+        if (sourcingReportType === 'current_exp') {
+          start = new Date(currentY, currentM, 1);
+          end = new Date(currentY, currentM + 1, 0, 23, 59, 59);
+        } else if (sourcingReportType === 'next_exp') {
+          start = new Date(currentY, currentM + 1, 1);
+          end = new Date(currentY, currentM + 2, 0, 23, 59, 59);
+        } else {
+          start = new Date(currentY, currentM + 2, 1);
+          end = new Date(currentY, currentM + 3, 0, 23, 59, 59);
+        }
+
+        displayResult = displayResult.filter(m => {
+          if (m.qoh <= 0) return false;
+          const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
+          if (!expDate || expDate < start || expDate > end) return false;
+
+          const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+          return matches.some(om => {
+            if (om.qoh <= 0) return false;
+            const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+            if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+            return true;
+          });
+        });
+
+        displayResult = displayResult.map(m => ({
+          ...m,
+          orderQty: m.qoh
+        }));
+      }
     }
 
     return displayResult.sort((a, b) => {
@@ -378,7 +480,7 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, consumptionFilter, expStart, expEnd, sortField, sortOrder, orderTarget, showSourcingTransferOnly, allMedications]);
+  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, consumptionFilter, expStart, expEnd, sortField, sortOrder, orderTarget, showSourcingTransferOnly, sourcingReportType, allMedications]);
 
   const filterCounts = useMemo(() => {
     const all = medications.length;
@@ -417,6 +519,66 @@ export default function OrderView() {
 
       const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
       return matches.some(om => om.qoh > 0.5 * oQty);
+    }).length;
+  }, [medications, allMedications, selectedLocation]);
+
+  const currentExpSourcingCount = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    return (medications || []).filter(m => {
+      if (m.qoh <= 0) return false;
+      const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
+      if (!expDate || expDate < start || expDate > end) return false;
+
+      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      return matches.some(om => {
+        if (om.qoh <= 0) return false;
+        const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+        if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+        return true;
+      });
+    }).length;
+  }, [medications, allMedications, selectedLocation]);
+
+  const nextExpSourcingCount = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59);
+
+    return (medications || []).filter(m => {
+      if (m.qoh <= 0) return false;
+      const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
+      if (!expDate || expDate < start || expDate > end) return false;
+
+      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      return matches.some(om => {
+        if (om.qoh <= 0) return false;
+        const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+        if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+        return true;
+      });
+    }).length;
+  }, [medications, allMedications, selectedLocation]);
+
+  const afterNextExpSourcingCount = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 3, 0, 23, 59, 59);
+
+    return (medications || []).filter(m => {
+      if (m.qoh <= 0) return false;
+      const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
+      if (!expDate || expDate < start || expDate > end) return false;
+
+      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      return matches.some(om => {
+        if (om.qoh <= 0) return false;
+        const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+        if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+        return true;
+      });
     }).length;
   }, [medications, allMedications, selectedLocation]);
 
@@ -516,27 +678,75 @@ export default function OrderView() {
     const displayDate = lastUpdate 
       ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
       : 'NO DATA';
-    const orderItems = sortedMeds.filter(m => m.orderQty > 0);
+    const orderItems = sortedMeds.filter(m => m.orderQty > 0 || (showSourcingTransferOnly && sourcingReportType !== 'qoh' && m.qoh > 0));
     const activeFilters = getActiveFiltersList();
+
+    const now = new Date();
+    const currentY = now.getFullYear();
+    const currentM = now.getMonth();
+
+    let activeSourcingTitle = 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)';
+    let fileSuffix = 'Stock_Transfer_Sourcing';
+    let headers: string[] = [];
+
     if (showSourcingTransferOnly) {
-      activeFilters.push({ label: 'Sourcing Mode:', value: 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)' });
-    }
-    const headers = showSourcingTransferOnly
-      ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1', 'Sourcing Partners (QOH > 50% Order Qty)']
-      : ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
-    const rows = orderItems.map((m, i) => {
-      const row = [
-        i + 1,
-        m.itemCode,
-        `${m.itemName} [${m.consumption || 0}]`,
-        m.qoh,
-        m.orderQty,
-        m.expiration1 || '-'
-      ];
-      if (showSourcingTransferOnly) {
-        row.push(getSourcingLocationsText(m.itemCode, m.orderQty));
+      if (sourcingReportType === 'current_exp') {
+        const targetMonthStart = new Date(currentY, currentM, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (CURRENT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Expiring)', 'Exp1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else if (sourcingReportType === 'next_exp') {
+        const targetMonthStart = new Date(currentY, currentM + 1, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (NEXT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Expiring)', 'Exp1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else if (sourcingReportType === 'after_next_exp') {
+        const targetMonthStart = new Date(currentY, currentM + 2, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (MONTH AFTER NEXT - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Expiring)', 'Exp1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else {
+        activeSourcingTitle = 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)';
+        fileSuffix = 'Stock_Transfer_Sourcing';
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1', 'Sourcing Partners (QOH > 50% Order Qty)'];
       }
-      return row;
+    } else {
+      headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
+    }
+
+    if (showSourcingTransferOnly) {
+      activeFilters.push({ label: 'Sourcing Mode:', value: activeSourcingTitle });
+    }
+
+    const isExpirySourcing = showSourcingTransferOnly && sourcingReportType !== 'qoh';
+
+    const rows = orderItems.map((m, i) => {
+      if (isExpirySourcing) {
+        return [
+          i + 1,
+          m.itemCode,
+          `${m.itemName} [${m.consumption || 0}]`,
+          m.qoh,
+          m.expiration1 || '-',
+          getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
+        ];
+      } else {
+        const row = [
+          i + 1,
+          m.itemCode,
+          `${m.itemName} [${m.consumption || 0}]`,
+          m.qoh,
+          m.orderQty,
+          m.expiration1 || '-'
+        ];
+        if (showSourcingTransferOnly) {
+          row.push(getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh'));
+        }
+        return row;
+      }
     });
 
     const metaRows: string[] = [];
@@ -568,7 +778,7 @@ export default function OrderView() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.download = `${showSourcingTransferOnly ? fileSuffix : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
   };
 
@@ -576,11 +786,49 @@ export default function OrderView() {
     const displayDate = lastUpdate 
       ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
       : 'NO DATA';
-    const orderItems = sortedMeds.filter(m => m.orderQty > 0);
+    const orderItems = sortedMeds.filter(m => m.orderQty > 0 || (showSourcingTransferOnly && sourcingReportType !== 'qoh' && m.qoh > 0));
     const activeFilters = getActiveFiltersList();
+
+    const now = new Date();
+    const currentY = now.getFullYear();
+    const currentM = now.getMonth();
+
+    let activeSourcingTitle = 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)';
+    let fileSuffix = 'Stock_Transfer_Sourcing';
+    let headers: string[] = [];
+
     if (showSourcingTransferOnly) {
-      activeFilters.push({ label: 'Sourcing Mode:', value: 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)' });
+      if (sourcingReportType === 'current_exp') {
+        const targetMonthStart = new Date(currentY, currentM, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (CURRENT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Expiring)', 'Exp1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else if (sourcingReportType === 'next_exp') {
+        const targetMonthStart = new Date(currentY, currentM + 1, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (NEXT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Expiring)', 'Exp1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else if (sourcingReportType === 'after_next_exp') {
+        const targetMonthStart = new Date(currentY, currentM + 2, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (MONTH AFTER NEXT - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Expiring)', 'Exp1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else {
+        activeSourcingTitle = 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)';
+        fileSuffix = 'Stock_Transfer_Sourcing';
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1', 'Sourcing Partners (QOH > 50% Order Qty)'];
+      }
+    } else {
+      headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
     }
+
+    if (showSourcingTransferOnly) {
+      activeFilters.push({ label: 'Sourcing Mode:', value: activeSourcingTitle });
+    }
+
     const aoa: any[][] = [
       ['LAST UPDATE:', displayDate],
       []
@@ -599,39 +847,86 @@ export default function OrderView() {
       aoa.push([]); // blank row
     }
 
-    const headers = showSourcingTransferOnly
-      ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1', 'Sourcing Partners (QOH > 50% Order Qty)']
-      : ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
     aoa.push(headers);
 
+    const isExpirySourcing = showSourcingTransferOnly && sourcingReportType !== 'qoh';
+
     orderItems.forEach((m, i) => {
-      const row = [
-        i + 1,
-        m.itemCode,
-        `${m.itemName} [${m.consumption || 0}]`,
-        m.qoh,
-        m.orderQty,
-        m.expiration1 || '-'
-      ];
-      if (showSourcingTransferOnly) {
-        row.push(getSourcingLocationsText(m.itemCode, m.orderQty));
+      if (isExpirySourcing) {
+        aoa.push([
+          i + 1,
+          m.itemCode,
+          `${m.itemName} [${m.consumption || 0}]`,
+          m.qoh,
+          m.expiration1 || '-',
+          getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
+        ]);
+      } else {
+        const row = [
+          i + 1,
+          m.itemCode,
+          `${m.itemName} [${m.consumption || 0}]`,
+          m.qoh,
+          m.orderQty,
+          m.expiration1 || '-'
+        ];
+        if (showSourcingTransferOnly) {
+          row.push(getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh'));
+        }
+        aoa.push(row);
       }
-      aoa.push(row);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Store_Order");
     
-    XLSX.writeFile(wb, `${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+    XLSX.writeFile(wb, `${showSourcingTransferOnly ? fileSuffix : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
 
   const downloadPDF = () => {
     const doc = new jsPDF() as any;
-    const orderItems = sortedMeds.filter(m => m.orderQty > 0);
+    const orderItems = sortedMeds.filter(m => m.orderQty > 0 || (showSourcingTransferOnly && sourcingReportType !== 'qoh' && m.qoh > 0));
     const activeFilters = getActiveFiltersList();
+
+    const now = new Date();
+    const currentYVal = now.getFullYear();
+    const currentMVal = now.getMonth();
+
+    let activeSourcingTitle = 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)';
+    let fileSuffix = 'Stock_Transfer_Sourcing';
+    let headers: string[][] = [];
+
     if (showSourcingTransferOnly) {
-      activeFilters.push({ label: 'Sourcing Mode:', value: 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)' });
+      if (sourcingReportType === 'current_exp') {
+        const targetMonthStart = new Date(currentYVal, currentMVal, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (CURRENT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = [['S.No', 'Item Code', 'Item Name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)']];
+      } else if (sourcingReportType === 'next_exp') {
+        const targetMonthStart = new Date(currentYVal, currentMVal + 1, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (NEXT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = [['S.No', 'Item Code', 'Item Name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)']];
+      } else if (sourcingReportType === 'after_next_exp') {
+        const targetMonthStart = new Date(currentYVal, currentMVal + 2, 1);
+        const name = format(targetMonthStart, 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (MONTH AFTER NEXT - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(targetMonthStart, 'MMM_yyyy')}`;
+        headers = [['S.No', 'Item Code', 'Item Name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)']];
+      } else {
+        activeSourcingTitle = 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)';
+        fileSuffix = 'Stock_Transfer_Sourcing';
+        headers = [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1', 'Sourcing Partners (QOH > 50%)']];
+      }
+    } else {
+      headers = [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1']];
+    }
+
+    if (showSourcingTransferOnly) {
+      activeFilters.push({ label: 'Sourcing Mode:', value: activeSourcingTitle });
     }
     
     doc.setFontSize(20);
@@ -682,26 +977,36 @@ export default function OrderView() {
       doc.setFont("Helvetica", "normal");
       doc.setFontSize(9);
       doc.setTextColor(40, 40, 40);
-      doc.text(`${orderItems.length} items to order`, 14, currentY);
+      doc.text(`${orderItems.length} items listed`, 14, currentY);
       currentY += 8; // spatial padding
     }
 
-    const headers = showSourcingTransferOnly
-      ? [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1', 'Sourcing Partners (QOH > 50%)']]
-      : [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1']];
+    const isExpirySourcing = showSourcingTransferOnly && sourcingReportType !== 'qoh';
+
     const data = orderItems.map((m, i) => {
-      const row = [
-        i + 1,
-        m.itemCode,
-        `${m.itemName} [${m.consumption || 0}]`,
-        formatNumber(m.qoh),
-        formatNumber(m.orderQty),
-        m.expiration1 || '-'
-      ];
-      if (showSourcingTransferOnly) {
-        row.push(getSourcingLocationsText(m.itemCode, m.orderQty));
+      if (isExpirySourcing) {
+        return [
+          i + 1,
+          m.itemCode,
+          `${m.itemName} [${m.consumption || 0}]`,
+          formatNumber(m.qoh),
+          m.expiration1 || '-',
+          getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
+        ];
+      } else {
+        const row = [
+          i + 1,
+          m.itemCode,
+          `${m.itemName} [${m.consumption || 0}]`,
+          formatNumber(m.qoh),
+          formatNumber(m.orderQty),
+          m.expiration1 || '-'
+        ];
+        if (showSourcingTransferOnly) {
+          row.push(getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh'));
+        }
+        return row;
       }
-      return row;
     });
 
     const formatIndicatorMonth = (date: Date) => {
@@ -871,7 +1176,7 @@ export default function OrderView() {
       }
     });
 
-    doc.save(`${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+    doc.save(`${showSourcingTransferOnly ? fileSuffix : 'Store_Order'}_${PHARMACY_NAMES[selectedLocation].replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   const handleVerifyAdmin = async (e: React.FormEvent) => {
@@ -1153,9 +1458,14 @@ export default function OrderView() {
           {showSourcingTransferOnly && (
             <span className="px-2 py-1 bg-white rounded-lg text-[10px] font-bold shadow-sm border border-emerald-500/10 flex items-center gap-1.5">
               <ArrowRightLeft className="w-2.5 h-2.5 text-emerald-600" />
-              Sourcing Mode: <span className="text-emerald-600 uppercase">CROSS-LOCATION FINDER</span>
-              <span className="px-1 bg-emerald-50 text-emerald-700 text-[9px] rounded font-extrabold border border-emerald-200">
-                {sortedMeds.filter(m => m.orderQty > 0).length} items
+              Sourcing Mode: <span className="text-emerald-600 uppercase font-extrabold">
+                {sourcingReportType === 'qoh' && "QOH CROSS-LOCATION FINDER"}
+                {sourcingReportType === 'current_exp' && "CURRENT MONTH EXPIRY SOURCING"}
+                {sourcingReportType === 'next_exp' && "NEXT MONTH EXPIRY SOURCING"}
+                {sourcingReportType === 'after_next_exp' && "MONTH AFTER NEXT EXPIRY SOURCING"}
+              </span>
+              <span className="px-1 bg-emerald-100 text-emerald-800 text-[9px] rounded font-extrabold border border-emerald-200">
+                {sortedMeds.filter(m => m.orderQty > 0 || (sourcingReportType !== 'qoh' && m.qoh > 0)).length} items
               </span>
             </span>
           )}
@@ -1168,7 +1478,7 @@ export default function OrderView() {
             </span>
           )}
           <button 
-            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter('all'); setConsumptionFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); setShowSourcingTransferOnly(false); }}
+            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter('all'); setConsumptionFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); setShowSourcingTransferOnly(false); setSourcingReportType('qoh'); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -1206,17 +1516,48 @@ export default function OrderView() {
             {/* Other Quick Filters */}
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => {
-                  setShowSourcingTransferOnly(prev => !prev);
-                }}
+                onClick={() => handleSourcingToggle('qoh')}
                 className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
-                  showSourcingTransferOnly 
+                  showSourcingTransferOnly && sourcingReportType === 'qoh'
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
                     : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
                 }`}
               >
                 <ArrowRightLeft className="w-3.5 h-3.5" />
-                Sourcing Plan ({sourcingTransferCount})
+                Sourcing: QOH ({sourcingTransferCount})
+              </button>
+              <button
+                onClick={() => handleSourcingToggle('current_exp')}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
+                  showSourcingTransferOnly && sourcingReportType === 'current_exp'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Sourcing: Exp1 Current Month ({currentExpSourcingCount})
+              </button>
+              <button
+                onClick={() => handleSourcingToggle('next_exp')}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
+                  showSourcingTransferOnly && sourcingReportType === 'next_exp'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Sourcing: Exp1 Next Month ({nextExpSourcingCount})
+              </button>
+              <button
+                onClick={() => handleSourcingToggle('after_next_exp')}
+                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
+                  showSourcingTransferOnly && sourcingReportType === 'after_next_exp'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                Sourcing: Exp1 Month After Next ({afterNextExpSourcingCount})
               </button>
               <button
                 onClick={() => {

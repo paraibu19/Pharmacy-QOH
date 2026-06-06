@@ -3,7 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, X as XIcon, FileSpreadsheet, 
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
-  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud, Cloud, ChevronRight
+  Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud, Cloud, ChevronRight, Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -52,6 +52,7 @@ export default function AdminDashboard() {
   const [expEnd, setExpEnd] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showSourcingTransferOnly, setShowSourcingTransferOnly] = useState(false);
+  const [sourcingReportType, setSourcingReportType] = useState<'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp'>('qoh');
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [importPhotoStrategy, setImportPhotoStrategy] = useState<'keep' | 'remove'>('keep');
@@ -76,6 +77,29 @@ export default function AdminDashboard() {
   const [skippedUploads, setSkippedUploads] = useState<string[]>([]);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+
+  const handleSourcingToggle = (type: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp') => {
+    const isCurrentlyActive = showSourcingTransferOnly && sourcingReportType === type;
+    if (isCurrentlyActive) {
+      setShowSourcingTransferOnly(false);
+    } else {
+      setStockFilter('all');
+      setClassificationFilter(null);
+      setTypeFilter(null);
+      setRefFilter(false);
+      setExpStart('');
+      setExpEnd('');
+      setSearchQuery('');
+
+      setShowSourcingTransferOnly(true);
+      setSourcingReportType(type);
+      
+      refresh(false);
+      if (refreshAll) {
+        refreshAll(false).catch(err => console.warn("Background refreshAll error in AdminDashboard:", err));
+      }
+    }
+  };
 
   const [rearrangedReportItems, setRearrangedReportItems] = useState<any[]>(() => {
     try {
@@ -203,21 +227,62 @@ export default function AdminDashboard() {
       ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
       : 'NO DATA';
     let listToExport = [...sortedMedications];
-    const headers = showSourcingTransferOnly
-      ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Sourcing Partners (QOH > 50% Order Qty)']
-      : ['Serial no.', 'Item code', 'Item name', 'Location', 'QOH', 'Min Qty', 'Max Qty', 'Exp1', 'Exp2', 'Exp3'];
+
+    const now = new Date();
+    const currentYVal = now.getFullYear();
+    const currentMVal = now.getMonth();
+
+    let fileSuffix = 'Stock_Transfer_Sourcing';
+    let activeSourcingTitle = 'STOCK TRANSFER / SOURCING REPORT';
+    let headers: string[] = [];
+
+    const isExpirySourcing = showSourcingTransferOnly && sourcingReportType !== 'qoh';
+
+    if (showSourcingTransferOnly) {
+      if (sourcingReportType === 'current_exp') {
+        const name = format(new Date(currentYVal, currentMVal, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (CURRENT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal, 1), 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else if (sourcingReportType === 'next_exp') {
+        const name = format(new Date(currentYVal, currentMVal + 1, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (NEXT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal + 1, 1), 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else if (sourcingReportType === 'after_next_exp') {
+        const name = format(new Date(currentYVal, currentMVal + 2, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (MONTH AFTER NEXT - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal + 2, 1), 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else {
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Sourcing Partners (QOH > 50% Order Qty)'];
+      }
+    } else {
+      headers = ['Serial no.', 'Item code', 'Item name', 'Location', 'QOH', 'Min Qty', 'Max Qty', 'Exp1', 'Exp2', 'Exp3'];
+    }
 
     const rows = listToExport.map((m, i) => {
       if (showSourcingTransferOnly) {
-        const oQty = calculateOrder(m, 1);
-        return [
-          i + 1,
-          m.itemCode,
-          m.itemName,
-          m.qoh,
-          oQty,
-          getSourcingLocationsText(m.itemCode, oQty)
-        ];
+        if (isExpirySourcing) {
+          return [
+            i + 1,
+            m.itemCode,
+            m.itemName,
+            m.qoh,
+            m.expiration1 || '-',
+            getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
+          ];
+        } else {
+          const oQty = calculateOrder(m, 1);
+          return [
+            i + 1,
+            m.itemCode,
+            m.itemName,
+            m.qoh,
+            oQty,
+            getSourcingLocationsText(m.itemCode, oQty, 'qoh')
+          ];
+        }
       } else {
         return [
           i + 1,
@@ -235,7 +300,7 @@ export default function AdminDashboard() {
     });
 
     const csvContent = [
-      `"LAST UPDATE: ${displayDate}"`,
+      `"${activeSourcingTitle.toUpperCase()} - LAST UPDATE: ${displayDate}"`,
       "",
       headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
       ...rows.map(r => r.map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(','))
@@ -245,7 +310,7 @@ export default function AdminDashboard() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.download = `${showSourcingTransferOnly ? fileSuffix : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -255,27 +320,70 @@ export default function AdminDashboard() {
       ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
       : 'NO DATA';
     let listToExport = [...sortedMedications];
+
+    const now = new Date();
+    const currentYVal = now.getFullYear();
+    const currentMVal = now.getMonth();
+
+    let fileSuffix = 'Stock_Transfer_Sourcing';
+    let activeSourcingTitle = 'STOCK TRANSFER / SOURCING REPORT';
+    let headers: string[] = [];
+
+    const isExpirySourcing = showSourcingTransferOnly && sourcingReportType !== 'qoh';
+
+    if (showSourcingTransferOnly) {
+      if (sourcingReportType === 'current_exp') {
+        const name = format(new Date(currentYVal, currentMVal, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (CURRENT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal, 1), 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else if (sourcingReportType === 'next_exp') {
+        const name = format(new Date(currentYVal, currentMVal + 1, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (NEXT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal + 1, 1), 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else if (sourcingReportType === 'after_next_exp') {
+        const name = format(new Date(currentYVal, currentMVal + 2, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (MONTH AFTER NEXT - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal + 2, 1), 'MMM_yyyy')}`;
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)'];
+      } else {
+        headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Sourcing Partners (QOH > 50% Order Qty)'];
+      }
+    } else {
+      headers = ['Serial no.', 'Item code', 'Item name', 'Location', 'QOH', 'Min Qty', 'Max Qty', 'Exp1', 'Exp2', 'Exp3'];
+    }
+
     const aoa: any[][] = [
+      ['REPORT:', activeSourcingTitle],
       ['LAST UPDATE:', displayDate],
       []
     ];
     
-    const headers = showSourcingTransferOnly
-      ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Sourcing Partners (QOH > 50% Order Qty)']
-      : ['Serial no.', 'Item code', 'Item name', 'Location', 'QOH', 'Min Qty', 'Max Qty', 'Exp1', 'Exp2', 'Exp3'];
     aoa.push(headers);
-
+ 
     listToExport.forEach((m, i) => {
       if (showSourcingTransferOnly) {
-        const oQty = calculateOrder(m, 1);
-        aoa.push([
-          i + 1,
-          m.itemCode,
-          m.itemName,
-          m.qoh,
-          oQty,
-          getSourcingLocationsText(m.itemCode, oQty)
-        ]);
+        if (isExpirySourcing) {
+          aoa.push([
+            i + 1,
+            m.itemCode,
+            m.itemName,
+            m.qoh,
+            m.expiration1 || '-',
+            getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
+          ]);
+        } else {
+          const oQty = calculateOrder(m, 1);
+          aoa.push([
+            i + 1,
+            m.itemCode,
+            m.itemName,
+            m.qoh,
+            oQty,
+            getSourcingLocationsText(m.itemCode, oQty, 'qoh')
+          ]);
+        }
       } else {
         aoa.push([
           i + 1,
@@ -291,41 +399,81 @@ export default function AdminDashboard() {
         ]);
       }
     });
-
+ 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventory_Report");
-    XLSX.writeFile(wb, `${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+    XLSX.writeFile(wb, `${showSourcingTransferOnly ? fileSuffix : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
   };
-
+ 
   const downloadInventoryPDF = () => {
     let listToExport = [...sortedMedications];
     const doc = new jsPDF() as any;
-    
-    doc.setFontSize(16);
-    doc.text(showSourcingTransferOnly ? "STOCK TRANSFER / SOURCING REPORT" : "STUDIO PHARMACY MEDICATIONS LIST", 14, 15);
+
+    const now = new Date();
+    const currentYVal = now.getFullYear();
+    const currentMVal = now.getMonth();
+
+    let fileSuffix = 'Stock_Transfer_Sourcing';
+    let activeSourcingTitle = 'STOCK TRANSFER / SOURCING REPORT';
+    let headers: string[][] = [];
+
+    const isExpirySourcing = showSourcingTransferOnly && sourcingReportType !== 'qoh';
+
+    if (showSourcingTransferOnly) {
+      if (sourcingReportType === 'current_exp') {
+        const name = format(new Date(currentYVal, currentMVal, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (CURRENT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal, 1), 'MMM_yyyy')}`;
+        headers = [['S.No', 'Item Code', 'Item Name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)']];
+      } else if (sourcingReportType === 'next_exp') {
+        const name = format(new Date(currentYVal, currentMVal + 1, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (NEXT MONTH - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal + 1, 1), 'MMM_yyyy')}`;
+        headers = [['S.No', 'Item Code', 'Item Name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)']];
+      } else if (sourcingReportType === 'after_next_exp') {
+        const name = format(new Date(currentYVal, currentMVal + 2, 1), 'MMMM yyyy').toUpperCase();
+        activeSourcingTitle = `EXPIRY SOURCING PLAN (MONTH AFTER NEXT - ${name})`;
+        fileSuffix = `Expiry_Sourcing_${format(new Date(currentYVal, currentMVal + 2, 1), 'MMM_yyyy')}`;
+        headers = [['S.No', 'Item Code', 'Item Name', 'QOH (Exp)', 'Exp 1', 'Sourcing Partners (Stock with Better Expiry)']];
+      } else {
+        headers = [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Sourcing Partners (QOH > 50%)']];
+      }
+    } else {
+      headers = [['S.No', 'Item Code', 'Item Name', 'Location', 'QOH', 'Min', 'Max', 'Exp 1']];
+    }
+     
+    doc.setFontSize(14);
+    doc.text(activeSourcingTitle, 14, 15);
     doc.setFontSize(10);
     doc.text(`Location: ${PHARMACY_NAMES[selectedLocation]}`, 14, 22);
     const displayDate = lastUpdate 
       ? format(new Date(lastUpdate), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase() 
       : 'NO DATA';
     doc.text(`Last Updated: ${displayDate}`, 14, 27);
-
-    const headers = showSourcingTransferOnly
-      ? [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Sourcing Partners (QOH > 50%)']]
-      : [['S.No', 'Item Code', 'Item Name', 'Location', 'QOH', 'Min', 'Max', 'Exp 1']];
-
+ 
     const tableData = listToExport.map((m, i) => {
       if (showSourcingTransferOnly) {
-        const oQty = calculateOrder(m, 1);
-        return [
-          i + 1,
-          m.itemCode,
-          m.itemName,
-          formatNumber(m.qoh),
-          formatNumber(oQty),
-          getSourcingLocationsText(m.itemCode, oQty)
-        ];
+        if (isExpirySourcing) {
+          return [
+            i + 1,
+            m.itemCode,
+            m.itemName,
+            formatNumber(m.qoh),
+            m.expiration1 || '-',
+            getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
+          ];
+        } else {
+          const oQty = calculateOrder(m, 1);
+          return [
+            i + 1,
+            m.itemCode,
+            m.itemName,
+            formatNumber(m.qoh),
+            formatNumber(oQty),
+            getSourcingLocationsText(m.itemCode, oQty, 'qoh')
+          ];
+        }
       } else {
         return [
           i + 1,
@@ -339,7 +487,7 @@ export default function AdminDashboard() {
         ];
       }
     });
-
+ 
     autoTable(doc, {
       startY: 34,
       head: headers,
@@ -348,14 +496,21 @@ export default function AdminDashboard() {
       alternateRowStyles: { fillColor: [245, 245, 245] },
       theme: 'grid',
       styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
-      columnStyles: showSourcingTransferOnly ? {
+      columnStyles: showSourcingTransferOnly ? (isExpirySourcing ? {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 50 },
+        3: { cellWidth: 15 },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 65 }
+      } : {
         0: { cellWidth: 10 },
         1: { cellWidth: 22 },
         2: { cellWidth: 55 },
         3: { cellWidth: 15 },
         4: { cellWidth: 15 },
         5: { cellWidth: 65 }
-      } : {
+      }) : {
         0: { cellWidth: 10 },
         1: { cellWidth: 22 },
         2: { cellWidth: 55 },
@@ -366,8 +521,8 @@ export default function AdminDashboard() {
         7: { cellWidth: 22 }
       }
     });
-
-    doc.save(`${showSourcingTransferOnly ? 'Stock_Transfer_Sourcing' : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+ 
+    doc.save(`${showSourcingTransferOnly ? fileSuffix : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
   };
 
   const handleRefreshExpirationReport = async () => {
@@ -874,14 +1029,45 @@ export default function AdminDashboard() {
     return Math.floor((targetMax - qoh) / min) * min;
   };
 
-  const getSourcingLocationsText = (itemCode: string, orderVal: number) => {
+  const getSourcingLocationsText = (itemCode: string, orderVal: number, mode: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp' = 'qoh') => {
     const matches = (allMedications || []).filter(om => om.itemCode === itemCode && om.locationId !== selectedLocation);
-    const eligible = matches.filter(om => om.qoh > 0.5 * orderVal);
-    if (eligible.length === 0) return 'None';
-    return eligible.map(om => {
-      const locName = om.locationId === PharmacyLocation.ADULT ? 'Adult' : om.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
-      return `${locName} (${om.qoh} Box)`;
-    }).join(' | ');
+    
+    if (mode === 'qoh') {
+      const eligible = matches.filter(om => om.qoh > 0.5 * orderVal);
+      if (eligible.length === 0) return 'None';
+      return eligible.map(om => {
+        const locName = om.locationId === PharmacyLocation.ADULT ? 'Adult' : om.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
+        return `${locName} (${om.qoh} Box)`;
+      }).join(' | ');
+    } else {
+      const now = new Date();
+      let start: Date;
+      let end: Date;
+
+      if (mode === 'current_exp') {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      } else if (mode === 'next_exp') {
+        start = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59);
+      } else {
+        start = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 3, 0, 23, 59, 59);
+      }
+
+      const eligible = matches.filter(om => {
+        if (om.qoh <= 0) return false;
+        const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+        if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+        return true;
+      });
+
+      if (eligible.length === 0) return 'None';
+      return eligible.map(om => {
+        const locName = om.locationId === PharmacyLocation.ADULT ? 'Adult' : om.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
+        return `${locName} (${om.qoh} Box with Better Expiry: ${om.expiration1 || 'No Exp'})`;
+      }).join(' | ');
+    }
   };
 
   const getExpirationColor = (dateStr: string) => {
@@ -1081,18 +1267,49 @@ export default function AdminDashboard() {
     }
 
     if (showSourcingTransferOnly) {
-      result = result.filter(m => {
-        const isOut = m.qoh <= 0;
-        const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
-        if (!isOut && !isLow) return false;
+      if (sourcingReportType === 'qoh') {
+        result = result.filter(m => {
+          const isOut = m.qoh <= 0;
+          const isLow = !isOut && m.maxQty > 0 && m.qoh < m.maxQty * 0.3;
+          if (!isOut && !isLow) return false;
 
-        const oQty = calculateOrder(m, 1);
-        if (oQty <= 0) return false;
+          const oQty = calculateOrder(m, 1);
+          if (oQty <= 0) return false;
 
-        // Check if other locations have qoh > 50% of this orderQty
-        const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
-        return matches.some(om => om.qoh > 0.5 * oQty);
-      });
+          // Check if other locations have qoh > 50% of this orderQty
+          const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+          return matches.some(om => om.qoh > 0.5 * oQty);
+        });
+      } else {
+        const now = new Date();
+        let start: Date;
+        let end: Date;
+
+        if (sourcingReportType === 'current_exp') {
+          start = new Date(now.getFullYear(), now.getMonth(), 1);
+          end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        } else if (sourcingReportType === 'next_exp') {
+          start = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+          end = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59);
+        } else {
+          start = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+          end = new Date(now.getFullYear(), now.getMonth() + 3, 0, 23, 59, 59);
+        }
+
+        result = result.filter(m => {
+          if (m.qoh <= 0) return false;
+          const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
+          if (!expDate || expDate < start || expDate > end) return false;
+
+          const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+          return matches.some(om => {
+            if (om.qoh <= 0) return false;
+            const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+            if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+            return true;
+          });
+        });
+      }
     }
 
     return result.sort((a, b) => {
@@ -1149,6 +1366,66 @@ export default function AdminDashboard() {
 
       const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
       return matches.some(om => om.qoh > 0.5 * oQty);
+    }).length;
+  }, [medications, allMedications, selectedLocation]);
+
+  const currentExpSourcingCount = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    return (medications || []).filter(m => {
+      if (m.qoh <= 0) return false;
+      const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
+      if (!expDate || expDate < start || expDate > end) return false;
+
+      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      return matches.some(om => {
+        if (om.qoh <= 0) return false;
+        const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+        if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+        return true;
+      });
+    }).length;
+  }, [medications, allMedications, selectedLocation]);
+
+  const nextExpSourcingCount = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59);
+
+    return (medications || []).filter(m => {
+      if (m.qoh <= 0) return false;
+      const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
+      if (!expDate || expDate < start || expDate > end) return false;
+
+      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      return matches.some(om => {
+        if (om.qoh <= 0) return false;
+        const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+        if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+        return true;
+      });
+    }).length;
+  }, [medications, allMedications, selectedLocation]);
+
+  const afterNextExpSourcingCount = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() + 2, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 3, 0, 23, 59, 59);
+
+    return (medications || []).filter(m => {
+      if (m.qoh <= 0) return false;
+      const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
+      if (!expDate || expDate < start || expDate > end) return false;
+
+      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      return matches.some(om => {
+        if (om.qoh <= 0) return false;
+        const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
+        if (omExpDate && omExpDate >= start && omExpDate <= end) return false;
+        return true;
+      });
     }).length;
   }, [medications, allMedications, selectedLocation]);
 
@@ -2864,15 +3141,51 @@ export default function AdminDashboard() {
             </div>
 
             <button
-              onClick={() => setShowSourcingTransferOnly(!showSourcingTransferOnly)}
+              onClick={() => handleSourcingToggle('qoh')}
               className={`flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap border ${
-                showSourcingTransferOnly
+                showSourcingTransferOnly && sourcingReportType === 'qoh'
                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20'
                   : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
               }`}
             >
               <ArrowLeftRight className="w-4 h-4" />
-              Sourcing Plan ({sourcingTransferCount})
+              Sourcing: QOH ({sourcingTransferCount})
+            </button>
+
+            <button
+              onClick={() => handleSourcingToggle('current_exp')}
+              className={`flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap border ${
+                showSourcingTransferOnly && sourcingReportType === 'current_exp'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              Sourcing: Exp1 Current Month ({currentExpSourcingCount})
+            </button>
+
+            <button
+              onClick={() => handleSourcingToggle('next_exp')}
+              className={`flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap border ${
+                showSourcingTransferOnly && sourcingReportType === 'next_exp'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              Sourcing: Exp1 Next Month ({nextExpSourcingCount})
+            </button>
+
+            <button
+              onClick={() => handleSourcingToggle('after_next_exp')}
+              className={`flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-2xl text-xs font-bold transition-all whitespace-nowrap border ${
+                showSourcingTransferOnly && sourcingReportType === 'after_next_exp'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-[#BCE2D3]'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              Sourcing: Exp1 Month After Next ({afterNextExpSourcingCount})
             </button>
 
             <button
@@ -2923,7 +3236,12 @@ export default function AdminDashboard() {
             )}
             {showSourcingTransferOnly && (
               <span className="px-2 py-0.5 bg-white text-emerald-700 rounded-md text-[9px] font-bold shadow-sm border border-emerald-200">
-                Sourcing Plan: Active
+                Sourcing Plan: {
+                  sourcingReportType === 'qoh' ? 'QOH Cross-Location Finder' :
+                  sourcingReportType === 'current_exp' ? 'Exp1 Current Month' :
+                  sourcingReportType === 'next_exp' ? 'Exp1 Next Month' :
+                  'Exp1 Month After Next'
+                }
               </span>
             )}
             <button 
