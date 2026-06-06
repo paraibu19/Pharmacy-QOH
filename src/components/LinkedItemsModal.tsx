@@ -14,14 +14,77 @@ interface LinkedItemsModalProps {
 export default function LinkedItemsModal({ medication, allMedications, onClose, showQoh = true }: LinkedItemsModalProps) {
   if (!medication) return null;
 
-  // Split linked codes by comma or space
+  // Split linked codes of medication by comma or space
   const linkedCodes = medication.to
     ? medication.to.split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase())
     : [];
 
-  const linkedItems = allMedications.filter(m => 
-    linkedCodes.includes(m.itemCode.trim().toLowerCase())
-  );
+  const medicationCodeLower = medication.itemCode.trim().toLowerCase();
+  const isMedGeneric = medication.generic && medication.generic.toLowerCase().includes('generic');
+
+  const linkedItems = allMedications.filter(m => {
+    // Exclude the medication itself
+    if (m.id === medication.id || m.itemCode.trim().toLowerCase() === medicationCodeLower) {
+      return false;
+    }
+
+    const itemCodeLower = m.itemCode.trim().toLowerCase();
+    
+    // 1. Direct path check: Is item listed in medication's 'to' field?
+    if (linkedCodes.includes(itemCodeLower)) {
+      return true;
+    }
+
+    // Split m's linked codes
+    const mLinkedCodes = m.to
+      ? m.to.split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase())
+      : [];
+
+    // 2. Inverse path check: Is medication listed in m's 'to' field?
+    if (mLinkedCodes.includes(medicationCodeLower)) {
+      return true;
+    }
+
+    // 3. Sibling/Generics sharing Brand path check:
+    // If both medication and m are Generic items, do they share a brand?
+    const isMGeneric = m.generic && m.generic.toLowerCase().includes('generic');
+    if (isMedGeneric && isMGeneric) {
+      // Find Brand codes linked to selected medication (from medication's 'to' field or reverse links)
+      // Since medication is generic, its linkedCodes are brand codes.
+      const medBrandCodes = [...linkedCodes];
+      // Check if any brand links to medication in reverse
+      allMedications.forEach(anyMed => {
+        const anyMedBrand = anyMed.generic && anyMed.generic.toLowerCase().includes('brand');
+        if (anyMedBrand) {
+          const anyMedTo = anyMed.to ? anyMed.to.split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase()) : [];
+          if (anyMedTo.includes(medicationCodeLower)) {
+            medBrandCodes.push(anyMed.itemCode.trim().toLowerCase());
+          }
+        }
+      });
+
+      // m is also generic, its brand codes from its 'to' field:
+      const mBrandCodes = [...mLinkedCodes];
+      // Check if any brand links to m in reverse
+      allMedications.forEach(anyMed => {
+        const anyMedBrand = anyMed.generic && anyMed.generic.toLowerCase().includes('brand');
+        if (anyMedBrand) {
+          const anyMedTo = anyMed.to ? anyMed.to.split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase()) : [];
+          if (anyMedTo.includes(itemCodeLower)) {
+            mBrandCodes.push(anyMed.itemCode.trim().toLowerCase());
+          }
+        }
+      });
+
+      // If they have any brand code in common, they are siblings!
+      const hasSharedBrand = medBrandCodes.some(bCode => mBrandCodes.includes(bCode));
+      if (hasSharedBrand) {
+        return true;
+      }
+    }
+
+    return false;
+  });
 
   return (
     <AnimatePresence>
@@ -89,7 +152,13 @@ export default function LinkedItemsModal({ medication, allMedications, onClose, 
                     <div className="flex-1 space-y-4">
                       <div className="flex justify-between items-start">
                         <div>
-                          <span className="text-[8px] font-black uppercase text-[#F27D26]/60 block mb-0.5">Brand</span>
+                          <span className={`text-[8px] font-black uppercase block mb-0.5 ${
+                            item.generic?.toLowerCase().includes('brand')
+                              ? 'text-[#F27D26]'
+                              : 'text-sky-600'
+                          }`}>
+                            {item.generic?.toLowerCase().includes('brand') ? 'Brand' : 'Generic'}
+                          </span>
                           <h3 className="font-bold text-[#141414] text-sm md:text-base group-hover:text-[#F27D26] transition-colors line-clamp-2 md:line-clamp-1">
                             {item.itemName}
                           </h3>

@@ -3,7 +3,7 @@ import {
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
   Eye, EyeOff, Settings, Key, LogOut, KeyRound, ThermometerSnowflake, UploadCloud,
-  ArrowRightLeft
+  ArrowRightLeft, ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -17,6 +17,7 @@ import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
 import { formatNumber } from '../lib/formatters';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MultiLocationLookupModal from '../components/MultiLocationLookupModal';
+import BrandGenericReportModal from '../components/BrandGenericReportModal';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
@@ -60,6 +61,7 @@ export default function OrderView() {
   
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const { medications: allMedications } = useMedications();
   const [error, setError] = useState<string | null>(null);
@@ -511,6 +513,9 @@ export default function OrderView() {
   };
 
   const downloadCSV = () => {
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
     const orderItems = sortedMeds.filter(m => m.orderQty > 0);
     const activeFilters = getActiveFiltersList();
     if (showSourcingTransferOnly) {
@@ -535,6 +540,8 @@ export default function OrderView() {
     });
 
     const metaRows: string[] = [];
+    metaRows.push(`LAST UPDATE: ${displayDate}`);
+    metaRows.push('');
     if (activeFilters.length > 0) {
       metaRows.push('ACTIVE FILTERS:');
       activeFilters.forEach(f => {
@@ -566,12 +573,18 @@ export default function OrderView() {
   };
 
   const downloadExcel = () => {
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
     const orderItems = sortedMeds.filter(m => m.orderQty > 0);
     const activeFilters = getActiveFiltersList();
     if (showSourcingTransferOnly) {
       activeFilters.push({ label: 'Sourcing Mode:', value: 'CROSS-LOCATION TRANSFER FINDER (QOH > 50% OF ORDER QTY)' });
     }
-    const aoa: any[][] = [];
+    const aoa: any[][] = [
+      ['LAST UPDATE:', displayDate],
+      []
+    ];
 
     if (activeFilters.length > 0) {
       aoa.push(['ACTIVE FILTERS:']);
@@ -627,7 +640,10 @@ export default function OrderView() {
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Location: ${PHARMACY_NAMES[selectedLocation]}`, 14, 30);
-    doc.text(`Generated: ${format(new Date(), 'EEEE, dd-MM-yyyy, hh:mm a').toUpperCase()}`, 14, 35);
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy, hh:mm a').toUpperCase() 
+      : 'NO DATA';
+    doc.text(`Last Updated: ${displayDate}`, 14, 35);
     doc.text(showSourcingTransferOnly ? `Total Transfer items: ${orderItems.length}` : `Total Items to Order: ${orderItems.length}`, 14, 40);
 
     let currentY = 48;
@@ -1065,6 +1081,13 @@ export default function OrderView() {
             >
               <FileSpreadsheet className="w-3 h-3 text-[#F27D26]" />
               EXCEL
+            </button>
+            <button 
+              onClick={() => setShowBrandGenericReport(true)}
+              className="flex-1 md:flex-none px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest hover:from-orange-600 hover:to-amber-600 transition-all shadow-sm flex items-center justify-center gap-1.5"
+            >
+              <ClipboardList className="w-3.5 h-3.5" />
+              Brand vs Generic
             </button>
           </div>
         </div>
@@ -2219,6 +2242,13 @@ export default function OrderView() {
         allMedications={allMedications || []}
         onEditOption={selectedMedForLookup ? () => startEdit(selectedMedForLookup) : undefined}
         onLinksOption={selectedMedForLookup && selectedMedForLookup.to ? () => setSelectedMedForLinks(selectedMedForLookup) : undefined}
+      />
+      <BrandGenericReportModal
+        isOpen={showBrandGenericReport}
+        onClose={() => setShowBrandGenericReport(false)}
+        medications={medications}
+        lastUpdate={lastUpdate}
+        selectedLocation={selectedLocation}
       />
     </div>
   );

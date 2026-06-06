@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Download, Save, RefreshCw, AlertTriangle, 
   CheckCircle2, ArrowUpRight, History, Loader2, ArrowUpDown, Filter, X, FileSpreadsheet,
-  Sparkles, ThermometerSnowflake, UploadCloud
+  Sparkles, ThermometerSnowflake, UploadCloud, ClipboardList
 } from 'lucide-react';
 import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
@@ -17,6 +17,7 @@ import { useSystemMetadata } from '../lib/useSystemMetadata';
 import { medicationOps } from '../lib/firebaseOperations';
 import { translateIndications } from '../services/translationService';
 import MedicationFormModal from '../components/MedicationFormModal';
+import BrandGenericReportModal from '../components/BrandGenericReportModal';
 
 type SortField = 'itemName' | 'itemCode' | 'qoh' | 'minQty' | 'physical' | 'variance';
 type SortOrder = 'asc' | 'desc';
@@ -30,6 +31,7 @@ export default function AdminInventory() {
   const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
   const [typeFilter, setTypeFilter] = useState<'generic' | 'brand' | null>(null);
   const [refFilter, setRefFilter] = useState<boolean>(false);
+  const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
   
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const { medications: allMedications } = useMedications();
@@ -269,22 +271,31 @@ export default function AdminInventory() {
   };
 
   const downloadExcel = () => {
-    const data = sortedMeds.map(m => {
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
+    const aoa: any[][] = [
+      ['LAST UPDATE:', displayDate],
+      [],
+      ['Item Code', 'Item Name', 'Current QOH', 'Min', 'Max', 'Physical Count', 'Variance', 'Last Updated']
+    ];
+
+    sortedMeds.forEach(m => {
       const physical = physicalCounts[m.id] ?? m.qoh;
       const variance = physical - m.qoh;
-      return {
-        'Item Code': m.itemCode,
-        'Item Name': m.itemName,
-        'Current QOH': m.qoh,
-        'Min': m.minQty || 0,
-        'Max': m.maxQty || 0,
-        'Physical Count': physical,
-        'Variance': variance,
-        'Last Updated': format(new Date(m.lastUpdatedAt), 'yyyy-MM-dd HH:mm')
-      };
+      aoa.push([
+        m.itemCode,
+        m.itemName,
+        m.qoh,
+        m.minQty || 0,
+        m.maxQty || 0,
+        physical,
+        variance,
+        format(new Date(m.lastUpdatedAt), 'yyyy-MM-dd HH:mm')
+      ]);
     });
 
-    const ws = XLSX.utils.json_to_sheet(data);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventory_Audit");
     
@@ -299,14 +310,17 @@ export default function AdminInventory() {
     if (confirm(`Adjust QOH for ${med.itemName}? Variance: ${variance > 0 ? '+' : ''}${formatNumber(variance)}`)) {
       await auditOps.reconcille(med.id, physical, selectedLocation, med.itemCode, med.itemName, med.qoh);
       setPhysicalCounts(prev => {
-        const next = { ...prev };
-        delete next[med.id];
-        return next;
+         const next = { ...prev };
+         delete next[med.id];
+         return next;
       });
     }
   };
 
   const downloadCSV = () => {
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
     const headers = ['Item Code', 'Item Name', 'Current QOH', 'Min', 'Max', 'Physical Count', 'Variance', 'Last Updated'];
     const rows = sortedMeds.map(m => {
       const physical = physicalCounts[m.id] ?? m.qoh;
@@ -324,6 +338,8 @@ export default function AdminInventory() {
     });
 
     const csvContent = [
+      `"LAST UPDATE: ${displayDate}"`,
+      "",
       headers.join(","),
       ...rows.map(r => r.map(field => `"${String(field).replace(/"/g, '""')}"`).join(","))
     ].join("\n");
@@ -393,11 +409,19 @@ export default function AdminInventory() {
             </button>
             <button 
               onClick={downloadExcel}
-              className="flex items-center gap-2 px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold"
+              className="flex items-center gap-2 px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold border-r border-white/5"
               title="Download Excel"
             >
               <FileSpreadsheet className="w-4 h-4 text-[#F27D26]" />
               Excel
+            </button>
+            <button 
+              onClick={() => setShowBrandGenericReport(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-400 to-amber-500 hover:from-orange-500 hover:to-amber-600 rounded-lg transition-all text-white text-xs font-extrabold uppercase tracking-widest px-3"
+              title="Brand vs Generic Report"
+            >
+              <ClipboardList className="w-4 h-4" />
+              Brand vs Generic
             </button>
           </div>
         </div>
@@ -1037,6 +1061,14 @@ export default function AdminInventory() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <BrandGenericReportModal
+        isOpen={showBrandGenericReport}
+        onClose={() => setShowBrandGenericReport(false)}
+        medications={medications}
+        lastUpdate={lastUpdate}
+        selectedLocation={selectedLocation}
+      />
     </div>
   );
 }

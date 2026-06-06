@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, FileSpreadsheet, KeyRound, 
-  Key, Eye, EyeOff, Lock, LogOut, ThermometerSnowflake, UploadCloud
+  Key, Eye, EyeOff, Lock, LogOut, ThermometerSnowflake, UploadCloud,
+  ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -16,6 +17,7 @@ import { formatNumber } from '../lib/formatters';
 import { technicianAuthOps, medicationOps } from '../lib/firebaseOperations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MedicationFormModal from '../components/MedicationFormModal';
+import BrandGenericReportModal from '../components/BrandGenericReportModal';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
@@ -48,6 +50,7 @@ export default function UserHome() {
   const [showSyncPulse, setShowSyncPulse] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedMedForLinks, setSelectedMedForLinks] = useState<Medication | null>(null);
+  const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
   
   // Edit states for technicians
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -355,6 +358,9 @@ export default function UserHome() {
 
   // Handle PDF Export
   const downloadCSV = () => {
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
     const headers = ['Item Code', 'Item Name', 'Restriction', 'Qatari', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
     const rows = filteredMeds.map(m => [
       m.itemCode,
@@ -368,6 +374,8 @@ export default function UserHome() {
     ]);
 
     const csvContent = [
+      `"LAST UPDATE: ${displayDate}"`,
+      "",
       headers.join(","),
       ...rows.map(r => r.map(field => `"${String(field).replace(/"/g, '""')}"`).join(","))
     ].join("\n");
@@ -385,19 +393,30 @@ export default function UserHome() {
   };
 
   const downloadExcel = () => {
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
     const headers = ['Item Code', 'Item Name', 'Restriction', 'Qatari', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
-    const data = filteredMeds.map(m => ({
-      'Item Code': m.itemCode,
-      'Item Name': m.itemName,
-      'Restriction': m.restriction || '-',
-      'Qatari': (m.qatari && m.qatari.trim().toUpperCase() === 'TRUE') ? 'Qatari' : (m.qatari || '-'),
-      'QOH': m.qoh,
-      'Exp 1': m.expiration1 || '-',
-      'Exp 2': m.expiration2 || '-',
-      'Exp 3': m.expiration3 || '-'
-    }));
+    const aoa: any[][] = [
+      ['LAST UPDATE:', displayDate],
+      [],
+      headers
+    ];
 
-    const ws = XLSX.utils.json_to_sheet(data);
+    filteredMeds.forEach(m => {
+      aoa.push([
+        m.itemCode,
+        m.itemName,
+        m.restriction || '-',
+        (m.qatari && m.qatari.trim().toUpperCase() === 'TRUE') ? 'Qatari' : (m.qatari || '-'),
+        m.qoh,
+        m.expiration1 || '-',
+        m.expiration2 || '-',
+        m.expiration3 || '-'
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventory");
     
@@ -408,7 +427,9 @@ export default function UserHome() {
   const downloadPDF = () => {
     const doc = new jsPDF();
     const locationName = PHARMACY_NAMES[selectedLocation];
-    const displayDate = format(new Date(), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase();
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase() 
+      : 'NO DATA';
 
     doc.setFontSize(18);
     doc.text(locationName, 14, 15);
@@ -714,6 +735,14 @@ export default function UserHome() {
               className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors text-[#141414]/60 border-l border-[#141414]/5"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            </button>
+            <button 
+              onClick={() => setShowBrandGenericReport(true)}
+              title="Brand vs Generic Report"
+              className="p-2 hover:bg-[#F27D26]/10 text-[#F27D26] rounded-full transition-colors border-l border-[#141414]/5 flex items-center gap-1 shrink-0 px-3"
+            >
+              <ClipboardList className="w-4 h-4" />
+              <span className="text-[10px] font-black uppercase tracking-wider hidden sm:inline">Brand vs Generic</span>
             </button>
           </div>
         </div>
@@ -1547,6 +1576,14 @@ export default function UserHome() {
           />
         )}
       </AnimatePresence>
+
+      <BrandGenericReportModal
+        isOpen={showBrandGenericReport}
+        onClose={() => setShowBrandGenericReport(false)}
+        medications={medications}
+        lastUpdate={lastUpdate}
+        selectedLocation={selectedLocation}
+      />
 
       {/* Edit Modal for Technicians */}
       <AnimatePresence>

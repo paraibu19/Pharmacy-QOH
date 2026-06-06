@@ -23,6 +23,7 @@ import { formatNumber } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { storage } from '../lib/storage';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
+import BrandGenericReportModal from '../components/BrandGenericReportModal';
 
 import { db, auth } from '../lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
@@ -42,6 +43,7 @@ export default function AdminDashboard() {
     const { medications: allMedications, refresh: refreshAll, isSyncing: isSyncingAll } = useMedications();
     const { audits, loading: auditsLoading } = useAudits(10);
     const [searchQuery, setSearchQuery] = useState('');
+  const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
   const [typeFilter, setTypeFilter] = useState<'generic' | 'brand' | null>(null);
@@ -86,20 +88,32 @@ export default function AdminDashboard() {
 
   const exportToExcel = () => {
     if (rearrangedReportItems.length === 0) return;
-    const data = rearrangedReportItems.map(item => ({
-      'Item Code': item.itemCode,
-      'Item Name': item.itemName,
-      'Location': item.locationId.toUpperCase(),
-      'Original Expiry 1': item.originalExp1 || '-',
-      'Original Expiry 2': item.originalExp2 || '-',
-      'Original Expiry 3': item.originalExp3 || '-',
-      'Rearranged Expiry 1': item.rearrangedExp1 || '-',
-      'Rearranged Expiry 2': item.rearrangedExp2 || '-',
-      'Rearranged Expiry 3': item.rearrangedExp3 || '-',
-      'Status': item.wasRearranged ? 'Rearranged' : 'Unchanged'
-    }));
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
+    
+    const aoa: any[][] = [
+      ['LAST UPDATE:', displayDate],
+      [],
+      ['Item Code', 'Item Name', 'Location', 'Original Expiry 1', 'Original Expiry 2', 'Original Expiry 3', 'Rearranged Expiry 1', 'Rearranged Expiry 2', 'Rearranged Expiry 3', 'Status']
+    ];
 
-    const ws = XLSX.utils.json_to_sheet(data);
+    rearrangedReportItems.forEach(item => {
+      aoa.push([
+        item.itemCode,
+        item.itemName,
+        item.locationId.toUpperCase(),
+        item.originalExp1 || '-',
+        item.originalExp2 || '-',
+        item.originalExp3 || '-',
+        item.rearrangedExp1 || '-',
+        item.rearrangedExp2 || '-',
+        item.rearrangedExp3 || '-',
+        item.wasRearranged ? 'Rearranged' : 'Unchanged'
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Rearrangement_Report");
     XLSX.writeFile(wb, `Expiration_Rearrangement_Report_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
@@ -107,6 +121,9 @@ export default function AdminDashboard() {
 
   const exportToCSV = () => {
     if (rearrangedReportItems.length === 0) return;
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
     const headers = ['Item Code', 'Item Name', 'Location', 'Original Expiry 1', 'Original Expiry 2', 'Original Expiry 3', 'Rearranged Expiry 1', 'Rearranged Expiry 2', 'Rearranged Expiry 3', 'Status'];
     const rows = rearrangedReportItems.map(item => [
       item.itemCode,
@@ -122,6 +139,8 @@ export default function AdminDashboard() {
     ]);
 
     const csvContent = [
+      `"LAST UPDATE: ${displayDate}"`,
+      "",
       headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
       ...rows.map(r => r.map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(','))
     ].join('\n');
@@ -129,7 +148,7 @@ export default function AdminDashboard() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
+    link.href = url;
     link.setAttribute('download', `Expiration_Rearrangement_Report_${format(new Date(), 'yyyy-MM-dd')}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
@@ -140,12 +159,14 @@ export default function AdminDashboard() {
   const exportToPDF = () => {
     if (rearrangedReportItems.length === 0) return;
     const doc = new jsPDF() as any;
-    const displayDate = format(new Date(), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase();
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase() 
+      : 'NO DATA';
 
     doc.setFontSize(16);
     doc.text("EXPIRATION DATE REARRANGEMENT REPORT", 14, 15);
     doc.setFontSize(10);
-    doc.text(`Generated At: ${displayDate}`, 14, 22);
+    doc.text(`Last Updated: ${displayDate}`, 14, 22);
 
     const tableData = rearrangedReportItems.map(item => [
       item.itemCode,
@@ -178,6 +199,9 @@ export default function AdminDashboard() {
   };
 
   const downloadInventoryCSV = () => {
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
     let listToExport = [...sortedMedications];
     const headers = showSourcingTransferOnly
       ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Sourcing Partners (QOH > 50% Order Qty)']
@@ -211,6 +235,8 @@ export default function AdminDashboard() {
     });
 
     const csvContent = [
+      `"LAST UPDATE: ${displayDate}"`,
+      "",
       headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
       ...rows.map(r => r.map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(','))
     ].join('\n');
@@ -225,8 +251,14 @@ export default function AdminDashboard() {
   };
 
   const downloadInventoryExcel = () => {
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
+      : 'NO DATA';
     let listToExport = [...sortedMedications];
-    const aoa: any[][] = [];
+    const aoa: any[][] = [
+      ['LAST UPDATE:', displayDate],
+      []
+    ];
     
     const headers = showSourcingTransferOnly
       ? ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Sourcing Partners (QOH > 50% Order Qty)']
@@ -274,7 +306,10 @@ export default function AdminDashboard() {
     doc.text(showSourcingTransferOnly ? "STOCK TRANSFER / SOURCING REPORT" : "STUDIO PHARMACY MEDICATIONS LIST", 14, 15);
     doc.setFontSize(10);
     doc.text(`Location: ${PHARMACY_NAMES[selectedLocation]}`, 14, 22);
-    doc.text(`Generated At: ${format(new Date(), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase()}`, 14, 27);
+    const displayDate = lastUpdate 
+      ? format(new Date(lastUpdate), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase() 
+      : 'NO DATA';
+    doc.text(`Last Updated: ${displayDate}`, 14, 27);
 
     const headers = showSourcingTransferOnly
       ? [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Sourcing Partners (QOH > 50%)']]
@@ -3089,6 +3124,13 @@ export default function AdminDashboard() {
             <ClipboardList className="w-3.5 h-3.5 text-red-600" />
             Export PDF
           </button>
+          <button
+            onClick={() => setShowBrandGenericReport(true)}
+            className="px-3 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-extrabold uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-1.5"
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            Brand vs Generic Report
+          </button>
         </div>
       </div>
 
@@ -4178,6 +4220,13 @@ export default function AdminDashboard() {
         allMedications={allMedications || []}
         onEditOption={selectedMedForLookup ? () => startEdit(selectedMedForLookup) : undefined}
         onLinksOption={selectedMedForLookup && selectedMedForLookup.to ? () => setSelectedMedForLinks(selectedMedForLookup) : undefined}
+      />
+      <BrandGenericReportModal
+        isOpen={showBrandGenericReport}
+        onClose={() => setShowBrandGenericReport(false)}
+        medications={medications}
+        lastUpdate={lastUpdate}
+        selectedLocation={selectedLocation}
       />
     </div>
   );
