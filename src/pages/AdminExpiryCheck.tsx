@@ -38,6 +38,14 @@ interface MismatchedItem {
   deliveredDates: string[];
 }
 
+interface LocationExcelState {
+  fileName: string | null;
+  excelDataGroups: Record<string, ExcelGroupedRow> | null;
+  parseError: string | null;
+  isProcessing: boolean;
+  rawSheetNames: string[];
+}
+
 export default function AdminExpiryCheck() {
   // Load ALL medications from Firestore across all locations
   const { medications, loading: loadingMeds, refresh } = useMedications();
@@ -49,13 +57,14 @@ export default function AdminExpiryCheck() {
     [PharmacyLocation.MESAIEED]: true
   });
 
-  // Uploaded Excel States
-  const [isDragging, setIsDragging] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [excelDataGroups, setExcelDataGroups] = useState<Record<string, ExcelGroupedRow> | null>(null);
-  const [rawSheetNames, setRawSheetNames] = useState<string[]>([]);
+  // Uploaded Excel States (separated per location)
+  const [activeUploadLocation, setActiveUploadLocation] = useState<PharmacyLocation | null>(null);
+  const [draggingLocation, setDraggingLocation] = useState<PharmacyLocation | null>(null);
+  const [locationExcelData, setLocationExcelData] = useState<Record<PharmacyLocation, LocationExcelState>>({
+    [PharmacyLocation.ADULT]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
+    [PharmacyLocation.PEDIATRIC]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
+    [PharmacyLocation.MESAIEED]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] }
+  });
   const [activeTab, setActiveTab] = useState<'all' | PharmacyLocation>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -222,14 +231,20 @@ export default function AdminExpiryCheck() {
     return undefined;
   };
 
-  // Handle core workbook import
-  const processWorkbookBytes = (dataBuffer: any) => {
+  // Handle core workbook import per location
+  const processWorkbookBytes = (dataBuffer: any, locId: PharmacyLocation) => {
     try {
-      setIsProcessing(true);
-      setParseError(null);
+      // Set downloading / processing state
+      setLocationExcelData(prev => ({
+        ...prev,
+        [locId]: {
+          ...prev[locId],
+          isProcessing: true,
+          parseError: null
+        }
+      }));
 
       const wb = XLSX.read(dataBuffer, { type: 'array', cellDates: true });
-      setRawSheetNames(wb.SheetNames);
 
       // Find 'Combined Unified Table' case-insensitive, trimmed
       const targetSheetName = wb.SheetNames.find(name => 
@@ -302,61 +317,75 @@ export default function AdminExpiryCheck() {
         if (!group.uom && uom) group.uom = uom;
       }
 
-      setExcelDataGroups(rowsByItem);
-      setParseError(null);
+      setLocationExcelData(prev => ({
+        ...prev,
+        [locId]: {
+          fileName: prev[locId].fileName,
+          excelDataGroups: rowsByItem,
+          parseError: null,
+          isProcessing: false,
+          rawSheetNames: wb.SheetNames
+        }
+      }));
     } catch (err: any) {
-      console.error("Error reading file:", err);
-      setParseError(err.message || 'Failed to parse Excel file correctly.');
-      setExcelDataGroups(null);
-    } finally {
-      setIsProcessing(false);
+      console.error(`Error reading file for ${locId}:`, err);
+      setLocationExcelData(prev => ({
+        ...prev,
+        [locId]: {
+          fileName: prev[locId].fileName,
+          excelDataGroups: null,
+          parseError: err.message || 'Failed to parse Excel file correctly.',
+          isProcessing: false,
+          rawSheetNames: []
+        }
+      }));
     }
   };
 
-  // Drag & Drop event handlers
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        processWorkbookBytes(evt.target?.result);
-      };
-      reader.readAsArrayBuffer(file);
+  const triggerUploadForLocation = (loc: PharmacyLocation) => {
+    setActiveUploadLocation(loc);
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
     }
   };
 
-  // Click file upload selector
+  const resetLocationUploader = (locId: PharmacyLocation) => {
+    setLocationExcelData(prev => ({
+      ...prev,
+      [locId]: {
+        fileName: null,
+        excelDataGroups: null,
+        parseError: null,
+        isProcessing: false,
+        rawSheetNames: []
+      }
+    }));
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setFileName(file.name);
-      
+    if (file && activeUploadLocation) {
+      const loc = activeUploadLocation;
+      setLocationExcelData(prev => ({
+        ...prev,
+        [loc]: {
+          ...prev[loc],
+          fileName: file.name
+        }
+      }));
       const reader = new FileReader();
       reader.onload = (evt) => {
-        processWorkbookBytes(evt.target?.result);
+        processWorkbookBytes(evt.target?.result, loc);
       };
       reader.readAsArrayBuffer(file);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
   // Mismatch Calculations
   const mismatchedItems: MismatchedItem[] = useMemo(() => {
-    if (!excelDataGroups) return [];
-
     const activeLocations = (Object.keys(selectedLocations) as PharmacyLocation[]).filter(
       loc => selectedLocations[loc]
     );
@@ -367,10 +396,13 @@ export default function AdminExpiryCheck() {
 
     // For each active checked location, match excel data with existing database state
     activeLocations.forEach(locId => {
+      const locExcel = locationExcelData[locId].excelDataGroups;
+      if (!locExcel) return; // Skip if no Excel file uploaded for this specific location
+
       // Get medications for this pharmacy location
       const locMeds = (medications || []).filter(m => m.locationId === locId);
 
-      (Object.values(excelDataGroups) as ExcelGroupedRow[]).forEach(excelGroup => {
+      (Object.values(locExcel) as ExcelGroupedRow[]).forEach(excelGroup => {
         const systemMed = locMeds.find(m => isItemCodeMatch(m.itemCode, excelGroup.itemCode));
 
         if (!systemMed) {
@@ -475,7 +507,7 @@ export default function AdminExpiryCheck() {
     list.sort((a, b) => a.systemItemName.localeCompare(b.systemItemName));
 
     return list;
-  }, [excelDataGroups, medications, selectedLocations]);
+  }, [locationExcelData, medications, selectedLocations]);
 
   // Filter calculations on mismatched items list
   const filteredMismatchedItems = useMemo(() => {
@@ -504,9 +536,20 @@ export default function AdminExpiryCheck() {
     .map(loc => PHARMACY_NAMES[loc])
     .join(', ');
 
+  // Filtered items to export based on active tab (all or a specific PharmacyLocation)
+  const itemsToExport = useMemo(() => {
+    if (activeTab === 'all') {
+      return mismatchedItems;
+    }
+    return mismatchedItems.filter(item => item.locationId === activeTab);
+  }, [mismatchedItems, activeTab]);
+
   // Report Exporters
   const exportCSV = () => {
-    if (mismatchedItems.length === 0) return;
+    if (itemsToExport.length === 0) return;
+
+    const locNameSuffix = activeTab === 'all' ? 'All_Locations' : activeTab;
+    const locDisplayName = activeTab === 'all' ? selectedLocNamesStr : PHARMACY_NAMES[activeTab as PharmacyLocation];
 
     const headers = [
       "Pharmacy Location",
@@ -518,7 +561,7 @@ export default function AdminExpiryCheck() {
       "Delivered Date1,Date2,Date3,Date4,Date5"
     ];
 
-    const dataRows = mismatchedItems.map(item => [
+    const dataRows = itemsToExport.map(item => [
       item.locationName,
       item.itemCode,
       item.systemItemName,
@@ -530,9 +573,9 @@ export default function AdminExpiryCheck() {
 
     const csvContent = [
       ["Report Name", "Pharmacy Expiration Date Discrepancy & Verification Report"],
-      ["The Selected Location Names", selectedLocNamesStr],
+      ["The Selected Location Names", locDisplayName],
       ["Time Stamp", new Date().toLocaleString()],
-      ["Number of items should be checked", `${mismatchedItems.length} items to checked`],
+      ["Number of items should be checked", `${itemsToExport.length} items to checked`],
       ["Please check physically the expiry date for these items"],
       [],
       headers,
@@ -543,20 +586,23 @@ export default function AdminExpiryCheck() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `Expiry_Mismatch_Report_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.csv`);
+    link.setAttribute("download", `Expiry_Mismatch_Report_${locNameSuffix}_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const exportExcel = () => {
-    if (mismatchedItems.length === 0) return;
+    if (itemsToExport.length === 0) return;
+
+    const locNameSuffix = activeTab === 'all' ? 'All_Locations' : activeTab;
+    const locDisplayName = activeTab === 'all' ? selectedLocNamesStr : PHARMACY_NAMES[activeTab as PharmacyLocation];
 
     const aoa: any[][] = [
       ["Report Name", "Pharmacy Expiration Date Discrepancy & Verification Report"],
-      ["The Selected Location Names", selectedLocNamesStr],
+      ["The Selected Location Names", locDisplayName],
       ["Time Stamp", new Date().toLocaleString()],
-      ["Number of items should be checked", `${mismatchedItems.length} items to checked`],
+      ["Number of items should be checked", `${itemsToExport.length} items to checked`],
       ["Please check physically the expiry date for these items"],
       [],
       [
@@ -570,7 +616,7 @@ export default function AdminExpiryCheck() {
       ]
     ];
 
-    mismatchedItems.forEach(item => {
+    itemsToExport.forEach(item => {
       aoa.push([
         item.locationName,
         item.itemCode,
@@ -585,11 +631,14 @@ export default function AdminExpiryCheck() {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Expiry Discrepancy");
-    XLSX.writeFile(wb, `Expiry_Mismatch_Report_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.xlsx`);
+    XLSX.writeFile(wb, `Expiry_Mismatch_Report_${locNameSuffix}_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.xlsx`);
   };
 
   const exportPDF = () => {
-    if (mismatchedItems.length === 0) return;
+    if (itemsToExport.length === 0) return;
+
+    const locNameSuffix = activeTab === 'all' ? 'All_Locations' : activeTab;
+    const locDisplayName = activeTab === 'all' ? selectedLocNamesStr : PHARMACY_NAMES[activeTab as PharmacyLocation];
 
     const parseExpDate = (dateStr: string) => {
       if (!dateStr || dateStr === '-' || dateStr === '.') return null;
@@ -677,7 +726,7 @@ export default function AdminExpiryCheck() {
 
     doc.text("The Selected Location Names:", 14, 26);
     doc.setFont("Helvetica", "normal");
-    doc.text(selectedLocNamesStr, 68, 26);
+    doc.text(locDisplayName, 68, 26);
 
     doc.setFont("Helvetica", "bold");
     doc.text("Time Stamp:", 14, 31);
@@ -687,7 +736,7 @@ export default function AdminExpiryCheck() {
     doc.setFont("Helvetica", "bold");
     doc.text("Number of items should be checked:", 14, 36);
     doc.setFont("Helvetica", "normal");
-    doc.text(`${mismatchedItems.length} items to checked`, 68, 36);
+    doc.text(`${itemsToExport.length} items to checked`, 68, 36);
 
     doc.setFont("Helvetica", "bold");
     doc.setTextColor(220, 38, 38); // Strict red
@@ -703,7 +752,7 @@ export default function AdminExpiryCheck() {
       "Delivered Date1,Date2,Date3,Date4,Date5"
     ];
 
-    const body = mismatchedItems.map(item => [
+    const body = itemsToExport.map(item => [
       item.locationName,
       item.itemCode,
       item.systemItemName,
@@ -757,14 +806,15 @@ export default function AdminExpiryCheck() {
       }
     });
 
-    doc.save(`Expiry_Mismatch_Report_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.pdf`);
+    doc.save(`Expiry_Mismatch_Report_${locNameSuffix}_${format(new Date(), 'yyyy-MM-dd_HH-mm')}.pdf`);
   };
 
-  const resetUploader = () => {
-    setFileName(null);
-    setExcelDataGroups(null);
-    setParseError(null);
-    setRawSheetNames([]);
+  const resetAllUploaders = () => {
+    setLocationExcelData({
+      [PharmacyLocation.ADULT]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
+      [PharmacyLocation.PEDIATRIC]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
+      [PharmacyLocation.MESAIEED]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] }
+    });
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -859,111 +909,152 @@ export default function AdminExpiryCheck() {
         {/* Right Columns: Drag & Drop Excel Uploader */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white border border-[#141414]/10 rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center gap-2 mb-4">
-              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-              <h2 className="text-lg font-bold tracking-tight">2. Import Delivered Stock Worksheet</h2>
+            <div className="flex items-center justify-between gap-4 border-b border-[#141414]/5 pb-4 mb-4">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                <h2 className="text-lg font-bold tracking-tight">2. Import Delivered Stock Worksheet</h2>
+              </div>
+              
+              {/* Optional master reset */}
+              <button
+                onClick={resetAllUploaders}
+                className="text-[11px] font-bold text-red-500 hover:text-red-700 hover:underline transition-all cursor-pointer"
+              >
+                Reset All Streams
+              </button>
             </div>
 
-            <p className="text-[#141414]/50 text-xs mb-4">
-              The application will automatically unpack the Excel file and look for a sheet named EXACTLY <strong className="font-semibold text-[#141414]">"Combined Unified Table"</strong>.
+            <p className="text-[#141414]/50 text-xs mb-6">
+              Upload the physical delivered stock spreadsheet specifically for each location portal. The application will unpack each file, looking for a sheet named EXACTLY <strong className="font-semibold text-[#141414]">"Combined Unified Table"</strong>.
             </p>
 
-            {/* Custom Interactive File Drop Zone */}
-            {!excelDataGroups ? (
-              <div 
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[220px] ${
-                  isDragging 
-                    ? 'border-[#F27D26] bg-[#F27D26]/5 scale-[0.99]' 
-                    : 'border-[#141414]/10 hover:border-[#141414]/30 hover:bg-[#141414]/[0.01]'
-                }`}
-              >
-                <input 
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept=".xlsx, .xls, .csv"
-                  className="hidden"
-                />
+            {/* General Hidden File Selector */}
+            <input 
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".xlsx, .xls, .csv"
+              className="hidden"
+            />
 
-                {isProcessing ? (
-                  <div className="space-y-3">
-                    <Loader2 className="w-10 h-10 text-[#F27D26] animate-spin mx-auto" />
-                    <p className="text-sm font-bold text-[#141414]/80">Decompressing workbook sheets...</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="p-4 bg-orange-50 rounded-full text-[#F27D26] mb-4 shadow-sm">
-                      <UploadCloud className="w-6 h-6 animate-pulse" />
-                    </div>
-                    <p className="text-sm font-bold text-[#141414] leading-normal">
-                      Drag and drop your Excel spreadsheet here, or <span className="text-[#F27D26] underline">browse files</span>
-                    </p>
-                    <p className="text-xs text-[#141414]/40 mt-2 font-medium">
-                      Supports standard MS Excel formats (.xlsx, .xls) and CSV sheets.
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="border border-emerald-100 bg-emerald-50/20 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
-                    <FileSpreadsheet className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-[#141414] text-sm md:text-base">{fileName}</h3>
-                    <p className="text-xs text-[#141414]/50 font-medium">
-                      Unpacked {Object.keys(excelDataGroups).length} unique delivered items from sheet "Combined Unified Table"
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100/50 px-1.5 py-0.5 rounded">
-                        Combined Unified Table Found
-                      </span>
-                      {rawSheetNames.length > 1 && (
-                        <span className="text-[9px] font-mono text-[#141414]/40 bg-zinc-100 px-1.5 py-0.5 rounded">
-                          +{rawSheetNames.length - 1} other sheets available
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+            <div className="space-y-4">
+              {(Object.keys(locationExcelData) as PharmacyLocation[]).map(loc => {
+                const state = locationExcelData[loc];
+                const label = PHARMACY_NAMES[loc];
+                const isParsing = state.isProcessing;
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={resetUploader}
-                    className="px-3.5 py-2 bg-white hover:bg-red-50 hover:text-red-600 border border-zinc-200 text-zinc-600 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                return (
+                  <div 
+                    key={loc}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDraggingLocation(loc);
+                    }}
+                    onDragLeave={() => {
+                      setDraggingLocation(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDraggingLocation(null);
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) {
+                        setLocationExcelData(prev => ({
+                          ...prev,
+                          [loc]: { ...prev[loc], fileName: file.name }
+                        }));
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                          processWorkbookBytes(evt.target?.result, loc);
+                        };
+                        reader.readAsArrayBuffer(file);
+                      }
+                    }}
+                    className={`p-4 border rounded-2xl transition-all ${
+                      draggingLocation === loc 
+                        ? 'border-[#F27D26] bg-[#F27D26]/5' 
+                        : state.excelDataGroups 
+                          ? 'border-emerald-100 bg-emerald-50/10' 
+                          : 'border-zinc-200 hover:border-zinc-300 bg-white'
+                    }`}
                   >
-                    Clear Spreadsheet
-                  </button>
-                </div>
-              </div>
-            )}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-xl shrink-0 ${state.excelDataGroups ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-[#F27D26]'}`}>
+                          <FileSpreadsheet className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-[#141414] text-sm">{label}</h4>
+                          <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest mt-0.5">{loc}</p>
+                          {state.excelDataGroups ? (
+                            <p className="text-xs text-emerald-600 font-bold mt-1">
+                              Ready: Unpacked {Object.keys(state.excelDataGroups).length} unique items
+                            </p>
+                          ) : isParsing ? (
+                            <div className="flex items-center gap-1.5 text-xs text-[#F27D26] font-bold mt-1">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>Unpacking worksheet...</span>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-[#141414]/40 mt-1">
+                              No stock worksheet uploaded for this location.
+                            </p>
+                          )}
+                        </div>
+                      </div>
 
-            {parseError && (
-              <div className="mt-4 p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 shrink-0 text-red-500 mt-0.5" />
-                <div className="space-y-1">
-                  <h4 className="font-bold text-sm">Spreadsheet Import Failure</h4>
-                  <p className="text-xs leading-relaxed opacity-90">{parseError}</p>
-                  {rawSheetNames.length > 0 && (
-                    <p className="text-xs font-mono opacity-80 mt-1">
-                      Sheets found in uploaded file: {rawSheetNames.join(', ')}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
+                      <div className="flex items-center gap-2">
+                        {state.excelDataGroups ? (
+                          <button
+                            onClick={() => resetLocationUploader(loc)}
+                            className="px-3 py-1.5 bg-white hover:bg-red-50 hover:text-red-600 border border-zinc-200 text-zinc-600 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => triggerUploadForLocation(loc)}
+                            className="px-3 py-1.5 bg-white hover:bg-orange-50 text-[#F27D26] border border-orange-200 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1"
+                          >
+                            <UploadCloud className="w-3.5 h-3.5" />
+                            <span>Upload Excel</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Display file name if uploaded */}
+                    {state.fileName && (
+                      <div className="mt-2.5 px-3 py-1.5 bg-[#141414]/3 rounded-lg text-xs font-semibold text-[#141414]/70 flex items-center gap-1.5">
+                        <span className="font-bold text-[#141414]">File:</span> {state.fileName}
+                      </div>
+                    )}
+
+                    {/* Display error if failed */}
+                    {state.parseError && (
+                      <div className="mt-3 p-3 bg-red-50 border border-red-100 text-red-700 rounded-xl flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <h5 className="font-bold text-xs">Spreadsheet Import Failure</h5>
+                          <p className="text-[11px] leading-relaxed opacity-90">{state.parseError}</p>
+                          {state.rawSheetNames.length > 0 && (
+                            <p className="text-[10px] font-mono opacity-80 mt-1">
+                              Sheets found in uploaded file: {state.rawSheetNames.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Expiry Analysis Report Section */}
       <AnimatePresence>
-        {excelDataGroups && hasActiveLoc && (
+        {(Object.values(locationExcelData) as LocationExcelState[]).some(state => state.excelDataGroups !== null) && hasActiveLoc && (
           <motion.div 
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
@@ -998,36 +1089,41 @@ export default function AdminExpiryCheck() {
             <div className="bg-white border border-[#141414]/10 rounded-2xl p-6 shadow-sm space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-bold tracking-tight">3. Generate Discrepancy Reports</h2>
-                  <p className="text-[#141414]/50 text-xs">Download matching sheets to assist warehouse personnel in physical verification.</p>
+                  <h2 className="text-lg font-bold tracking-tight">3. Generate {activeTab === 'all' ? 'All' : PHARMACY_NAMES[activeTab as PharmacyLocation]} Discrepancy Reports</h2>
+                  <p className="text-[#141414]/50 text-xs">
+                    {activeTab === 'all' 
+                      ? 'Download combined matching sheets to assist warehouse personnel in physical verification.' 
+                      : `Download matching sheet specifically filtered for ${PHARMACY_NAMES[activeTab as PharmacyLocation]}.`
+                    }
+                  </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={exportPDF}
-                    disabled={mismatchedItems.length === 0}
+                    disabled={itemsToExport.length === 0}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#F27D26] hover:bg-[#e06c15] text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Print PDF Report</span>
+                    <span>Print {activeTab === 'all' ? 'All' : 'Location'} PDF</span>
                   </button>
 
                   <button
                     onClick={exportExcel}
-                    disabled={mismatchedItems.length === 0}
+                    disabled={itemsToExport.length === 0}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 border border-[#141414]/10 hover:bg-[#141414]/5 rounded-xl text-xs font-bold text-[#141414]/80 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Export Excel</span>
+                    <span>Export {activeTab === 'all' ? 'All' : 'Location'} Excel</span>
                   </button>
 
                   <button
                     onClick={exportCSV}
-                    disabled={mismatchedItems.length === 0}
+                    disabled={itemsToExport.length === 0}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 border border-[#141414]/10 hover:bg-[#141414]/5 rounded-xl text-xs font-bold text-[#141414]/80 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-blue-500" />
-                    <span>Download CSV</span>
+                    <span>Download {activeTab === 'all' ? 'All' : 'Location'} CSV</span>
                   </button>
                 </div>
               </div>
