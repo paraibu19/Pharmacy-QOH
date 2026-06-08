@@ -7,6 +7,7 @@ import { db } from '../lib/firebase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { onSnapshotsInSync } from 'firebase/firestore';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
+import { formatSafeDate } from '../lib/formatters';
 import InstallGuideModal from './InstallGuideModal';
 
 interface LayoutProps {
@@ -115,6 +116,16 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             <ClipboardList className="w-4 h-4" />
             Inventory
           </NavLink>
+          <NavLink 
+            to="/admin/expiry-check" 
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={({ isActive }) => 
+              `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
+            }
+          >
+            <UploadCloud className="w-4 h-4" />
+            Expiry Verification
+          </NavLink>
         </>
       )}
     </>
@@ -139,7 +150,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
               <div className="hidden xl:flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
                 <UploadCloud className="w-3 h-3" />
                 <span className="opacity-60 mr-1 text-[#141414]">Last Update:</span>
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data Uploaded'}
+                {formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data Uploaded').toUpperCase()}
               </div>
             </div>
             
@@ -262,7 +273,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                     <UploadCloud className="w-3.5 h-3.5 text-[#F27D26]" />
                     <span>Last Update:</span>
                     <span className="text-[#141414] font-black">
-                      {lastUpdate ? format(new Date(lastUpdate), 'dd-MM-yyyy hh:mm a').toUpperCase() : 'NO DATA'}
+                      {formatSafeDate(lastUpdate, 'dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase()}
                     </span>
                   </div>
                 </div>

@@ -7,6 +7,7 @@ import OrderView from './pages/OrderView';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminInventory from './pages/AdminInventory';
+import AdminExpiryCheck from './pages/AdminExpiryCheck';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { storage } from './lib/storage';
@@ -117,6 +118,15 @@ export default function App() {
           element={
             isAdmin 
               ? <Layout isAdmin onLogout={adminLogout}><AdminInventory /></Layout> 
+              : <Navigate to="/admin/login" />
+          } 
+        />
+
+        <Route 
+          path="/admin/expiry-check" 
+          element={
+            isAdmin 
+              ? <Layout isAdmin onLogout={adminLogout}><AdminExpiryCheck /></Layout> 
               : <Navigate to="/admin/login" />
           } 
         />

@@ -13,6 +13,7 @@ import { db } from '../lib/firebase';
 import { localDb } from '../lib/localStorageDb';
 import { storage } from '../lib/storage';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
+import { formatSafeDate } from '../lib/formatters';
 
 export default function GeneralView() {
   const navigate = useNavigate();
@@ -413,7 +414,7 @@ export default function GeneralView() {
               <UploadCloud className="w-3 h-3 text-[#F27D26]" />
               <span className="opacity-60 text-[#141414]">Last Update:</span>
               <span className="text-[#F27D26]">
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+                {formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data').toUpperCase()}
               </span>
             </div>
           </div>

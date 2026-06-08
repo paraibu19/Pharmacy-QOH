@@ -19,7 +19,7 @@ import { useAudits } from '../hooks/useAudits';
 import { medicationOps, systemOps, translationCacheOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
 import { translateIndications, batchTranslateIndications } from '../services/translationService';
-import { formatNumber } from '../lib/formatters';
+import { formatNumber, parseSafeDate, formatSafeDate } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { storage } from '../lib/storage';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
@@ -112,9 +112,7 @@ export default function AdminDashboard() {
 
   const exportToExcel = () => {
     if (rearrangedReportItems.length === 0) return;
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     
     const aoa: any[][] = [
       ['LAST UPDATE:', displayDate],
@@ -145,9 +143,7 @@ export default function AdminDashboard() {
 
   const exportToCSV = () => {
     if (rearrangedReportItems.length === 0) return;
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     const headers = ['Item Code', 'Item Name', 'Location', 'Original Expiry 1', 'Original Expiry 2', 'Original Expiry 3', 'Rearranged Expiry 1', 'Rearranged Expiry 2', 'Rearranged Expiry 3', 'Status'];
     const rows = rearrangedReportItems.map(item => [
       item.itemCode,
@@ -183,9 +179,7 @@ export default function AdminDashboard() {
   const exportToPDF = () => {
     if (rearrangedReportItems.length === 0) return;
     const doc = new jsPDF() as any;
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy, hh:mm a', 'NO DATA').toUpperCase();
 
     doc.setFontSize(16);
     doc.text("EXPIRATION DATE REARRANGEMENT REPORT", 14, 15);
@@ -210,7 +204,7 @@ export default function AdminDashboard() {
       theme: 'grid',
       styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
       columnStyles: {
-        0: { cellWidth: 15 },
+        0: { cellWidth: 'wrap' },
         1: { cellWidth: 45 },
         2: { cellWidth: 20 },
         3: { cellWidth: 40 },
@@ -223,9 +217,7 @@ export default function AdminDashboard() {
   };
 
   const downloadInventoryCSV = () => {
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     let listToExport = [...sortedMedications];
 
     const now = new Date();
@@ -316,9 +308,7 @@ export default function AdminDashboard() {
   };
 
   const downloadInventoryExcel = () => {
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     let listToExport = [...sortedMedications];
 
     const now = new Date();
@@ -447,9 +437,7 @@ export default function AdminDashboard() {
     doc.text(activeSourcingTitle, 14, 15);
     doc.setFontSize(10);
     doc.text(`Location: ${PHARMACY_NAMES[selectedLocation]}`, 14, 22);
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy, hh:mm a', 'NO DATA').toUpperCase();
     doc.text(`Last Updated: ${displayDate}`, 14, 27);
  
     const tableData = listToExport.map((m, i) => {
@@ -498,21 +486,21 @@ export default function AdminDashboard() {
       styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
       columnStyles: showSourcingTransferOnly ? (isExpirySourcing ? {
         0: { cellWidth: 10 },
-        1: { cellWidth: 20 },
+        1: { cellWidth: 'wrap' },
         2: { cellWidth: 50 },
         3: { cellWidth: 15 },
         4: { cellWidth: 20 },
         5: { cellWidth: 65 }
       } : {
         0: { cellWidth: 10 },
-        1: { cellWidth: 22 },
+        1: { cellWidth: 'wrap' },
         2: { cellWidth: 55 },
         3: { cellWidth: 15 },
         4: { cellWidth: 15 },
         5: { cellWidth: 65 }
       }) : {
         0: { cellWidth: 10 },
-        1: { cellWidth: 22 },
+        1: { cellWidth: 'wrap' },
         2: { cellWidth: 55 },
         3: { cellWidth: 32 },
         4: { cellWidth: 15 },
@@ -1339,7 +1327,7 @@ export default function AdminDashboard() {
       if (valA > valB) return 1 * multiplier;
       return 0;
     });
-  }, [medications, sortField, sortOrder, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, searchQuery, showSourcingTransferOnly, allMedications, selectedLocation]);
+  }, [medications, sortField, sortOrder, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, searchQuery, showSourcingTransferOnly, sourcingReportType, allMedications, selectedLocation]);
 
   const filterCounts = useMemo(() => {
     const all = medications.length;
@@ -2240,7 +2228,7 @@ export default function AdminDashboard() {
                 <UploadCloud className="w-3 h-3" />
                 <span className="opacity-60 text-[#141414]">Inventory Updated:</span>
                 <span className="text-[#F27D26]">
-                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+                  {formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data').toUpperCase()}
                 </span>
               </div>
             </div>
@@ -2251,7 +2239,7 @@ export default function AdminDashboard() {
               <UploadCloud className="w-3 h-3" />
               <span className="opacity-60 text-[#141414]">Last Update:</span>
               <span className="text-[#F27D26]">
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+                {formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data').toUpperCase()}
               </span>
             </div>
             <button 
@@ -2276,6 +2264,13 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <Link 
+            to="/admin/expiry-check"
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-orange-50 hover:bg-orange-100 border border-orange-200 text-[#F27D26] rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm"
+          >
+            <UploadCloud className="w-4 h-4" />
+            Expiry Check Report
+          </Link>
           <Link 
             to="/admin/inventory"
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-[#141414] text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-[#F27D26] transition-colors shadow-lg shadow-black/10"
@@ -3700,7 +3695,8 @@ export default function AdminDashboard() {
             {!loading && sortedMedications.map(med => {
               const isOutOfStock = med.qoh <= 0;
               const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
-              const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
+              const parsedAdded = parseSafeDate(med.addedAt);
+              const isNew = parsedAdded ? differenceInDays(new Date(), parsedAdded) < 10 : false;
               
               // Expiration check for highlighting
               const today = startOfToday();
@@ -3927,7 +3923,8 @@ export default function AdminDashboard() {
         {!loading && sortedMedications.map(med => {
           const isOutOfStock = med.qoh <= 0;
           const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
-          const isNew = med.addedAt ? differenceInDays(new Date(), (med.addedAt as any).toDate?.() || new Date(med.addedAt)) < 10 : false;
+          const parsedAdded = parseSafeDate(med.addedAt);
+          const isNew = parsedAdded ? differenceInDays(new Date(), parsedAdded) < 10 : false;
           
           return (
             <motion.div 

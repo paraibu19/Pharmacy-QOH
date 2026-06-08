@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Medication, PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { X, Image as ImageIcon, Download, FileSpreadsheet, ClipboardList, AlertCircle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
-import { formatNumber } from '../lib/formatters';
+import { formatNumber, formatSafeDate } from '../lib/formatters';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -213,8 +213,7 @@ export default function BrandGenericReportModal({
 
   const reportDate = useMemo(() => format(new Date(), "yyyy-MM-dd HH:mm:ss"), []);
   const formattedLastUpdate = useMemo(() => {
-    if (!lastUpdate) return 'No Data';
-    return format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase();
+    return formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data').toUpperCase();
   }, [lastUpdate]);
 
   const handleCSVExport = () => {
@@ -406,12 +405,12 @@ export default function BrandGenericReportModal({
       styles: { fontSize: 7, cellPadding: 2 },
       headStyles: { fillColor: [45, 45, 45], fontStyle: 'bold' },
       columnStyles: {
-        0: { cellWidth: 15 },
+        0: { cellWidth: 'wrap' },
         1: { cellWidth: 45 },
         2: { cellWidth: 20 },
         3: { cellWidth: 15 },
         4: { cellWidth: 22 },
-        5: { cellWidth: 15 },
+        5: { cellWidth: 'wrap' },
         6: { cellWidth: 45 },
         7: { cellWidth: 20 },
         8: { cellWidth: 15 },

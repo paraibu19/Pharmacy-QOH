@@ -11,7 +11,7 @@ import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { auditOps } from '../lib/firebaseOperations';
-import { formatNumber } from '../lib/formatters';
+import { formatNumber, parseSafeDate, formatSafeDate } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 import { medicationOps } from '../lib/firebaseOperations';
@@ -271,9 +271,7 @@ export default function AdminInventory() {
   };
 
   const downloadExcel = () => {
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     const aoa: any[][] = [
       ['LAST UPDATE:', displayDate],
       [],
@@ -291,7 +289,7 @@ export default function AdminInventory() {
         m.maxQty || 0,
         physical,
         variance,
-        format(new Date(m.lastUpdatedAt), 'yyyy-MM-dd HH:mm')
+        formatSafeDate(m.lastUpdatedAt, 'yyyy-MM-dd HH:mm', '-')
       ]);
     });
 
@@ -318,9 +316,7 @@ export default function AdminInventory() {
   };
 
   const downloadCSV = () => {
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     const headers = ['Item Code', 'Item Name', 'Current QOH', 'Min', 'Max', 'Physical Count', 'Variance', 'Last Updated'];
     const rows = sortedMeds.map(m => {
       const physical = physicalCounts[m.id] ?? m.qoh;
@@ -333,7 +329,7 @@ export default function AdminInventory() {
         formatNumber(m.maxQty || 0),
         formatNumber(physical),
         formatNumber(variance),
-        format(new Date(m.lastUpdatedAt), 'yyyy-MM-dd HH:mm')
+        formatSafeDate(m.lastUpdatedAt, 'yyyy-MM-dd HH:mm', '-')
       ];
     });
 
@@ -364,7 +360,7 @@ export default function AdminInventory() {
               <UploadCloud className="w-3 h-3" />
               <span className="opacity-60 text-[#141414]">Last Update:</span>
               <span className="text-[#F27D26]">
-                {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+                {formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data').toUpperCase()}
               </span>
             </div>
           </div>
@@ -826,7 +822,7 @@ export default function AdminInventory() {
                           {getOtherLocationsAvailability(med.itemCode, selectedLocation, true)}
                         </div>
                         <span className="text-[9px] text-[#141414]/30 mt-1 uppercase italic">
-                          Last Updated: {format(new Date(med.lastUpdatedAt), 'dd MMM, HH:mm')}
+                          Last Updated: {formatSafeDate(med.lastUpdatedAt, 'dd MMM, HH:mm', '-')}
                         </span>
                       </div>
                     </td>

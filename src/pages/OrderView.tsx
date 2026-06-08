@@ -14,7 +14,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
-import { formatNumber } from '../lib/formatters';
+import { formatNumber, parseSafeDate, formatSafeDate } from '../lib/formatters';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MultiLocationLookupModal from '../components/MultiLocationLookupModal';
 import BrandGenericReportModal from '../components/BrandGenericReportModal';
@@ -69,7 +69,11 @@ export default function OrderView() {
   const handleSourcingToggle = (type: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp') => {
     const isCurrentlyActive = showSourcingTransferOnly && sourcingReportType === type;
     if (isCurrentlyActive) {
-      setShowSourcingTransferOnly(false);
+      // Trigger a force-refresh visual feedback and fetch instead of turning it off
+      refresh(true);
+      if (refreshAll) {
+        refreshAll(true).catch(err => console.warn("Background refreshAll error:", err));
+      }
     } else {
       setStockFilter('all');
       setClassificationFilter(null);
@@ -89,9 +93,9 @@ export default function OrderView() {
       setShowSourcingTransferOnly(true);
       setSourcingReportType(type);
       
-      refresh(false);
+      refresh(true);
       if (refreshAll) {
-        refreshAll(false).catch(err => console.warn("Background refreshAll error:", err));
+        refreshAll(true).catch(err => console.warn("Background refreshAll error:", err));
       }
     }
   };
@@ -396,11 +400,14 @@ export default function OrderView() {
       });
     }
 
-    const mapped = result.map(m => ({
-      ...m,
-      orderQty: calculateOrder(m, 1),
-      isNew: m.addedAt ? differenceInDays(new Date(), (m.addedAt as any).toDate?.() || new Date(m.addedAt)) < 10 : false
-    }));
+    const mapped = result.map(m => {
+      const parsedAdded = parseSafeDate(m.addedAt);
+      return {
+        ...m,
+        orderQty: calculateOrder(m, 1),
+        isNew: parsedAdded ? differenceInDays(new Date(), parsedAdded) < 10 : false
+      };
+    });
 
     // Filter by order quantity if a specific target is selected (not 'All')
     let displayResult = mapped;
@@ -675,9 +682,7 @@ export default function OrderView() {
   };
 
   const downloadCSV = () => {
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     const orderItems = sortedMeds.filter(m => m.orderQty > 0 || (showSourcingTransferOnly && sourcingReportType !== 'qoh' && m.qoh > 0));
     const activeFilters = getActiveFiltersList();
 
@@ -783,9 +788,7 @@ export default function OrderView() {
   };
 
   const downloadExcel = () => {
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     const orderItems = sortedMeds.filter(m => m.orderQty > 0 || (showSourcingTransferOnly && sourcingReportType !== 'qoh' && m.qoh > 0));
     const activeFilters = getActiveFiltersList();
 
@@ -935,9 +938,7 @@ export default function OrderView() {
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Location: ${PHARMACY_NAMES[selectedLocation]}`, 14, 30);
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy, hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy, hh:mm a', 'NO DATA').toUpperCase();
     doc.text(`Last Updated: ${displayDate}`, 14, 35);
     doc.text(showSourcingTransferOnly ? `Total Transfer items: ${orderItems.length}` : `Total Items to Order: ${orderItems.length}`, 14, 40);
 
@@ -1025,14 +1026,14 @@ export default function OrderView() {
       styles: { fontSize: 8, cellPadding: 3 },
       columnStyles: showSourcingTransferOnly ? {
         0: { cellWidth: 12 },
-        1: { cellWidth: 22 },
+        1: { cellWidth: 'wrap' },
         3: { cellWidth: 15 },
         4: { cellWidth: 15 },
         5: { cellWidth: 18 },
         6: { cellWidth: 48 }
       } : {
         0: { cellWidth: 15 },
-        1: { cellWidth: 25 },
+        1: { cellWidth: 'wrap' },
         3: { cellWidth: 20 },
         4: { cellWidth: 20 },
         5: { cellWidth: 25 },
@@ -1320,7 +1321,7 @@ export default function OrderView() {
                 <UploadCloud className="w-3 h-3" />
                 <span className="opacity-60 text-[#141414]">Last Update:</span>
                 <span className="text-[#F27D26]">
-                  {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+                  {formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data').toUpperCase()}
                 </span>
               </div>
             </div>

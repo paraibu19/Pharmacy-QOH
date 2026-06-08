@@ -13,7 +13,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
-import { formatNumber } from '../lib/formatters';
+import { formatNumber, parseSafeDate, formatSafeDate } from '../lib/formatters';
 import { technicianAuthOps, medicationOps } from '../lib/firebaseOperations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MedicationFormModal from '../components/MedicationFormModal';
@@ -308,10 +308,13 @@ export default function UserHome() {
       });
     }
     
-    const mapped = result.map(m => ({
-      ...m,
-      isNew: m.addedAt ? differenceInDays(new Date(), (m.addedAt as any).toDate?.() || new Date(m.addedAt)) < 10 : false
-    }));
+    const mapped = result.map(m => {
+      const parsedAdded = parseSafeDate(m.addedAt);
+      return {
+        ...m,
+        isNew: parsedAdded ? differenceInDays(new Date(), parsedAdded) < 10 : false
+      };
+    });
 
     return mapped.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
@@ -358,9 +361,7 @@ export default function UserHome() {
 
   // Handle PDF Export
   const downloadCSV = () => {
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     const headers = ['Item Code', 'Item Name', 'Restriction', 'Qatari', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
     const rows = filteredMeds.map(m => [
       m.itemCode,
@@ -393,9 +394,7 @@ export default function UserHome() {
   };
 
   const downloadExcel = () => {
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
     const headers = ['Item Code', 'Item Name', 'Restriction', 'Qatari', 'QOH', 'Exp 1', 'Exp 2', 'Exp 3'];
     const aoa: any[][] = [
       ['LAST UPDATE:', displayDate],
@@ -427,9 +426,7 @@ export default function UserHome() {
   const downloadPDF = () => {
     const doc = new jsPDF();
     const locationName = PHARMACY_NAMES[selectedLocation];
-    const displayDate = lastUpdate 
-      ? format(new Date(lastUpdate), "EEEE, dd-MM-yyyy, hh:mm a").toUpperCase() 
-      : 'NO DATA';
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy, hh:mm a', 'NO DATA').toUpperCase();
 
     doc.setFontSize(18);
     doc.text(locationName, 14, 15);
@@ -460,6 +457,9 @@ export default function UserHome() {
       body: tableData,
       headStyles: { fillColor: [20, 20, 20] },
       alternateRowStyles: { fillColor: [245, 245, 245] },
+      columnStyles: {
+        0: { cellWidth: 'wrap' }
+      },
       didDrawCell: (data) => {
         if (data.section === 'body' && data.column.index === 5) {
           const color = getExpirationPDFColor(data.cell.raw as string);
@@ -654,7 +654,7 @@ export default function UserHome() {
                   <UploadCloud className="w-3 h-3" />
                   <span className="opacity-60 text-[#141414]">Last Update:</span>
                   <span className="text-[#F27D26]">
-                    {lastUpdate ? format(new Date(lastUpdate), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase() : 'No Data'}
+                    {formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data').toUpperCase()}
                   </span>
                 </div>
               </div>
