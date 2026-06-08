@@ -741,7 +741,7 @@ export default function OrderView() {
         headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1', 'Sourcing Partners (QOH > 50% Order Qty)'];
       }
     } else {
-      headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
+      headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Expiration Dates'];
     }
 
     if (showSourcingTransferOnly) {
@@ -761,18 +761,29 @@ export default function OrderView() {
           getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
         ];
       } else {
-        const row = [
-          i + 1,
-          m.itemCode,
-          `${m.itemName} [${m.consumption || 0}]`,
-          m.qoh,
-          m.orderQty,
-          m.expiration1 || '-'
-        ];
         if (showSourcingTransferOnly) {
-          row.push(getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh'));
+          return [
+            i + 1,
+            m.itemCode,
+            `${m.itemName} [${m.consumption || 0}]`,
+            m.qoh,
+            m.orderQty,
+            m.expiration1 || '-',
+            getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh')
+          ];
+        } else {
+          const expCell = [m.expiration1, m.expiration2, m.expiration3]
+            .map(e => e || '-')
+            .join('\n');
+          return [
+            i + 1,
+            m.itemCode,
+            `${m.itemName} [${m.consumption || 0}]`,
+            m.qoh,
+            m.orderQty,
+            expCell
+          ];
         }
-        return row;
       }
     });
 
@@ -847,7 +858,7 @@ export default function OrderView() {
         headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1', 'Sourcing Partners (QOH > 50% Order Qty)'];
       }
     } else {
-      headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Exp1'];
+      headers = ['Serial no.', 'Item code', 'Item name', 'QOH', 'Order quantity', 'Expiration Dates'];
     }
 
     if (showSourcingTransferOnly) {
@@ -887,18 +898,29 @@ export default function OrderView() {
           getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
         ]);
       } else {
-        const row = [
-          i + 1,
-          m.itemCode,
-          `${m.itemName} [${m.consumption || 0}]`,
-          m.qoh,
-          m.orderQty,
-          m.expiration1 || '-'
-        ];
         if (showSourcingTransferOnly) {
-          row.push(getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh'));
+          aoa.push([
+            i + 1,
+            m.itemCode,
+            `${m.itemName} [${m.consumption || 0}]`,
+            m.qoh,
+            m.orderQty,
+            m.expiration1 || '-',
+            getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh')
+          ]);
+        } else {
+          const expCell = [m.expiration1, m.expiration2, m.expiration3]
+            .map(e => e || '-')
+            .join('\n');
+          aoa.push([
+            i + 1,
+            m.itemCode,
+            `${m.itemName} [${m.consumption || 0}]`,
+            m.qoh,
+            m.orderQty,
+            expCell
+          ]);
         }
-        aoa.push(row);
       }
     });
 
@@ -947,7 +969,7 @@ export default function OrderView() {
         headers = [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1', 'Sourcing Partners (QOH > 50%)']];
       }
     } else {
-      headers = [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Exp 1']];
+      headers = [['S.No', 'Item Code', 'Item Name', 'QOH', 'Order Qty', 'Expiration Dates']];
     }
 
     if (showSourcingTransferOnly) {
@@ -1017,18 +1039,29 @@ export default function OrderView() {
           getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
         ];
       } else {
-        const row = [
-          i + 1,
-          m.itemCode,
-          `${m.itemName} [${m.consumption || 0}]`,
-          formatNumber(m.qoh),
-          formatNumber(m.orderQty),
-          m.expiration1 || '-'
-        ];
         if (showSourcingTransferOnly) {
-          row.push(getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh'));
+          return [
+            i + 1,
+            m.itemCode,
+            `${m.itemName} [${m.consumption || 0}]`,
+            formatNumber(m.qoh),
+            formatNumber(m.orderQty),
+            m.expiration1 || '-',
+            getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh')
+          ];
+        } else {
+          const expCell = [m.expiration1, m.expiration2, m.expiration3]
+            .map(e => e || '-')
+            .join('\n');
+          return [
+            i + 1,
+            m.itemCode,
+            `${m.itemName} [${m.consumption || 0}]`,
+            formatNumber(m.qoh),
+            formatNumber(m.orderQty),
+            expCell
+          ];
         }
-        return row;
       }
     });
 
@@ -1048,17 +1081,17 @@ export default function OrderView() {
       styles: { fontSize: 8, cellPadding: 3 },
       columnStyles: showSourcingTransferOnly ? {
         0: { cellWidth: 12 },
-        1: { cellWidth: 'wrap' },
+        1: { cellWidth: 'auto' },
         3: { cellWidth: 15 },
         4: { cellWidth: 15 },
         5: { cellWidth: 18 },
         6: { cellWidth: 48 }
       } : {
-        0: { cellWidth: 15 },
-        1: { cellWidth: 'wrap' },
-        3: { cellWidth: 20 },
-        4: { cellWidth: 20 },
-        5: { cellWidth: 25 },
+        0: { cellWidth: 10 },
+        1: { cellWidth: 'auto' },
+        3: { cellWidth: 12 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 30 }
       },
       didDrawCell: (data) => {
         if (data.section === 'body' && data.column.index === 2) {
@@ -1144,14 +1177,23 @@ export default function OrderView() {
           }
         }
 
-        const targetExpIndex = isExpirySourcing ? 4 : 5;
-        if (data.section === 'body' && data.column.index === targetExpIndex) {
+        const showExpColorsOnMainOrder = !showSourcingTransferOnly && data.column.index === 5;
+        const showExpColorsOnSourcing = showSourcingTransferOnly && (isExpirySourcing ? data.column.index === 4 : data.column.index === 5);
+        if (data.section === 'body' && (showExpColorsOnMainOrder || showExpColorsOnSourcing)) {
           const color = getExpirationPDFColor(data.cell.raw as string);
           if (color) {
             doc.setFillColor(...color);
             doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F');
             doc.setTextColor(color[0] === 250 ? 0 : 255); // Black text for yellow, white for others
-            doc.text(data.cell.text, data.cell.x + data.cell.padding('left'), data.cell.y + data.cell.height / 2 + 2);
+
+            const lines = Array.isArray(data.cell.text) ? data.cell.text : [data.cell.text];
+            const numLines = lines.length;
+            const lineHeightMm = 3.2;
+            const startY = data.cell.y + data.cell.height / 2 - ((numLines - 1) * lineHeightMm) / 2 + 1.0;
+
+            for (let j = 0; j < numLines; j++) {
+              doc.text(lines[j], data.cell.x + data.cell.padding('left'), startY + j * lineHeightMm);
+            }
           }
         }
       },
