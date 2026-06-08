@@ -591,6 +591,74 @@ export default function AdminExpiryCheck() {
   const exportPDF = () => {
     if (mismatchedItems.length === 0) return;
 
+    const parseExpDate = (dateStr: string) => {
+      if (!dateStr || dateStr === '-' || dateStr === '.') return null;
+      try {
+        const parts = dateStr.split(/[-/.]/);
+        if (parts.length === 3) {
+          const d = parseInt(parts[0]);
+          const m = parseInt(parts[1]);
+          const y = parseInt(parts[2]);
+          const fullYear = y < 100 ? 2000 + y : y;
+          const date = new Date(fullYear, m - 1, d);
+          if (!isNaN(date.getTime())) return date;
+        } else if (parts.length === 2) {
+          const m = parseInt(parts[0]);
+          const y = parseInt(parts[1]);
+          const fullYear = y < 100 ? 2000 + y : y;
+          const date = new Date(fullYear, m - 1, 1);
+          if (!isNaN(date.getTime())) return date;
+        }
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) return d;
+      } catch { }
+      return null;
+    };
+
+    const getExpirationPDFColor = (dateStr: string): [number, number, number] | null => {
+      if (!dateStr || dateStr === '-' || dateStr === '.') return null;
+      const parts = dateStr.split(/[\n,]/).map(p => p.trim()).filter(Boolean);
+      let bestColor: [number, number, number] | null = null;
+      let highestPriority = 0; // 0 = none, 1 = green, 2 = blue, 3 = yellow, 4 = red
+      
+      for (const part of parts) {
+        const date = parseExpDate(part);
+        if (!date) continue;
+        
+        const today = new Date();
+        const currentM = new Date(today.getFullYear(), today.getMonth(), 1);
+        const nextM = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+        const afterNextM = new Date(today.getFullYear(), today.getMonth() + 2, 1);
+        const monthAfterNextNextM = new Date(today.getFullYear(), today.getMonth() + 3, 1);
+        
+        const itemM = new Date(date.getFullYear(), date.getMonth(), 1);
+        const isSameM = (d1: Date, d2: Date) => d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth();
+        
+        if (isSameM(itemM, currentM)) {
+          if (highestPriority < 4) {
+            highestPriority = 4;
+            bestColor = [239, 68, 68];
+          }
+        } else if (isSameM(itemM, nextM)) {
+          if (highestPriority < 3) {
+            highestPriority = 3;
+            bestColor = [250, 204, 21];
+          }
+        } else if (isSameM(itemM, afterNextM)) {
+          if (highestPriority < 2) {
+            highestPriority = 2;
+            bestColor = [59, 130, 246];
+          }
+        } else if (isSameM(itemM, monthAfterNextNextM)) {
+          if (highestPriority < 1) {
+            highestPriority = 1;
+            bestColor = [34, 197, 94];
+          }
+        }
+      }
+      return bestColor;
+    };
+
     const doc = new jsPDF({
       orientation: 'landscape',
       unit: 'mm',
@@ -672,6 +740,15 @@ export default function AdminExpiryCheck() {
         font: "Helvetica",
         cellPadding: 1.5,
         overflow: 'linebreak'
+      },
+      willDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const color = getExpirationPDFColor(data.cell.raw as string);
+          if (color) {
+            data.cell.styles.fillColor = color;
+            data.cell.styles.textColor = color[0] === 250 ? [0, 0, 0] : [255, 255, 255];
+          }
+        }
       },
       didDrawPage: (data) => {
         doc.setFontSize(7);

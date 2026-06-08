@@ -210,6 +210,17 @@ export default function AdminDashboard() {
         3: { cellWidth: 40 },
         4: { cellWidth: 40 },
         5: { cellWidth: 20 }
+      },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && (data.column.index === 3 || data.column.index === 4)) {
+          const color = getExpirationPDFColor(data.cell.raw as string);
+          if (color) {
+            doc.setFillColor(...color);
+            doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F');
+            doc.setTextColor(color[0] === 250 ? 0 : 255);
+            doc.text(data.cell.text, data.cell.x + data.cell.padding('left'), data.cell.y + data.cell.height / 2 + 2);
+          }
+        }
       }
     });
 
@@ -507,6 +518,18 @@ export default function AdminDashboard() {
         5: { cellWidth: 12 },
         6: { cellWidth: 12 },
         7: { cellWidth: 22 }
+      },
+      didDrawCell: (data) => {
+        const targetIndex = showSourcingTransferOnly ? (isExpirySourcing ? 4 : -1) : 7;
+        if (targetIndex !== -1 && data.section === 'body' && data.column.index === targetIndex) {
+          const color = getExpirationPDFColor(data.cell.raw as string);
+          if (color) {
+            doc.setFillColor(...color);
+            doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F');
+            doc.setTextColor(color[0] === 250 ? 0 : 255);
+            doc.text(data.cell.text, data.cell.x + data.cell.padding('left'), data.cell.y + data.cell.height / 2 + 2);
+          }
+        }
       }
     });
  
@@ -1076,6 +1099,48 @@ export default function AdminDashboard() {
     if (isSameMonth(itemM, monthAfterNextNextM)) return 'bg-green-500 text-white';
     
     return '';
+  };
+
+  const getExpirationPDFColor = (dateStr: string): [number, number, number] | null => {
+    if (!dateStr || dateStr === '-' || dateStr === '.') return null;
+    const parts = dateStr.split(/[\n,]/).map(p => p.trim()).filter(Boolean);
+    let bestColor: [number, number, number] | null = null;
+    let highestPriority = 0; // 0 = none, 1 = green, 2 = blue, 3 = yellow, 4 = red
+    
+    for (const part of parts) {
+      const date = parseExpDate(part);
+      if (!date) continue;
+      const today = new Date();
+      const currentM = startOfMonth(today);
+      const nextM = startOfMonth(addMonths(today, 1));
+      const afterNextM = startOfMonth(addMonths(today, 2));
+      const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+      
+      const itemM = startOfMonth(date);
+      
+      if (isSameMonth(itemM, currentM)) {
+        if (highestPriority < 4) {
+          highestPriority = 4;
+          bestColor = [239, 68, 68];
+        }
+      } else if (isSameMonth(itemM, nextM)) {
+        if (highestPriority < 3) {
+          highestPriority = 3;
+          bestColor = [250, 204, 21];
+        }
+      } else if (isSameMonth(itemM, afterNextM)) {
+        if (highestPriority < 2) {
+          highestPriority = 2;
+          bestColor = [59, 130, 246];
+        }
+      } else if (isSameMonth(itemM, monthAfterNextNextM)) {
+        if (highestPriority < 1) {
+          highestPriority = 1;
+          bestColor = [34, 197, 94];
+        }
+      }
+    }
+    return bestColor;
   };
 
   const expiringItems = useMemo(() => {

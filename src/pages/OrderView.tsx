@@ -228,23 +228,45 @@ export default function OrderView() {
   };
 
   const getExpirationPDFColor = (dateStr: string): [number, number, number] | null => {
-    const date = parseExpDate(dateStr);
-    if (!date) return null;
+    if (!dateStr || dateStr === '-' || dateStr === '.') return null;
+    const parts = dateStr.split(/[\n,]/).map(p => p.trim()).filter(Boolean);
+    let bestColor: [number, number, number] | null = null;
+    let highestPriority = 0; // 0 = none, 1 = green, 2 = blue, 3 = yellow, 4 = red
     
-    const today = new Date();
-    const currentM = startOfMonth(today);
-    const nextM = startOfMonth(addMonths(today, 1));
-    const afterNextM = startOfMonth(addMonths(today, 2));
-    const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
-    
-    const itemM = startOfMonth(date);
-    
-    if (isSameMonth(itemM, currentM)) return [239, 68, 68]; // Red-500
-    if (isSameMonth(itemM, nextM)) return [250, 204, 21]; // Yellow-400
-    if (isSameMonth(itemM, afterNextM)) return [59, 130, 246]; // Blue-500
-    if (isSameMonth(itemM, monthAfterNextNextM)) return [34, 197, 94]; // Green-500
-    
-    return null;
+    for (const part of parts) {
+      const date = parseExpDate(part);
+      if (!date) continue;
+      const today = new Date();
+      const currentM = startOfMonth(today);
+      const nextM = startOfMonth(addMonths(today, 1));
+      const afterNextM = startOfMonth(addMonths(today, 2));
+      const monthAfterNextNextM = startOfMonth(addMonths(today, 3));
+      
+      const itemM = startOfMonth(date);
+      
+      if (isSameMonth(itemM, currentM)) {
+        if (highestPriority < 4) {
+          highestPriority = 4;
+          bestColor = [239, 68, 68];
+        }
+      } else if (isSameMonth(itemM, nextM)) {
+        if (highestPriority < 3) {
+          highestPriority = 3;
+          bestColor = [250, 204, 21];
+        }
+      } else if (isSameMonth(itemM, afterNextM)) {
+        if (highestPriority < 2) {
+          highestPriority = 2;
+          bestColor = [59, 130, 246];
+        }
+      } else if (isSameMonth(itemM, monthAfterNextNextM)) {
+        if (highestPriority < 1) {
+          highestPriority = 1;
+          bestColor = [34, 197, 94];
+        }
+      }
+    }
+    return bestColor;
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -1122,7 +1144,8 @@ export default function OrderView() {
           }
         }
 
-        if (data.section === 'body' && data.column.index === 5) {
+        const targetExpIndex = isExpirySourcing ? 4 : 5;
+        if (data.section === 'body' && data.column.index === targetExpIndex) {
           const color = getExpirationPDFColor(data.cell.raw as string);
           if (color) {
             doc.setFillColor(...color);
