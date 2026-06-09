@@ -1,16 +1,38 @@
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { localDb } from './localStorageDb';
 import { storage } from './storage';
 
 export function useSystemMetadata() {
   const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
+  const [isMesaieedHidden, setIsMesaieedHidden] = useState<boolean>(() => {
+    return storage.getItem('aw_pharmacy_hide_mesaieed') === 'true';
+  });
+
+  const setMesaieedHidden = async (hidden: boolean) => {
+    try {
+      storage.setItem('aw_pharmacy_hide_mesaieed', hidden ? 'true' : 'false');
+      setIsMesaieedHidden(hidden);
+      window.dispatchEvent(new Event('local-storage-update'));
+
+      if (db) {
+        const metaRef = doc(db, 'system', 'metadata');
+        await setDoc(metaRef, {
+          isMesaieedHidden: hidden,
+          lastSettingUpdate: serverTimestamp()
+        }, { merge: true });
+      }
+    } catch (e) {
+      console.warn('Failed to set Mesaieed hidden setting:', e);
+    }
+  };
 
   useEffect(() => {
     // 1. Listen to Local Storage (for offline/immediate changes)
     const handleLocalUpdate = () => {
       setLastUpdate(localDb.getLastUpdateTime());
+      setIsMesaieedHidden(storage.getItem('aw_pharmacy_hide_mesaieed') === 'true');
     };
     window.addEventListener('local-storage-update', handleLocalUpdate);
 
@@ -39,6 +61,11 @@ export function useSystemMetadata() {
             console.error('Error parsing metadata timestamp:', e);
           }
         }
+        if (data.isMesaieedHidden !== undefined) {
+          const hidden = !!data.isMesaieedHidden;
+          storage.setItem('aw_pharmacy_hide_mesaieed', hidden ? 'true' : 'false');
+          setIsMesaieedHidden(hidden);
+        }
       }
     }, (error) => {
       console.warn('Metadata listener error:', error);
@@ -50,5 +77,5 @@ export function useSystemMetadata() {
     };
   }, []);
 
-  return { lastUpdate };
+  return { lastUpdate, isMesaieedHidden, setMesaieedHidden };
 }

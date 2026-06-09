@@ -25,7 +25,7 @@ type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQ
 type SortOrder = 'asc' | 'desc';
 
 export default function OrderView() {
-  const { lastUpdate } = useSystemMetadata();
+  const { lastUpdate, isMesaieedHidden } = useSystemMetadata();
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
@@ -45,6 +45,13 @@ export default function OrderView() {
   const [showAdminPassword, setShowAdminPassword] = useState(false);
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
+
+  // Auto-switch away from Mesaieed if it gets hidden
+  useEffect(() => {
+    if (isMesaieedHidden && selectedLocation === PharmacyLocation.MESAIEED) {
+      setSelectedLocation(PharmacyLocation.ADULT);
+    }
+  }, [isMesaieedHidden, selectedLocation]);
   const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
@@ -1557,8 +1564,8 @@ export default function OrderView() {
         <div className="flex flex-col md:flex-row justify-between gap-4">
           <div className="flex flex-col gap-4 w-full">
             {/* Pharmacy Locations Selector - Styled responsive grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-auto">
-              {LOCATIONS.map(loc => (
+            <div className={`grid grid-cols-1 ${isMesaieedHidden ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-1.5 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-auto`}>
+              {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => (
                 <button
                   key={loc.id}
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}

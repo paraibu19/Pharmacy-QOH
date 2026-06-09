@@ -36,9 +36,17 @@ import MultiLocationLookupModal from '../components/MultiLocationLookupModal';
 const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
 export default function AdminDashboard() {
-  const { lastUpdate } = useSystemMetadata();
+  const { lastUpdate, isMesaieedHidden, setMesaieedHidden } = useSystemMetadata();
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
+
+  // Auto-switch away from Mesaieed if it gets hidden
+  useEffect(() => {
+    if (isMesaieedHidden && selectedLocation === PharmacyLocation.MESAIEED) {
+      setSelectedLocation(PharmacyLocation.ADULT);
+    }
+  }, [isMesaieedHidden, selectedLocation]);
+
     const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
     const { medications: allMedications, refresh: refreshAll, isSyncing: isSyncingAll } = useMedications();
     const { audits, loading: auditsLoading } = useAudits(10);
@@ -534,6 +542,174 @@ export default function AdminDashboard() {
     });
  
     doc.save(`${showSourcingTransferOnly ? fileSuffix : 'Medication_Inventory'}_${PHARMACY_NAMES[selectedLocation]?.replace(/\s+/g, '_')}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+  };
+
+  // --- BULK FULL LOCATION EXPORT FUNCTIONS ---
+  
+  const getFullLocationMeds = (loc: PharmacyLocation) => {
+    return (allMedications || []).filter(m => m.locationId === loc);
+  };
+
+  const downloadFullLocationCSV = (loc: PharmacyLocation) => {
+    const listToExport = getFullLocationMeds(loc);
+    const locName = PHARMACY_NAMES[loc];
+    const locNameSuffix = locName.replace(/\s+/g, '_');
+    
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
+    const headers = ['Serial no.', 'Item code', 'Item name', 'Location', 'QOH', 'Min Qty', 'Max Qty', 'Exp1', 'Exp2', 'Exp3'];
+
+    const rows = listToExport.map((m, i) => [
+      i + 1,
+      m.itemCode,
+      m.itemName,
+      locName,
+      m.qoh,
+      m.minQty || 0,
+      m.maxQty || 0,
+      m.expiration1 || '-',
+      m.expiration2 || '-',
+      m.expiration3 || '-'
+    ]);
+
+    const csvContent = [
+      `"FULL PHARMACY DATA - ${locName.toUpperCase()} - LAST UPDATE: ${displayDate}"`,
+      "",
+      headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
+      ...rows.map(r => r.map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Full_Inventory_${locNameSuffix}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadFullLocationExcel = (loc: PharmacyLocation) => {
+    const listToExport = getFullLocationMeds(loc);
+    const locName = PHARMACY_NAMES[loc];
+    const locNameSuffix = locName.replace(/\s+/g, '_');
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
+
+    const headers = ['Serial no.', 'Item code', 'Item name', 'Location', 'QOH', 'Min Qty', 'Max Qty', 'Exp1', 'Exp2', 'Exp3'];
+    const aoa: any[][] = [
+      ['REPORT:', `FULL PHARMACY DATA - ${locName.toUpperCase()}`],
+      ['LAST UPDATE:', displayDate],
+      []
+    ];
+    
+    aoa.push(headers);
+    listToExport.forEach((m, i) => {
+      aoa.push([
+        i + 1,
+        m.itemCode,
+        m.itemName,
+        locName,
+        m.qoh,
+        m.minQty || 0,
+        m.maxQty || 0,
+        m.expiration1 || '-',
+        m.expiration2 || '-',
+        m.expiration3 || '-'
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, locNameSuffix.replace(/[\\*?:/[\]]/g, '_').substring(0, 31)); // sheet names are limited to 31 chars and no special chars
+    XLSX.writeFile(wb, `Full_Inventory_${locNameSuffix}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+  };
+
+  const downloadFullLocationPDF = (loc: PharmacyLocation) => {
+    const listToExport = getFullLocationMeds(loc);
+    const locName = PHARMACY_NAMES[loc];
+    const locNameSuffix = locName.replace(/\s+/g, '_');
+    const doc = new jsPDF() as any;
+
+    const headers = [['S.No', 'Item Code', 'Item Name', 'Location', 'QOH', 'Min', 'Max', 'Exp 1']];
+    
+    doc.setFontSize(14);
+    doc.text(`FULL PHARMACY DATA - ${locName.toUpperCase()}`, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Location: ${locName}`, 14, 22);
+    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy, hh:mm a', 'NO DATA').toUpperCase();
+    doc.text(`Last Updated: ${displayDate}`, 14, 27);
+
+    const tableData = listToExport.map((m, i) => [
+      i + 1,
+      m.itemCode,
+      m.itemName,
+      locName.replace('Aw-', ''),
+      formatNumber(m.qoh),
+      formatNumber(m.minQty || 0),
+      formatNumber(m.maxQty || 0),
+      m.expiration1 || '-'
+    ]);
+
+    autoTable(doc, {
+      startY: 34,
+      head: headers,
+      body: tableData,
+      headStyles: { fillColor: [242, 125, 38] },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        1: { cellWidth: 'wrap' },
+        2: { cellWidth: 55 },
+        3: { cellWidth: 32 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 12 },
+        6: { cellWidth: 12 },
+        7: { cellWidth: 22 }
+      },
+      didDrawCell: (data) => {
+        if (data.column.index === 7 && data.section === 'body') {
+          const color = getExpirationPDFColor(data.cell.raw as string);
+          if (color) {
+            doc.setFillColor(...color);
+            doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F');
+            doc.setTextColor(color[0] === 250 ? 0 : 255);
+            doc.text(data.cell.text, data.cell.x + data.cell.padding('left'), data.cell.y + data.cell.height / 2 + 2);
+          }
+        }
+      }
+    });
+
+    doc.save(`Full_Inventory_${locNameSuffix}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+  };
+
+  const downloadAllLocationsCSV = async () => {
+    const locs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED].filter(
+      loc => !(isMesaieedHidden && loc === PharmacyLocation.MESAIEED)
+    );
+    for (let i = 0; i < locs.length; i++) {
+      downloadFullLocationCSV(locs[i]);
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+  };
+
+  const downloadAllLocationsExcel = async () => {
+    const locs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED].filter(
+      loc => !(isMesaieedHidden && loc === PharmacyLocation.MESAIEED)
+    );
+    for (let i = 0; i < locs.length; i++) {
+      downloadFullLocationExcel(locs[i]);
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+  };
+
+  const downloadAllLocationsPDF = async () => {
+    const locs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED].filter(
+      loc => !(isMesaieedHidden && loc === PharmacyLocation.MESAIEED)
+    );
+    for (let i = 0; i < locs.length; i++) {
+      downloadFullLocationPDF(locs[i]);
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
   };
 
   const handleRefreshExpirationReport = async () => {
@@ -2543,7 +2719,7 @@ export default function AdminDashboard() {
       </AnimatePresence>
 
       {/* Global Expiry Reporting - CROSS-LOCATION ALERT */}
-      {(Object.values(expiredItemsOverall) as Medication[][]).some(list => list.length > 0) && (
+      {(Object.entries(expiredItemsOverall) as [unknown, Medication[]][]).some(([locId, list]) => !(isMesaieedHidden && locId === PharmacyLocation.MESAIEED) && list.length > 0) && (
         <div className="p-6 bg-red-50 border border-red-200 rounded-3xl animate-in fade-in slide-in-from-top-6 duration-700">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2.5 bg-red-600 text-white rounded-2xl shadow-lg animate-pulse">
@@ -2551,12 +2727,16 @@ export default function AdminDashboard() {
             </div>
             <div>
               <h2 className="text-xl font-black text-red-700 uppercase tracking-tight">Global Expiry Report</h2>
-              <p className="text-xs text-red-600/70 font-bold uppercase tracking-widest">Urgent review required across all 3 locations</p>
+              <p className="text-xs text-red-600/70 font-bold uppercase tracking-widest">
+                Urgent review required across both locations
+              </p>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(Object.entries(expiredItemsOverall) as [PharmacyLocation, Medication[]][]).map(([locId, items]) => {
+          <div className={`grid grid-cols-1 ${isMesaieedHidden ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-4`}>
+            {(Object.entries(expiredItemsOverall) as [PharmacyLocation, Medication[]][])
+              .filter(([locId]) => !(isMesaieedHidden && locId === PharmacyLocation.MESAIEED))
+              .map(([locId, items]) => {
               const locationName = PHARMACY_NAMES[locId];
               
               return (
@@ -2698,20 +2878,37 @@ export default function AdminDashboard() {
 
           {/* System Status Mini Card */}
           <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-100 flex flex-col justify-between shadow-sm h-[180px] lg:col-span-1">
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-2">
               <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600">
                 <RefreshCw size={18} className="animate-spin-slow" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-sm font-bold text-emerald-800">Cloud Link</h3>
                 <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-tight">Real-time Connected</p>
               </div>
             </div>
-            <div className="mt-auto">
-              <div className="flex items-center justify-between">
-                <div className="text-[9px] text-emerald-700/60 font-bold uppercase">Last Sync</div>
-                <div className="text-xs font-bold text-emerald-700">{format(lastSynced, 'HH:mm:ss')}</div>
-              </div>
+            
+            {/* Quick Location Settings */}
+            <div className="border-t border-emerald-200/50 pt-2 flex flex-col gap-1">
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/40">Active Locations Control</span>
+              <button
+                onClick={() => setMesaieedHidden(!isMesaieedHidden)}
+                className={`py-1.5 px-3 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all flex items-center justify-between gap-2 shadow-sm border cursor-pointer ${
+                  isMesaieedHidden
+                    ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200/60'
+                    : 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                }`}
+              >
+                <span>Mesaieed Store</span>
+                <span className="px-1.5 py-0.5 rounded-md text-[8px] bg-white/20">
+                  {isMesaieedHidden ? 'HIDDEN' : 'ACTIVE'}
+                </span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between text-[9px] text-emerald-700/60 font-bold uppercase pt-1">
+              <span>Last Sync</span>
+              <span className="text-xs font-bold text-emerald-700">{format(lastSynced, 'HH:mm:ss')}</span>
             </div>
           </div>
         </div>
@@ -3179,7 +3376,7 @@ export default function AdminDashboard() {
             </div>
 
             <div className="grid grid-cols-1 sm:flex gap-1.5 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-auto">
-              {LOCATIONS.map(loc => (
+              {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => (
                 <button
                   key={loc.id}
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
@@ -3483,32 +3680,107 @@ export default function AdminDashboard() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={downloadInventoryCSV}
-            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" />
             Export CSV
           </button>
           <button
             onClick={downloadInventoryExcel}
-            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
             Export Excel
           </button>
           <button
             onClick={downloadInventoryPDF}
-            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5"
+            className="px-3 py-2 bg-white hover:bg-[#141414]/5 text-[#141414]/80 text-xs font-bold border border-[#141414]/10 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
           >
             <ClipboardList className="w-3.5 h-3.5 text-red-600" />
             Export PDF
           </button>
           <button
             onClick={() => setShowBrandGenericReport(true)}
-            className="px-3 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-extrabold uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-1.5"
+            className="px-3 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-extrabold uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
           >
             <ClipboardList className="w-3.5 h-3.5" />
             Brand vs Generic Report
           </button>
+        </div>
+      </div>
+
+      {/* Bulk Location-Specific Export Center */}
+      <div className="bg-white border border-[#141414]/10 p-5 rounded-3xl mb-4 shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#141414]/70 flex items-center gap-2">
+              <span className="flex h-1.5 w-1.5 rounded-full bg-[#F27D26]" />
+              Per-Location Bulk Export Centre (Full Unfiltered Data)
+            </h3>
+            <p className="text-[#141414]/40 text-[11px] mt-0.5 font-medium">
+              Download separate CSV, Excel, or PDF files for each individual pharmacy location in a single click, containing their entire unfiltered data.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={downloadAllLocationsCSV}
+              className="px-3.5 py-2 bg-[#141414]/5 hover:bg-[#141414]/10 text-[#141414] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-blue-600" />
+              <span>Download All Locations ({isMesaieedHidden ? '2' : '3'} CSVs)</span>
+            </button>
+            <button
+              onClick={downloadAllLocationsExcel}
+              className="px-3.5 py-2 bg-[#141414]/5 hover:bg-[#141414]/10 text-[#141414] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Download All Locations ({isMesaieedHidden ? '2' : '3'} Excels)</span>
+            </button>
+            <button
+              onClick={downloadAllLocationsPDF}
+              className="px-3.5 py-2 bg-[#141414]/5 hover:bg-[#141414]/10 text-[#141414] rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <ClipboardList className="w-3.5 h-3.5 text-red-600" />
+              <span>Download All Locations ({isMesaieedHidden ? '2' : '3'} PDFs)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Individual location download grid */}
+        <div className={`grid grid-cols-1 ${isMesaieedHidden ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-3`}>
+          {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => {
+            const medCount = (allMedications || []).filter(m => m.locationId === loc.id).length;
+            return (
+              <div key={loc.id} className="bg-[#141414]/[0.01] border border-[#141414]/5 rounded-2xl p-4 flex flex-col justify-between gap-3 hover:bg-[#141414]/[0.02] transition-colors">
+                <div>
+                  <h4 className="text-xs font-extrabold text-[#141414]/80 uppercase tracking-wide truncate">{loc.name.replace('Aw-', '')}</h4>
+                  <span className="text-[10px] font-bold text-[#141414]/40 bg-[#141414]/5 px-2.5 py-0.5 rounded-full mt-1.5 inline-block">
+                    {medCount} medications
+                  </span>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => downloadFullLocationCSV(loc.id as PharmacyLocation)}
+                    className="flex-1 py-1.5 border border-[#141414]/10 hover:bg-[#141414]/5 text-[#141414]/80 rounded-xl text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => downloadFullLocationExcel(loc.id as PharmacyLocation)}
+                    className="flex-1 py-1.5 border border-[#141414]/10 hover:bg-[#141414]/5 text-emerald-700/80 rounded-xl text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    Excel
+                  </button>
+                  <button
+                    onClick={() => downloadFullLocationPDF(loc.id as PharmacyLocation)}
+                    className="flex-1 py-1.5 border border-[#141414]/10 hover:bg-[#141414]/5 text-red-700/80 rounded-xl text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    PDF
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

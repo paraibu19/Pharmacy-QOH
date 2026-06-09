@@ -13,6 +13,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
+import { useSystemMetadata } from '../lib/useSystemMetadata';
 import { formatNumber } from '../lib/formatters';
 
 interface ExcelGroupedRow {
@@ -47,6 +48,8 @@ interface LocationExcelState {
 }
 
 export default function AdminExpiryCheck() {
+  const { isMesaieedHidden } = useSystemMetadata();
+
   // Load ALL medications from Firestore across all locations
   const { medications, loading: loadingMeds, refresh } = useMedications();
 
@@ -57,6 +60,21 @@ export default function AdminExpiryCheck() {
     [PharmacyLocation.MESAIEED]: true
   });
 
+  const [activeTab, setActiveTab] = useState<'all' | PharmacyLocation>('all');
+
+  // Automatically uncheck and ignore Mesaieed if it is hidden in system settings
+  React.useEffect(() => {
+    if (isMesaieedHidden) {
+      setSelectedLocations(prev => ({
+        ...prev,
+        [PharmacyLocation.MESAIEED]: false
+      }));
+      if (activeTab === PharmacyLocation.MESAIEED) {
+        setActiveTab('all');
+      }
+    }
+  }, [isMesaieedHidden, activeTab]);
+
   // Uploaded Excel States (separated per location)
   const [activeUploadLocation, setActiveUploadLocation] = useState<PharmacyLocation | null>(null);
   const [draggingLocation, setDraggingLocation] = useState<PharmacyLocation | null>(null);
@@ -65,7 +83,6 @@ export default function AdminExpiryCheck() {
     [PharmacyLocation.PEDIATRIC]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
     [PharmacyLocation.MESAIEED]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] }
   });
-  const [activeTab, setActiveTab] = useState<'all' | PharmacyLocation>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -868,7 +885,9 @@ export default function AdminExpiryCheck() {
             </p>
 
             <div className="space-y-3">
-              {(Object.keys(selectedLocations) as PharmacyLocation[]).map(loc => {
+              {(Object.keys(selectedLocations) as PharmacyLocation[])
+                .filter(loc => !(isMesaieedHidden && loc === PharmacyLocation.MESAIEED))
+                .map(loc => {
                 const isActive = selectedLocations[loc];
                 const label = PHARMACY_NAMES[loc];
                 return (
@@ -938,7 +957,9 @@ export default function AdminExpiryCheck() {
             />
 
             <div className="space-y-4">
-              {(Object.keys(locationExcelData) as PharmacyLocation[]).map(loc => {
+              {(Object.keys(locationExcelData) as PharmacyLocation[])
+                .filter(loc => !(isMesaieedHidden && loc === PharmacyLocation.MESAIEED))
+                .map(loc => {
                 const state = locationExcelData[loc];
                 const label = PHARMACY_NAMES[loc];
                 const isParsing = state.isProcessing;

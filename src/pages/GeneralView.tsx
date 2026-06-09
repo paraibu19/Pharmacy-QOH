@@ -17,7 +17,7 @@ import { formatSafeDate } from '../lib/formatters';
 
 export default function GeneralView() {
   const navigate = useNavigate();
-  const { lastUpdate } = useSystemMetadata();
+  const { lastUpdate, isMesaieedHidden } = useSystemMetadata();
   
   // Language State
   const [language, setLanguage] = useState<Language>(() => {
@@ -29,6 +29,13 @@ export default function GeneralView() {
   const isRtl = LANGUAGES.find(l => l.id === language)?.dir === 'rtl';
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
+
+  // Auto-switch away from Mesaieed if it gets hidden
+  useEffect(() => {
+    if (isMesaieedHidden && selectedLocation === PharmacyLocation.MESAIEED) {
+      setSelectedLocation(PharmacyLocation.ADULT);
+    }
+  }, [isMesaieedHidden, selectedLocation]);
   const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
@@ -469,7 +476,7 @@ export default function GeneralView() {
               {t.selectLocation}
             </label>
             <div className="flex flex-wrap gap-2">
-              {LOCATIONS.map(loc => (
+              {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => (
                 <button
                   key={loc.id}
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}

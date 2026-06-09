@@ -23,9 +23,16 @@ type SortField = 'itemName' | 'itemCode' | 'qoh' | 'minQty' | 'physical' | 'vari
 type SortOrder = 'asc' | 'desc';
 
 export default function AdminInventory() {
-  const { lastUpdate } = useSystemMetadata();
+  const { lastUpdate, isMesaieedHidden } = useSystemMetadata();
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
+
+  // Auto-switch away from Mesaieed if it gets hidden
+  useEffect(() => {
+    if (isMesaieedHidden && selectedLocation === PharmacyLocation.MESAIEED) {
+      setSelectedLocation(PharmacyLocation.ADULT);
+    }
+  }, [isMesaieedHidden, selectedLocation]);
   const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
@@ -46,7 +53,7 @@ export default function AdminInventory() {
   const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
     const matches = (allMedications || []).filter(m => m.itemCode === itemCode && m.locationId !== currentLocationId);
     const otherLocs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED]
-      .filter(loc => loc !== currentLocationId);
+      .filter(loc => loc !== currentLocationId && !(isMesaieedHidden && loc === PharmacyLocation.MESAIEED));
 
     return otherLocs.map(loc => {
       const match = matches.find(m => m.locationId === loc);
@@ -474,7 +481,7 @@ export default function AdminInventory() {
       <div className="bg-white p-6 rounded-2xl border border-[#141414]/10 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex flex-wrap gap-2">
-            {LOCATIONS.map(loc => (
+            {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => (
               <button
                 key={loc.id}
                 onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}

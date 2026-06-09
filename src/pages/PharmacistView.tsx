@@ -25,7 +25,7 @@ type SortField = 'itemName' | 'itemCode' | 'qoh' | 'isNew' | 'expiration1' | 'ex
 type SortOrder = 'asc' | 'desc';
 
 export default function UserHome() {
-  const { lastUpdate } = useSystemMetadata();
+  const { lastUpdate, isMesaieedHidden } = useSystemMetadata();
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
@@ -34,6 +34,13 @@ export default function UserHome() {
   const [showPassword, setShowPassword] = useState(false);
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
+
+  // Auto-switch away from Mesaieed if it gets hidden
+  useEffect(() => {
+    if (isMesaieedHidden && selectedLocation === PharmacyLocation.MESAIEED) {
+      setSelectedLocation(PharmacyLocation.ADULT);
+    }
+  }, [isMesaieedHidden, selectedLocation]);
   const [searchQuery, setSearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
@@ -820,7 +827,7 @@ export default function UserHome() {
               Select Pharmacy Location
             </label>
             <div className="flex flex-wrap gap-2">
-              {LOCATIONS.map(loc => (
+              {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => (
                 <button
                   key={loc.id}
                   onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
