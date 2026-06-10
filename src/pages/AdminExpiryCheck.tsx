@@ -95,17 +95,18 @@ export default function AdminExpiryCheck() {
     }));
   };
 
-  // Helper to parse individual dates from Excel strings/numbers safely using local timezone components to match application display
+  // Helper to parse individual dates from Excel strings/numbers safely as UTC to prevent timezone-shift day differences
   const parseDateString = (val: any): { year: number; month: number; day: number } | null => {
     if (!val) return null;
 
     if (val instanceof Date) {
       if (isNaN(val.getTime())) return null;
-      // Extract local timezone components to align with the application's display and formatters
+      // SheetJS parses date cells as UTC-based Date objects by default.
+      // Extract UTC components to remain completely immune to timezone-offset shifts!
       return {
-        year: val.getFullYear(),
-        month: val.getMonth() + 1,
-        day: val.getDate()
+        year: val.getUTCFullYear(),
+        month: val.getUTCMonth() + 1,
+        day: val.getUTCDate()
       };
     }
 

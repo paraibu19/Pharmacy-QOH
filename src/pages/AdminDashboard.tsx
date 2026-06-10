@@ -1714,7 +1714,9 @@ export default function AdminDashboard() {
           let dateObj: Date | null = null;
 
           if (val instanceof Date) {
-            dateObj = val;
+            // SheetJS parses date cells as UTC-based JS Date objects by default.
+            // Create a local Date object using UTC year, month, and day to prevent timezone-shift subtraction!
+            dateObj = new Date(val.getUTCFullYear(), val.getUTCMonth(), val.getUTCDate());
           } else if (typeof val === 'number') {
             // Excel serial date fallback
             try {
