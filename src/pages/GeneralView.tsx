@@ -254,17 +254,31 @@ export default function GeneralView() {
   const parseExpDate = (dateStr: string) => {
     if (!dateStr || dateStr === '-' || dateStr === '.') return null;
     try {
-      const parts = dateStr.split(/[-/.]/);
+      const parts = dateStr.trim().split(/[-/.]/);
       if (parts.length === 3) {
-        const d = parseInt(parts[0]);
-        const m = parseInt(parts[1]);
-        const y = parseInt(parts[2]);
+        let d = parseInt(parts[0]);
+        let m = parseInt(parts[1]);
+        let y = parseInt(parts[2]);
+        
+        // If the first part is 4 digits, or the first part is > 31 (cannot be a day),
+        // it is in YYYY-MM-DD format!
+        if (parts[0].length === 4 || d > 31) {
+          y = parseInt(parts[0]);
+          m = parseInt(parts[1]);
+          d = parseInt(parts[2]);
+        }
+        
         const fullYear = y < 100 ? 2000 + y : y;
         const date = new Date(fullYear, m - 1, d);
         if (!isNaN(date.getTime())) return date;
       } else if (parts.length === 2) {
-        const m = parseInt(parts[0]);
-        const y = parseInt(parts[1]);
+        // Could be MM-YYYY or YYYY-MM
+        let m = parseInt(parts[0]);
+        let y = parseInt(parts[1]);
+        if (parts[0].length === 4 || m > 12) {
+          y = parseInt(parts[0]);
+          m = parseInt(parts[1]);
+        }
         const fullYear = y < 100 ? 2000 + y : y;
         const date = new Date(fullYear, m - 1, 1);
         if (!isNaN(date.getTime())) return date;

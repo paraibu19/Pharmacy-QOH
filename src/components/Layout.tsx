@@ -1,6 +1,6 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud, Smartphone } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud, Smartphone, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
@@ -125,6 +125,16 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
           >
             <UploadCloud className="w-4 h-4" />
             Expiry Verification
+          </NavLink>
+          <NavLink 
+            to="/admin/entry-mistakes" 
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={({ isActive }) => 
+              `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
+            }
+          >
+            <AlertCircle className="w-4 h-4 text-[#F27D26]" />
+            Entry Mistakes
           </NavLink>
         </>
       )}

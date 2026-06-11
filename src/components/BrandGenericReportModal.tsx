@@ -320,17 +320,31 @@ export default function BrandGenericReportModal({
     const parseExpDate = (dateStr: string) => {
       if (!dateStr || dateStr === '-' || dateStr === '.') return null;
       try {
-        const parts = dateStr.split(/[-/.]/);
+        const parts = dateStr.trim().split(/[-/.]/);
         if (parts.length === 3) {
-          const d = parseInt(parts[0]);
-          const m = parseInt(parts[1]);
-          const y = parseInt(parts[2]);
+          let d = parseInt(parts[0]);
+          let m = parseInt(parts[1]);
+          let y = parseInt(parts[2]);
+          
+          // If the first part is 4 digits, or the first part is > 31 (cannot be a day),
+          // it is in YYYY-MM-DD format!
+          if (parts[0].length === 4 || d > 31) {
+            y = parseInt(parts[0]);
+            m = parseInt(parts[1]);
+            d = parseInt(parts[2]);
+          }
+          
           const fullYear = y < 100 ? 2000 + y : y;
           const date = new Date(fullYear, m - 1, d);
           if (!isNaN(date.getTime())) return date;
         } else if (parts.length === 2) {
-          const m = parseInt(parts[0]);
-          const y = parseInt(parts[1]);
+          // Could be MM-YYYY or YYYY-MM
+          let m = parseInt(parts[0]);
+          let y = parseInt(parts[1]);
+          if (parts[0].length === 4 || m > 12) {
+            y = parseInt(parts[0]);
+            m = parseInt(parts[1]);
+          }
           const fullYear = y < 100 ? 2000 + y : y;
           const date = new Date(fullYear, m - 1, 1);
           if (!isNaN(date.getTime())) return date;
@@ -559,13 +573,14 @@ export default function BrandGenericReportModal({
               <>
                 {/* Mobile Responsive Cards (Visible on mobile/tablet) */}
                 <div className="block md:hidden space-y-4">
-                  {pairs.map((pair, idx) => {
+                  {pairs.map((pair) => {
                     const brandStatus = getItemStatus(pair.brand);
                     const genericStatus = getItemStatus(pair.generic);
+                    const compositeKey = `${pair.brandCode}-${pair.genericCode}`;
                     
                     return (
                       <div 
-                        key={idx} 
+                        key={compositeKey} 
                         className="bg-white rounded-2xl border border-[#141414]/10 overflow-hidden shadow-sm flex flex-col divide-y divide-[#141414]/10"
                       >
                         {/* Brand Section */}
@@ -697,12 +712,13 @@ export default function BrandGenericReportModal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#141414]/5">
-                      {pairs.map((pair, idx) => {
+                      {pairs.map((pair) => {
                         const brandStatus = getItemStatus(pair.brand);
                         const genericStatus = getItemStatus(pair.generic);
+                        const compositeKey = `${pair.brandCode}-${pair.genericCode}`;
                         
                         return (
-                          <tr key={idx} className="hover:bg-[#141414]/[0.01] transition-all">
+                          <tr key={compositeKey} className="hover:bg-[#141414]/[0.01] transition-all">
                             {/* Brand Side */}
                             <td className="px-4 py-3 align-top text-center w-14">
                               <div className="w-10 h-10 mx-auto bg-slate-100 border border-[#141414]/10 rounded-lg flex items-center justify-center overflow-hidden">

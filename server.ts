@@ -34,6 +34,7 @@ const MEDS_FILE = path.join(DATA_DIR, 'medications.json');
 const AUDITS_FILE = path.join(DATA_DIR, 'audits.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const TRANSLATION_CACHE_FILE = path.join(DATA_DIR, 'translation_cache.json');
+const ENTRY_MISTAKES_DB_FILE = path.join(DATA_DIR, 'entry_mistakes_db.json');
 
 function getTranslationHashSync(text: string): string {
   const clean = (text || '').trim().toLowerCase();
@@ -310,7 +311,50 @@ app.post('/api/system/reset', (req, res) => {
   fs.writeFileSync(MEDS_FILE, '[]');
   fs.writeFileSync(AUDITS_FILE, '[]');
   fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
+  if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+    fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
+  }
   res.json({ success: true });
+});
+
+app.get('/api/entry-mistakes/db', (req, res) => {
+  try {
+    if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+      const data = fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8');
+      res.json(JSON.parse(data));
+    } else {
+      res.json({ configured: false, parameters: [], pharmacists: [] });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/entry-mistakes/db', (req, res) => {
+  try {
+    const { parameters, pharmacists } = req.body;
+    const dbState = {
+      configured: true,
+      lastUpdated: new Date().toISOString(),
+      parameters: parameters || [],
+      pharmacists: pharmacists || []
+    };
+    fs.writeFileSync(ENTRY_MISTAKES_DB_FILE, JSON.stringify(dbState, null, 2));
+    res.json({ success: true, dbState });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/entry-mistakes/db', (req, res) => {
+  try {
+    if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+      fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
+    }
+    res.json({ success: true, configured: false, parameters: [], pharmacists: [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/translate', async (req, res) => {

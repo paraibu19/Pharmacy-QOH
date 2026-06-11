@@ -37,6 +37,8 @@ interface MismatchedItem {
   systemExp3: string;
   totalDeliveredQty: number;
   deliveredDates: string[];
+  isCrossLocation?: boolean;
+  crossSourceLocationName?: string;
 }
 
 interface LocationExcelState {
@@ -95,19 +97,51 @@ export default function AdminExpiryCheck() {
     }));
   };
 
-  // Helper to parse individual dates from Excel strings/numbers safely as UTC to prevent timezone-shift day differences
+  // Helper to extract calendar date components (year, month, day) from a JS Date object.
+  // Whichever representation (UTC vs Local) is closer to midnight is assumed to be the correct intended date.
+  // This solves timezone offset differences (e.g. GMT-5 or GMT+3 shifting dates by one day).
+  const getSafeDateComponents = (d: Date): { year: number; month: number; day: number } => {
+    const t = d.getTime();
+    
+    // Local midnight candidates
+    const prevLocal = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+    const nextLocal = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0, 0);
+    const distPrevLocal = Math.abs(t - prevLocal.getTime());
+    const distNextLocal = Math.abs(nextLocal.getTime() - t);
+    const closestLocal = distPrevLocal < distNextLocal ? prevLocal : nextLocal;
+    const minLocalDist = Math.min(distPrevLocal, distNextLocal);
+
+    // UTC midnight candidates
+    const prevUTCVal = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
+    const nextUTCVal = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 0, 0);
+    const distPrevUTC = Math.abs(t - prevUTCVal);
+    const distNextUTC = Math.abs(nextUTCVal - t);
+    const closestUTCVal = distPrevUTC < distNextUTC ? prevUTCVal : nextUTCVal;
+    const minUTCDist = Math.min(distPrevUTC, distNextUTC);
+
+    if (minUTCDist < minLocalDist) {
+      const dUtc = new Date(closestUTCVal);
+      return {
+        year: dUtc.getUTCFullYear(),
+        month: dUtc.getUTCMonth() + 1,
+        day: dUtc.getUTCDate()
+      };
+    } else {
+      return {
+        year: closestLocal.getFullYear(),
+        month: closestLocal.getMonth() + 1,
+        day: closestLocal.getDate()
+      };
+    }
+  };
+
+  // Helper to parse individual dates from Excel strings/numbers safely while preventing timezone-shift day discrepancies
   const parseDateString = (val: any): { year: number; month: number; day: number } | null => {
     if (!val) return null;
 
     if (val instanceof Date) {
       if (isNaN(val.getTime())) return null;
-      // SheetJS parses date cells as UTC-based Date objects by default.
-      // Extract UTC components to remain completely immune to timezone-offset shifts!
-      return {
-        year: val.getUTCFullYear(),
-        month: val.getUTCMonth() + 1,
-        day: val.getUTCDate()
-      };
+      return getSafeDateComponents(val);
     }
 
     if (typeof val === 'number') {
@@ -121,11 +155,7 @@ export default function AdminExpiryCheck() {
       } catch {
         const d = new Date(val);
         if (!isNaN(d.getTime())) {
-          return {
-            year: d.getFullYear(),
-            month: d.getMonth() + 1,
-            day: d.getDate()
-          };
+          return getSafeDateComponents(d);
         }
       }
     }
@@ -166,11 +196,7 @@ export default function AdminExpiryCheck() {
 
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
-      return {
-        year: d.getFullYear(),
-        month: d.getMonth() + 1,
-        day: d.getDate()
-      };
+      return getSafeDateComponents(d);
     }
 
     return null;
@@ -411,112 +437,136 @@ export default function AdminExpiryCheck() {
 
     const list: MismatchedItem[] = [];
 
-    // For each active checked location, match excel data with existing database state
+    // For each active checked target location (the report we are building)
     activeLocations.forEach(locId => {
-      const locExcel = locationExcelData[locId].excelDataGroups;
-      if (!locExcel) return; // Skip if no Excel file uploaded for this specific location
-
       // Get medications for this pharmacy location
       const locMeds = (medications || []).filter(m => m.locationId === locId);
 
-      (Object.values(locExcel) as ExcelGroupedRow[]).forEach(excelGroup => {
-        const systemMed = locMeds.find(m => isItemCodeMatch(m.itemCode, excelGroup.itemCode));
+      // We matches delivered items from any of the checked locations (representing Overlap items)
+      activeLocations.forEach(sourceLocId => {
+        const sourceExcel = locationExcelData[sourceLocId].excelDataGroups;
+        if (!sourceExcel) return; // Skip if no Excel file uploaded for this source location
 
-        if (!systemMed) {
-          // Case 1: Item delivered exists in Excel, but NOT found in system database for this location at all.
-          // This must be checked physically because we have no record of it in the warehouse!
-          list.push({
-            locationId: locId,
-            locationName: PHARMACY_NAMES[locId],
-            itemCode: excelGroup.itemCode,
-            systemItemName: excelGroup.description || 'Not Declared (Unregistered in System)',
-            systemQoh: '0 (New Item)',
-            systemExp1: 'Not Configured',
-            systemExp2: 'Not Configured',
-            systemExp3: 'Not Configured',
-            totalDeliveredQty: excelGroup.totalQty,
-            deliveredDates: excelGroup.dates
-          });
-        } else {
-          // Case 2: Item exists in system. Check if any delivered Excel date is mismatched (NOT present in Exp1, Exp2, Exp3)
-          const systemDates = [systemMed.expiration1, systemMed.expiration2, systemMed.expiration3].filter(Boolean);
-          
-          const hasNonInExp1 = isNonExpiryValue(systemMed.expiration1);
+        const isCrossLocation = sourceLocId !== locId;
 
-          // Get active system dates (excluding "Non" placeholders)
-          const activeSystemDates = systemDates.filter(d => !isNonExpiryValue(d));
+        (Object.values(sourceExcel) as ExcelGroupedRow[]).forEach(excelGroup => {
+          const systemMed = locMeds.find(m => isItemCodeMatch(m.itemCode, excelGroup.itemCode));
 
-          let hasDiscrepancy = false;
-          const systemQohVal = (systemMed.qoh === undefined || systemMed.qoh === null) ? 0 : Number(systemMed.qoh);
+          if (!systemMed) {
+            // If it is a cross-location match and we don't find it in our system records,
+            // then it is not an overlap item. Skip it!
+            if (isCrossLocation) return;
 
-          if (systemQohVal <= 0) {
-            // If the application system QOH is zero or less, always include this item in the report
-            hasDiscrepancy = true;
-          } else if (hasNonInExp1) {
-            // If the item has "Non" (no expiry) in Exp1, and the Excel sheet has some delivered expiry dates,
-            // this is a mismatch (especially if QOH is 0 or any other value) and must be included in the report.
-            if (excelGroup.dates.length > 0) {
-              hasDiscrepancy = true;
-            }
+            // Case 1: Item delivered exists in Excel, but NOT found in system database for this location at all.
+            // This must be checked physically because we have no record of it in the warehouse!
+            list.push({
+              locationId: locId,
+              locationName: PHARMACY_NAMES[locId],
+              itemCode: excelGroup.itemCode,
+              systemItemName: excelGroup.description || 'Not Declared (Unregistered in System)',
+              systemQoh: '0 (New Item)',
+              systemExp1: 'Not Configured',
+              systemExp2: 'Not Configured',
+              systemExp3: 'Not Configured',
+              totalDeliveredQty: excelGroup.totalQty,
+              deliveredDates: excelGroup.dates,
+              isCrossLocation: false
+            });
           } else {
-            // Standard check against system configurated active dates
-            if (excelGroup.dates.length === 0 && activeSystemDates.length > 0) {
-              // Excel row was uploaded with no dates, but system expects some active expiration dates
+            // Case 2: Item exists in system. Check if any delivered Excel date is mismatched (NOT present in Exp1, Exp2, Exp3)
+            const systemDates = [systemMed.expiration1, systemMed.expiration2, systemMed.expiration3].filter(Boolean);
+            
+            const hasNonInExp1 = isNonExpiryValue(systemMed.expiration1);
+
+            // Get active system dates (excluding "Non" placeholders)
+            const activeSystemDates = systemDates.filter(d => !isNonExpiryValue(d));
+
+            let hasDiscrepancy = false;
+            const systemQohVal = (systemMed.qoh === undefined || systemMed.qoh === null) ? 0 : Number(systemMed.qoh);
+
+            const deliveredDates = excelGroup.dates;
+            const hasDeliveredDates = deliveredDates.length > 0;
+            const allDeliveredDatesMatch = hasDeliveredDates && deliveredDates.every(delivDate => {
+              return [systemMed.expiration1, systemMed.expiration2, systemMed.expiration3].some(sysDate => isDateMatch(delivDate, sysDate));
+            });
+
+            if (hasDeliveredDates && allDeliveredDatesMatch) {
+              hasDiscrepancy = false;
+            } else if (systemQohVal <= 0) {
+              // If the application system QOH is zero or less, always include this item in the report
               hasDiscrepancy = true;
-            } else if (excelGroup.dates.length > 0 && activeSystemDates.length === 0) {
-              // Excel row was uploaded with dates, but system has no active configured expiration dates
-              hasDiscrepancy = true;
-            } else {
-              // Check direction A: Every excel delivered date must match exactly with one of the active system dates
-              for (const delivDate of excelGroup.dates) {
-                const matchesAny = activeSystemDates.some(sysDate => isDateMatch(delivDate, sysDate));
-                if (!matchesAny) {
-                  hasDiscrepancy = true;
-                  break;
-                }
+            } else if (hasNonInExp1) {
+              // If the item has "Non" (no expiry) in Exp1, and the Excel sheet has some delivered expiry dates,
+              // this is a mismatch (especially if QOH is 0 or any other value) and must be included in the report.
+              if (hasDeliveredDates) {
+                hasDiscrepancy = true;
               }
+            } else {
+              // Standard check against system configurated active dates
+              if (!hasDeliveredDates && activeSystemDates.length > 0) {
+                // Excel row was uploaded with no dates, but system expects some active expiration dates
+                hasDiscrepancy = true;
+              } else if (hasDeliveredDates && activeSystemDates.length === 0) {
+                // Excel row was uploaded with dates, but system has no active configured expiration dates
+                hasDiscrepancy = true;
+              } else {
+                // Check direction A: Every excel delivered date must match exactly with one of the active system dates
+                for (const delivDate of deliveredDates) {
+                  const matchesAny = activeSystemDates.some(sysDate => isDateMatch(delivDate, sysDate));
+                  if (!matchesAny) {
+                    hasDiscrepancy = true;
+                    break;
+                  }
+                }
 
-              // Check direction B (vice-versa): Any active system date that shares month & year with any of the delivered dates 
-              // should match exactly. If we have an active system date with same MM-YYYY but a different DD (mismatched day), 
-              // it is a discrepancy and must be reported!
-              if (!hasDiscrepancy) {
-                for (const sysDate of activeSystemDates) {
-                  const parsedSys = parseDateString(sysDate);
-                  if (!parsedSys) continue;
+                // Check direction B (vice-versa): Any active system date that shares month & year with any of the delivered dates 
+                // should match exactly. If we have an active system date with same MM-YYYY but a different DD (mismatched day), 
+                // it is a discrepancy and must be reported!
+                if (!hasDiscrepancy) {
+                  for (const sysDate of activeSystemDates) {
+                    const parsedSys = parseDateString(sysDate);
+                    if (!parsedSys) continue;
 
-                  // If this active system expiration date does not have an exact match in the delivered dates
-                  const hasExactMatch = excelGroup.dates.some(delivDate => isDateMatch(delivDate, sysDate));
-                  if (!hasExactMatch) {
-                    // Check if there is a day mismatch (excel has same month & year but different day)
-                    const hasDayMismatch = excelGroup.dates.some(delivDate => {
-                      const parsedDeliv = parseDateString(delivDate);
-                      return parsedDeliv && parsedDeliv.year === parsedSys.year && parsedDeliv.month === parsedSys.month;
-                    });
-                    if (hasDayMismatch) {
-                      hasDiscrepancy = true;
-                      break;
+                    // If this active system expiration date does not have an exact match in the delivered dates
+                    const hasExactMatch = deliveredDates.some(delivDate => isDateMatch(delivDate, sysDate));
+                    if (!hasExactMatch) {
+                      // Check if there is a day mismatch (excel has same month & year but different day)
+                      const hasDayMismatch = deliveredDates.some(delivDate => {
+                        const parsedDeliv = parseDateString(delivDate);
+                        return parsedDeliv && parsedDeliv.year === parsedSys.year && parsedDeliv.month === parsedSys.month;
+                      });
+                      if (hasDayMismatch) {
+                        hasDiscrepancy = true;
+                        break;
+                      }
                     }
                   }
                 }
               }
             }
-          }
 
-          if (hasDiscrepancy) {
-            list.push({
-              locationId: locId,
-              locationName: PHARMACY_NAMES[locId],
-              itemCode: excelGroup.itemCode,
-              systemItemName: systemMed.itemName || excelGroup.description,
-              systemQoh: systemMed.qoh,
-              systemExp1: systemMed.expiration1 || '-',
-              systemExp2: systemMed.expiration2 || '-',
-              systemExp3: systemMed.expiration3 || '-',
-              totalDeliveredQty: excelGroup.totalQty,
-              deliveredDates: excelGroup.dates
-            });
+            if (hasDiscrepancy) {
+              const displayLocName = isCrossLocation 
+                ? `${PHARMACY_NAMES[locId]} (Deliv: ${PHARMACY_NAMES[sourceLocId]})` 
+                : PHARMACY_NAMES[locId];
+
+              list.push({
+                locationId: locId,
+                locationName: displayLocName,
+                itemCode: excelGroup.itemCode,
+                systemItemName: systemMed.itemName || excelGroup.description,
+                systemQoh: systemMed.qoh,
+                systemExp1: systemMed.expiration1 || '-',
+                systemExp2: systemMed.expiration2 || '-',
+                systemExp3: systemMed.expiration3 || '-',
+                totalDeliveredQty: excelGroup.totalQty,
+                deliveredDates: excelGroup.dates,
+                isCrossLocation: isCrossLocation,
+                crossSourceLocationName: isCrossLocation ? PHARMACY_NAMES[sourceLocId] : undefined
+              });
+            }
           }
-        }
+        });
       });
     });
 
@@ -660,17 +710,31 @@ export default function AdminExpiryCheck() {
     const parseExpDate = (dateStr: string) => {
       if (!dateStr || dateStr === '-' || dateStr === '.') return null;
       try {
-        const parts = dateStr.split(/[-/.]/);
+        const parts = dateStr.trim().split(/[-/.]/);
         if (parts.length === 3) {
-          const d = parseInt(parts[0]);
-          const m = parseInt(parts[1]);
-          const y = parseInt(parts[2]);
+          let d = parseInt(parts[0]);
+          let m = parseInt(parts[1]);
+          let y = parseInt(parts[2]);
+          
+          // If the first part is 4 digits, or the first part is > 31 (cannot be a day),
+          // it is in YYYY-MM-DD format!
+          if (parts[0].length === 4 || d > 31) {
+            y = parseInt(parts[0]);
+            m = parseInt(parts[1]);
+            d = parseInt(parts[2]);
+          }
+          
           const fullYear = y < 100 ? 2000 + y : y;
           const date = new Date(fullYear, m - 1, d);
           if (!isNaN(date.getTime())) return date;
         } else if (parts.length === 2) {
-          const m = parseInt(parts[0]);
-          const y = parseInt(parts[1]);
+          // Could be MM-YYYY or YYYY-MM
+          let m = parseInt(parts[0]);
+          let y = parseInt(parts[1]);
+          if (parts[0].length === 4 || m > 12) {
+            y = parseInt(parts[0]);
+            m = parseInt(parts[1]);
+          }
           const fullYear = y < 100 ? 2000 + y : y;
           const date = new Date(fullYear, m - 1, 1);
           if (!isNaN(date.getTime())) return date;
@@ -806,6 +870,15 @@ export default function AdminExpiryCheck() {
         font: "Helvetica",
         cellPadding: 1.5,
         overflow: 'linebreak'
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          const item = itemsToExport[data.row.index];
+          if (item && item.isCrossLocation) {
+            data.cell.styles.textColor = [220, 38, 38]; // Red font
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
       },
       willDrawCell: (data) => {
         if (data.section === 'body' && data.column.index === 4) {
@@ -1224,18 +1297,33 @@ export default function AdminExpiryCheck() {
                       </tr>
                     ) : (
                       filteredMismatchedItems.map((item, index) => {
+                        const itemCompositeKey = `${item.locationId}-${item.itemCode}-${index}`;
                         return (
-                          <tr key={index} className="hover:bg-[#141414]/[0.01] transition-all">
+                          <tr key={itemCompositeKey} className={`hover:bg-[#141414]/[0.01] transition-all ${item.isCrossLocation ? 'bg-red-50/20' : ''}`}>
                             <td className="px-4 py-3 font-semibold text-[#141414]/80">
-                              <span className="inline-flex items-center px-2 py-1 rounded-lg bg-zinc-100 text-[#141414]/70 text-[10px] font-bold uppercase">
-                                {item.locationId === PharmacyLocation.ADULT ? 'Adult' : item.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed'}
-                              </span>
+                              <div className="flex flex-col gap-1">
+                                <span className={`inline-flex items-center w-fit px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
+                                  item.isCrossLocation 
+                                    ? 'bg-red-100/70 text-red-700' 
+                                    : 'bg-zinc-100 text-[#141414]/70'
+                                }`}>
+                                  {item.locationId === PharmacyLocation.ADULT ? 'Adult' : item.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed'}
+                                </span>
+                                {item.isCrossLocation && item.crossSourceLocationName && (
+                                  <span className="text-[9px] font-extrabold text-red-500 uppercase tracking-tight">
+                                    Deliv: {item.crossSourceLocationName}
+                                  </span>
+                                )}
+                              </div>
                             </td>
-                            <td className="px-4 py-3 font-mono text-xs font-black">{item.itemCode}</td>
+                            <td className={`px-4 py-3 font-mono text-xs font-black ${item.isCrossLocation ? 'text-red-600' : ''}`}>{item.itemCode}</td>
                             <td className="px-4 py-3 leading-tight pr-6">
-                              <div className="font-bold text-[#141414] text-xs">{item.systemItemName}</div>
+                              <div className={`font-bold text-xs ${item.isCrossLocation ? 'text-red-700 font-extrabold' : 'text-[#141414]'}`}>{item.systemItemName}</div>
+                              {item.isCrossLocation && (
+                                <div className="text-[9px] font-bold text-red-500 mt-0.5">Cross-Location Overlap Mismatch</div>
+                              )}
                             </td>
-                            <td className="px-4 py-3 text-center font-bold">
+                            <td className={`px-4 py-3 text-center font-bold ${item.isCrossLocation ? 'text-red-600' : ''}`}>
                               {typeof item.systemQoh === 'number' ? formatNumber(item.systemQoh) : item.systemQoh}
                             </td>
                             <td className="px-4 py-3 font-mono text-zinc-500">
@@ -1244,14 +1332,18 @@ export default function AdminExpiryCheck() {
                               ) : (
                                 <div className="space-y-0.5">
                                   {[item.systemExp1, item.systemExp2, item.systemExp3].filter(Boolean).map((exp, expIdx) => (
-                                    <span key={expIdx} className="block text-[10px] bg-zinc-50 font-bold px-1.5 py-0.5 rounded border border-zinc-100 w-fit">
+                                    <span key={expIdx} className={`block text-[10px] font-bold px-1.5 py-0.5 rounded w-fit ${
+                                      item.isCrossLocation 
+                                        ? 'bg-red-50 text-red-700 border border-red-100' 
+                                        : 'bg-zinc-50 text-zinc-600 border border-zinc-100'
+                                    }`}>
                                       E{expIdx + 1}: {exp}
                                     </span>
                                   ))}
                                 </div>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-center text-sm font-extrabold text-[#F27D26]">
+                            <td className={`px-4 py-3 text-center text-sm font-extrabold ${item.isCrossLocation ? 'text-red-600' : 'text-[#F27D26]'}`}>
                               {formatNumber(item.totalDeliveredQty)}
                             </td>
                             <td className="px-4 py-3 gap-1">

@@ -741,83 +741,7 @@ export default function AdminDashboard() {
       const origExp2 = (med.originalExp2 !== undefined ? med.originalExp2 : med.expiration2) || '';
       const origExp3 = (med.originalExp3 !== undefined ? med.originalExp3 : med.expiration3) || '';
 
-      const d1 = parseExpDate(origExp1);
-      const d2 = parseExpDate(origExp2);
-      const d3 = parseExpDate(origExp3);
-
-      const list: { raw: string; date: Date | null }[] = [];
-      if (origExp1 && origExp1 !== '-' && origExp1 !== '.') {
-        list.push({ raw: origExp1, date: d1 });
-      }
-      if (origExp2 && origExp2 !== '-' && origExp2 !== '.') {
-        list.push({ raw: origExp2, date: d2 });
-      }
-      if (origExp3 && origExp3 !== '-' && origExp3 !== '.') {
-        list.push({ raw: origExp3, date: d3 });
-      }
-
-      const uniqueList: { raw: string; date: Date | null }[] = [];
-      for (const item of list) {
-        const isDuplicate = uniqueList.some(seen => {
-          if (item.date && seen.date) {
-            return item.date.getTime() === seen.date.getTime();
-          }
-          return item.raw.trim().toLowerCase() === seen.raw.trim().toLowerCase();
-        });
-        if (!isDuplicate) {
-          uniqueList.push(item);
-        }
-      }
-
-      const withDates = uniqueList.filter(item => item.date !== null) as { raw: string; date: Date }[];
-      const withoutDates = uniqueList.filter(item => item.date === null);
-
-      withDates.sort((a, b) => a.date.getTime() - b.date.getTime());
-
-      const rearrangedList = [
-        ...withDates.map(item => item.raw),
-        ...withoutDates.map(item => item.raw)
-      ];
-
-      while (rearrangedList.length < 3) {
-        rearrangedList.push('');
-      }
-
-      const [newExp1, newExp2, newExp3] = rearrangedList;
-
-      const wasRearrangedOnTheFly = (origExp1 || '') !== (newExp1 || '') || 
-                                   (origExp2 || '') !== (newExp2 || '') || 
-                                   (origExp3 || '') !== (newExp3 || '');
-
-      if (wasRearrangedOnTheFly) {
-        updatesList.push({
-          id: med.id,
-          data: {
-            expiration1: newExp1,
-            expiration2: newExp2,
-            expiration3: newExp3,
-            originalExp1: origExp1,
-            originalExp2: origExp2,
-            originalExp3: origExp3,
-            wasRearranged: true
-          }
-        });
-      }
-
-      if (wasRearrangedOnTheFly || med.wasRearranged) {
-        tempReportList.push({
-          itemCode: med.itemCode,
-          itemName: med.itemName,
-          locationId: med.locationId,
-          originalExp1: origExp1 || '-',
-          originalExp2: origExp2 || '-',
-          originalExp3: origExp3 || '-',
-          rearrangedExp1: newExp1 || '-',
-          rearrangedExp2: newExp2 || '-',
-          rearrangedExp3: newExp3 || '-',
-          wasRearranged: true
-        });
-      }
+      const wasRearrangedOnTheFly = false;
     });
 
     // Write corrections back to DB if any abnormalities were detected
@@ -1176,20 +1100,31 @@ export default function AdminDashboard() {
   const parseExpDate = (dateStr: string) => {
     if (!dateStr || dateStr === '-' || dateStr === '.') return null;
     try {
-      // Try parsing dd-mm-yyyy explicitly first
-      const parts = dateStr.split(/[-/.]/);
+      const parts = dateStr.trim().split(/[-/.]/);
       if (parts.length === 3) {
-        const d = parseInt(parts[0]);
-        const m = parseInt(parts[1]);
-        const y = parseInt(parts[2]);
-        // Handle 2-digit years if they appear
+        let d = parseInt(parts[0]);
+        let m = parseInt(parts[1]);
+        let y = parseInt(parts[2]);
+        
+        // If the first part is 4 digits, or the first part is > 31 (cannot be a day),
+        // it is in YYYY-MM-DD format!
+        if (parts[0].length === 4 || d > 31) {
+          y = parseInt(parts[0]);
+          m = parseInt(parts[1]);
+          d = parseInt(parts[2]);
+        }
+        
         const fullYear = y < 100 ? 2000 + y : y;
         const date = new Date(fullYear, m - 1, d);
         if (!isNaN(date.getTime())) return date;
       } else if (parts.length === 2) {
-        // Handle mm-yyyy
-        const m = parseInt(parts[0]);
-        const y = parseInt(parts[1]);
+        // Could be MM-YYYY or YYYY-MM
+        let m = parseInt(parts[0]);
+        let y = parseInt(parts[1]);
+        if (parts[0].length === 4 || m > 12) {
+          y = parseInt(parts[0]);
+          m = parseInt(parts[1]);
+        }
         const fullYear = y < 100 ? 2000 + y : y;
         const date = new Date(fullYear, m - 1, 1);
         if (!isNaN(date.getTime())) return date;
@@ -1708,15 +1643,50 @@ export default function AdminDashboard() {
           return undefined;
         };
 
+        const getSafeDateComponents = (d: Date): { year: number; month: number; day: number } => {
+          const t = d.getTime();
+          
+          // Local midnight candidates
+          const prevLocal = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+          const nextLocal = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0, 0);
+          const distPrevLocal = Math.abs(t - prevLocal.getTime());
+          const distNextLocal = Math.abs(nextLocal.getTime() - t);
+          const closestLocal = distPrevLocal < distNextLocal ? prevLocal : nextLocal;
+          const minLocalDist = Math.min(distPrevLocal, distNextLocal);
+
+          // UTC midnight candidates
+          const prevUTCVal = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
+          const nextUTCVal = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 0, 0);
+          const distPrevUTC = Math.abs(t - prevUTCVal);
+          const distNextUTC = Math.abs(nextUTCVal - t);
+          const closestUTCVal = distPrevUTC < distNextUTC ? prevUTCVal : nextUTCVal;
+          const minUTCDist = Math.min(distPrevUTC, distNextUTC);
+
+          if (minUTCDist < minLocalDist) {
+            const dUtc = new Date(closestUTCVal);
+            return {
+              year: dUtc.getUTCFullYear(),
+              month: dUtc.getUTCMonth() + 1,
+              day: dUtc.getUTCDate()
+            };
+          } else {
+            return {
+              year: closestLocal.getFullYear(),
+              month: closestLocal.getMonth() + 1,
+              day: closestLocal.getDate()
+            };
+          }
+        };
+
         const formatExp = (val: any) => {
           if (val === undefined || val === null || val === '') return '';
           
           let dateObj: Date | null = null;
 
           if (val instanceof Date) {
-            // SheetJS parses date cells as UTC-based JS Date objects by default.
-            // Create a local Date object using UTC year, month, and day to prevent timezone-shift subtraction!
-            dateObj = new Date(val.getUTCFullYear(), val.getUTCMonth(), val.getUTCDate());
+            if (isNaN(val.getTime())) return '';
+            const comps = getSafeDateComponents(val);
+            dateObj = new Date(comps.year, comps.month - 1, comps.day);
           } else if (typeof val === 'number') {
             // Excel serial date fallback
             try {
@@ -1726,7 +1696,16 @@ export default function AdminDashboard() {
               return String(val);
             }
           } else if (typeof val === 'string') {
-            dateObj = parseExpDate(val);
+            const parsedStr = parseExpDate(val);
+            if (parsedStr) {
+              dateObj = parsedStr;
+            } else {
+              const d = new Date(val);
+              if (!isNaN(d.getTime())) {
+                const comps = getSafeDateComponents(d);
+                dateObj = new Date(comps.year, comps.month - 1, comps.day);
+              }
+            }
           }
 
           if (dateObj && !isNaN(dateObj.getTime())) {
@@ -1819,53 +1798,10 @@ export default function AdminDashboard() {
             const origExp2 = formatExp(getRowValue(row, ['exp2', 'expir2', 'expir_2', 'expiry2', 'secondary exp', 'expiration2', 'exp date 2']));
             const origExp3 = formatExp(getRowValue(row, ['exp3', 'expir3', 'expir_3', 'expiry3', 'final exp', 'expiration3', 'exp date 3']));
 
-            const d1 = parseExpDate(origExp1);
-            const d2 = parseExpDate(origExp2);
-            const d3 = parseExpDate(origExp3);
-
-            const list: { raw: string; date: Date | null }[] = [];
-            if (origExp1 && origExp1 !== '-' && origExp1 !== '.') {
-              list.push({ raw: origExp1, date: d1 });
-            }
-            if (origExp2 && origExp2 !== '-' && origExp2 !== '.') {
-              list.push({ raw: origExp2, date: d2 });
-            }
-            if (origExp3 && origExp3 !== '-' && origExp3 !== '.') {
-              list.push({ raw: origExp3, date: d3 });
-            }
-
-            const uniqueList: { raw: string; date: Date | null }[] = [];
-            for (const item of list) {
-              const isDuplicate = uniqueList.some(seen => {
-                if (item.date && seen.date) {
-                  return item.date.getTime() === seen.date.getTime();
-                }
-                return item.raw.trim().toLowerCase() === seen.raw.trim().toLowerCase();
-              });
-              if (!isDuplicate) {
-                uniqueList.push(item);
-              }
-            }
-
-            const withDates = uniqueList.filter(item => item.date !== null) as { raw: string; date: Date }[];
-            const withoutDates = uniqueList.filter(item => item.date === null);
-
-            withDates.sort((a, b) => a.date.getTime() - b.date.getTime());
-
-            const rearrangedList = [
-              ...withDates.map(item => item.raw),
-              ...withoutDates.map(item => item.raw)
-            ];
-
-            while (rearrangedList.length < 3) {
-              rearrangedList.push('');
-            }
-
-            const [newExp1, newExp2, newExp3] = rearrangedList;
-
-            const wasRearranged = (origExp1 || '') !== (newExp1 || '') || 
-                                 (origExp2 || '') !== (newExp2 || '') || 
-                                 (origExp3 || '') !== (newExp3 || '');
+            const newExp1 = origExp1 || '';
+            const newExp2 = origExp2 || '';
+            const newExp3 = origExp3 || '';
+            const wasRearranged = false;
 
             const finalItemCode = itemCode || `TEMP-${Math.random().toString(36).substr(2, 5)}`;
             if (locationId && wasRearranged) {
@@ -2445,8 +2381,8 @@ export default function AdminDashboard() {
           <div className="space-y-1 text-[10px] text-red-700/60 leading-tight">
             <p>The following item codes were in the ZIP but didn't match ANY items in the database:</p>
             <div className="flex flex-wrap gap-1.5 pt-1 mb-2">
-              {skippedUploads.map(code => (
-                <span key={code} className="px-2 py-0.5 bg-white/50 border border-red-100 rounded text-[9px] font-mono font-medium text-red-600">{code}</span>
+              {skippedUploads.map((code, idx) => (
+                <span key={`${code}-${idx}`} className="px-2 py-0.5 bg-white/50 border border-red-100 rounded text-[9px] font-mono font-medium text-red-600">{code}</span>
               ))}
             </div>
             <div className="bg-amber-50 p-4 rounded-xl border border-amber-200">

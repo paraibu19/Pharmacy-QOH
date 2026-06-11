@@ -42,17 +42,31 @@ function cleanUndefined<T>(obj: T): T {
 function parseExpDate(dateStr: string) {
   if (!dateStr || dateStr === '-' || dateStr === '.') return null;
   try {
-    const parts = dateStr.split(/[-/.]/);
+    const parts = dateStr.trim().split(/[-/.]/);
     if (parts.length === 3) {
-      const d = parseInt(parts[0]);
-      const m = parseInt(parts[1]);
-      const y = parseInt(parts[2]);
+      let d = parseInt(parts[0]);
+      let m = parseInt(parts[1]);
+      let y = parseInt(parts[2]);
+      
+      // If the first part is 4 digits, or the first part is > 31 (cannot be a day),
+      // it is in YYYY-MM-DD format!
+      if (parts[0].length === 4 || d > 31) {
+        y = parseInt(parts[0]);
+        m = parseInt(parts[1]);
+        d = parseInt(parts[2]);
+      }
+      
       const fullYear = y < 100 ? 2000 + y : y;
       const date = new Date(fullYear, m - 1, d);
       if (!isNaN(date.getTime())) return date;
     } else if (parts.length === 2) {
-      const m = parseInt(parts[0]);
-      const y = parseInt(parts[1]);
+      // Could be MM-YYYY or YYYY-MM
+      let m = parseInt(parts[0]);
+      let y = parseInt(parts[1]);
+      if (parts[0].length === 4 || m > 12) {
+        y = parseInt(parts[0]);
+        m = parseInt(parts[1]);
+      }
       const fullYear = y < 100 ? 2000 + y : y;
       const date = new Date(fullYear, m - 1, 1);
       if (!isNaN(date.getTime())) return date;
@@ -72,62 +86,14 @@ function rearrangeMedicationExpiries(med: any) {
   const origExp2 = med.expiration2 || '';
   const origExp3 = med.expiration3 || '';
 
-  const d1 = parseExpDate(origExp1);
-  const d2 = parseExpDate(origExp2);
-  const d3 = parseExpDate(origExp3);
-
-  const list: { raw: string; date: Date | null }[] = [];
-  if (origExp1 && origExp1 !== '-' && origExp1 !== '.') {
-    list.push({ raw: origExp1, date: d1 });
-  }
-  if (origExp2 && origExp2 !== '-' && origExp2 !== '.') {
-    list.push({ raw: origExp2, date: d2 });
-  }
-  if (origExp3 && origExp3 !== '-' && origExp3 !== '.') {
-    list.push({ raw: origExp3, date: d3 });
-  }
-
-  const uniqueList: { raw: string; date: Date | null }[] = [];
-  for (const item of list) {
-    const isDuplicate = uniqueList.some(seen => {
-      if (item.date && seen.date) {
-        return item.date.getTime() === seen.date.getTime();
-      }
-      return item.raw.trim().toLowerCase() === seen.raw.trim().toLowerCase();
-    });
-    if (!isDuplicate) {
-      uniqueList.push(item);
-    }
-  }
-
-  const withDates = uniqueList.filter(item => item.date !== null) as { raw: string; date: Date }[];
-  const withoutDates = uniqueList.filter(item => item.date === null);
-
-  withDates.sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  const rearrangedList = [
-    ...withDates.map(item => item.raw),
-    ...withoutDates.map(item => item.raw)
-  ];
-
-  while (rearrangedList.length < 3) {
-    rearrangedList.push('');
-  }
-
-  const [newExp1, newExp2, newExp3] = rearrangedList;
-
-  const wasRearranged = (origExp1 || '') !== (newExp1 || '') || 
-                       (origExp2 || '') !== (newExp2 || '') || 
-                       (origExp3 || '') !== (newExp3 || '');
-
   return {
-    expiration1: newExp1,
-    expiration2: newExp2,
-    expiration3: newExp3,
+    expiration1: origExp1,
+    expiration2: origExp2,
+    expiration3: origExp3,
     originalExp1: origExp1,
     originalExp2: origExp2,
     originalExp3: origExp3,
-    wasRearranged: wasRearranged
+    wasRearranged: false
   };
 }
 
