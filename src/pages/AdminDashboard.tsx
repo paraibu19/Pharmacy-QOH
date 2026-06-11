@@ -2692,8 +2692,8 @@ export default function AdminDashboard() {
 
                   {items.length > 0 ? (
                     <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2 scrollbar-hide">
-                      {items.map(item => (
-                        <div key={item.id} className="p-3 bg-red-50/50 border border-red-100 rounded-xl hover:bg-red-50 transition-colors">
+                      {items.map((item, itemIdx) => (
+                        <div key={`${item.id}-${itemIdx}`} className="p-3 bg-red-50/50 border border-red-100 rounded-xl hover:bg-red-50 transition-colors">
                           <div className="flex justify-between items-start gap-2">
                             <div className="flex-1 min-w-0">
                               <p className="text-[11px] font-bold text-[#141414] truncate uppercase">{item.itemName}</p>
@@ -3085,8 +3085,8 @@ export default function AdminDashboard() {
             <div className="max-h-[300px] overflow-y-auto">
               {expiringItems.length > 0 ? (
                 <div className="divide-y divide-[#141414]/5">
-                  {expiringItems.map(item => item && (
-                    <div key={item.id} className="p-4 flex items-center justify-between hover:bg-[#F27D26]/[0.02] transition-colors">
+                  {expiringItems.map((item, itemIdx) => item && (
+                    <div key={`${item.id}-${itemIdx}`} className="p-4 flex items-center justify-between hover:bg-[#F27D26]/[0.02] transition-colors">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-[#141414]">{item.itemName}</span>

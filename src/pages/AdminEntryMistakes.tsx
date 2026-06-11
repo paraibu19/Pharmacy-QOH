@@ -1402,8 +1402,8 @@ export default function AdminEntryMistakes() {
                         className="w-full px-3 py-2 border border-[#141414]/12 rounded-lg bg-white focus:outline-none focus:border-[#F27D26] cursor-pointer"
                       >
                         <option value="all">All Workload Locations</option>
-                        {uniqueLocations.map(loc => (
-                          <option key={loc} value={loc}>{loc}</option>
+                        {uniqueLocations.map((loc, idx) => (
+                          <option key={`location-${loc}-${idx}`} value={loc}>{loc}</option>
                         ))}
                       </select>
                     </div>
@@ -1416,8 +1416,8 @@ export default function AdminEntryMistakes() {
                         className="w-full px-3 py-2 border border-[#141414]/12 rounded-lg bg-white focus:outline-none focus:border-[#F27D26] cursor-pointer"
                       >
                         <option value="all">All Pharmacists Staff</option>
-                        {uniquePharmacists.map(ph => (
-                          <option key={ph} value={ph}>{ph}</option>
+                        {uniquePharmacists.map((ph, idx) => (
+                          <option key={`pharmacist-${ph}-${idx}`} value={ph}>{ph}</option>
                         ))}
                       </select>
                     </div>
@@ -1451,7 +1451,7 @@ export default function AdminEntryMistakes() {
                           </tr>
                         ) : (
                           paginatedRecords.map((r, idx) => (
-                            <tr key={idx} className="hover:bg-red-50/20 group transition-colors">
+                            <tr key={`${r.id || 'mistake-row'}-${idx}`} className="hover:bg-red-50/20 group transition-colors">
                               <td className="p-3 font-bold text-indigo-600">{r.actionPersonnelPharmacy || 'N/A'}</td>
                               <td className="p-3 font-mono text-[11px] font-medium text-[#141414]/70">{r.actionDateTime || 'N/A'}</td>
                               <td className="p-3 font-mono text-[11px] font-bold text-[#141414]/80">{r.mrnOrganization || 'N/A'}</td>
@@ -1466,7 +1466,7 @@ export default function AdminEntryMistakes() {
                               <td className="p-3 min-w-[280px] max-w-[360px] whitespace-normal break-words">
                                 <div className="space-y-1">
                                   {r.reasons.map((re, reIdx) => (
-                                    <span key={reIdx} className="inline-flex items-start justify-between gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-[10px] font-semibold px-2.5 py-1.5 rounded-md leading-normal shadow-sm flex w-full">
+                                    <span key={`reason-${r.id || 'row'}-${reIdx}`} className="inline-flex items-start justify-between gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-[10px] font-semibold px-2.5 py-1.5 rounded-md leading-normal shadow-sm flex w-full">
                                       <span className="flex items-start gap-1.5 min-w-0 whitespace-normal break-words py-0.5">
                                         <AlertTriangle className="w-2.5 h-2.5 text-red-500 shrink-0 mt-0.5" />
                                         <span className="whitespace-normal break-words" title={re}>{re}</span>
@@ -1580,7 +1580,7 @@ export default function AdminEntryMistakes() {
                       </div>
                     ) : (
                       groupedPharmacistMistakes.map((gp, ix) => (
-                        <div key={ix} className="bg-[#141414]/[0.02] border border-[#141414]/8 rounded-xl p-4 flex flex-col justify-between hover:border-[#141414]/20 transition-all relative">
+                        <div key={`gp-${gp.pharmacist || 'ix'}-${ix}`} className="bg-[#141414]/[0.02] border border-[#141414]/8 rounded-xl p-4 flex flex-col justify-between hover:border-[#141414]/20 transition-all relative">
                           <div>
                             <div className="flex items-start justify-between">
                               <div>

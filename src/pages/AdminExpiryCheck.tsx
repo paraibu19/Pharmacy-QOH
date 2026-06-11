@@ -3,7 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, FileSpreadsheet, 
   AlertCircle, Info, Loader2, AlertTriangle, Search, RefreshCw, 
   UploadCloud, Cloud, ChevronRight, FileText, Download, ArrowLeft, 
-  Calendar, CheckSquare, Square, CheckCircle2
+  Calendar, CheckSquare, Square, CheckCircle2, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -15,6 +15,7 @@ import { format } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 import { formatNumber } from '../lib/formatters';
+import { medicationOps } from '../lib/firebaseOperations';
 
 interface ExcelGroupedRow {
   itemCode: string;
@@ -39,6 +40,8 @@ interface MismatchedItem {
   deliveredDates: string[];
   isCrossLocation?: boolean;
   crossSourceLocationName?: string;
+  medicationId?: string;
+  rawMedication?: Medication;
 }
 
 interface LocationExcelState {
@@ -95,6 +98,70 @@ export default function AdminExpiryCheck() {
       ...prev,
       [loc]: !prev[loc]
     }));
+  };
+
+  // States for administering corrections on Exp1, Exp2, Exp3
+  const [selectedItemForCorrection, setSelectedItemForCorrection] = useState<MismatchedItem | null>(null);
+  const [correctingExp1, setCorrectingExp1] = useState('');
+  const [correctingExp2, setCorrectingExp2] = useState('');
+  const [correctingExp3, setCorrectingExp3] = useState('');
+  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+
+  const openCorrectionModal = (item: MismatchedItem) => {
+    setSelectedItemForCorrection(item);
+    setCorrectingExp1(item.systemExp1 === 'Not Configured' || item.systemExp1 === '-' ? '' : item.systemExp1);
+    setCorrectingExp2(item.systemExp2 === 'Not Configured' || item.systemExp2 === '-' ? '' : item.systemExp2);
+    setCorrectingExp3(item.systemExp3 === 'Not Configured' || item.systemExp3 === '-' ? '' : item.systemExp3);
+    setSaveError(null);
+    setSaveSuccess(null);
+  };
+
+  const handleSaveCorrection = async () => {
+    if (!selectedItemForCorrection) return;
+    setIsSavingCorrection(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    try {
+      const dataToSave = {
+        expiration1: correctingExp1.trim() || 'Non-expiry',
+        expiration2: correctingExp2.trim() || 'Non-expiry',
+        expiration3: correctingExp3.trim() || 'Non-expiry',
+      };
+
+      if (selectedItemForCorrection.medicationId) {
+        // Update existing item in physical / cloud database
+        await medicationOps.update(selectedItemForCorrection.medicationId, dataToSave);
+      } else {
+        // Unregistered item matching the code, let's create a new Medication entry in the database
+        await medicationOps.add({
+          itemCode: selectedItemForCorrection.itemCode,
+          itemName: selectedItemForCorrection.systemItemName,
+          locationId: selectedItemForCorrection.locationId,
+          expiration1: dataToSave.expiration1,
+          expiration2: dataToSave.expiration2,
+          expiration3: dataToSave.expiration3,
+          qoh: 0,
+          generic: '',
+          to: ''
+        });
+      }
+
+      setSaveSuccess('Correction saved successfully and synchronized across all views!');
+      
+      // Force trigger refresh on active data hook
+      await refresh();
+
+      setTimeout(() => {
+        setSelectedItemForCorrection(null);
+      }, 1500);
+    } catch (err: any) {
+      setSaveError(err.message || 'Failed to save expiry corrections.');
+    } finally {
+      setIsSavingCorrection(false);
+    }
   };
 
   // Helper to extract calendar date components (year, month, day) from a JS Date object.
@@ -562,7 +629,9 @@ export default function AdminExpiryCheck() {
                 totalDeliveredQty: excelGroup.totalQty,
                 deliveredDates: excelGroup.dates,
                 isCrossLocation: isCrossLocation,
-                crossSourceLocationName: isCrossLocation ? PHARMACY_NAMES[sourceLocId] : undefined
+                crossSourceLocationName: isCrossLocation ? PHARMACY_NAMES[sourceLocId] : undefined,
+                medicationId: systemMed.id,
+                rawMedication: systemMed
               });
             }
           }
@@ -1282,12 +1351,13 @@ export default function AdminExpiryCheck() {
                       <th className="px-4 py-3.5 font-bold">System Exp1, Exp2, Exp3</th>
                       <th className="px-4 py-3.5 font-bold text-center">Total Deliv Qty</th>
                       <th className="px-4 py-3.5 font-bold">Delivered Date1, Date2...</th>
+                      <th className="px-4 py-3.5 font-bold text-center">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#141414]/5 font-medium">
                     {filteredMismatchedItems.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-6 py-10 text-center text-zinc-400">
+                        <td colSpan={8} className="px-6 py-10 text-center text-zinc-400">
                           <CheckCircle2 className="w-8 h-8 text-emerald-500/80 mx-auto mb-2" />
                           <p className="font-bold text-sm text-[#141414]/80">No Expiration Discrepancies Found!</p>
                           <p className="text-xs text-[#141414]/40 mt-1 max-w-md mx-auto">
@@ -1299,7 +1369,11 @@ export default function AdminExpiryCheck() {
                       filteredMismatchedItems.map((item, index) => {
                         const itemCompositeKey = `${item.locationId}-${item.itemCode}-${index}`;
                         return (
-                          <tr key={itemCompositeKey} className={`hover:bg-[#141414]/[0.01] transition-all ${item.isCrossLocation ? 'bg-red-50/20' : ''}`}>
+                          <tr 
+                            key={itemCompositeKey} 
+                            onClick={() => openCorrectionModal(item)}
+                            className={`hover:bg-[#F27D26]/[0.03] cursor-pointer transition-all ${item.isCrossLocation ? 'bg-red-50/20' : ''}`}
+                          >
                             <td className="px-4 py-3 font-semibold text-[#141414]/80">
                               <div className="flex flex-col gap-1">
                                 <span className={`inline-flex items-center w-fit px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${
@@ -1358,6 +1432,15 @@ export default function AdminExpiryCheck() {
                                 )}
                               </div>
                             </td>
+                            <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <button 
+                                onClick={() => openCorrectionModal(item)}
+                                className="inline-flex items-center gap-1 bg-[#F27D26]/10 text-[#F27D26] hover:bg-[#F27D26] hover:text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>Correct</span>
+                              </button>
+                            </td>
                           </tr>
                         );
                       })
@@ -1367,6 +1450,241 @@ export default function AdminExpiryCheck() {
               </div>
             </div>
           </motion.div>
+        )}
+
+        {/* Expiry Date Correction Modal */}
+        {selectedItemForCorrection && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="relative w-full max-w-lg overflow-hidden bg-white border border-[#141414]/10 rounded-3xl shadow-2xl flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="sticky top-0 z-10 flex items-start justify-between p-5 bg-stone-50 border-b border-[#141414]/5 text-left">
+                <div className="space-y-1 pr-6 justify-start">
+                  <div className="flex items-center flex-wrap gap-2">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 bg-[#141414]/5 rounded text-[#141414]/60">
+                      {selectedItemForCorrection.itemCode}
+                    </span>
+                    <span className="font-sans text-[10px] font-bold px-2 py-0.5 bg-[#F27D26]/10 text-[#F27D26] uppercase tracking-wide rounded-full">
+                      {selectedItemForCorrection.locationId === PharmacyLocation.ADULT ? 'Adult' : selectedItemForCorrection.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed'}
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-[#141414] tracking-tight">
+                    Correct Expiration Dates
+                  </h3>
+                  <p className="text-xs text-[#141414]/60">
+                    {selectedItemForCorrection.systemItemName}
+                  </p>
+                </div>
+                
+                <button
+                  onClick={() => setSelectedItemForCorrection(null)}
+                  className="p-2 border border-transparent rounded-full text-[#141414]/40 hover:bg-[#141414]/5 hover:text-[#141414] transition-all cursor-pointer flex-shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-6 text-left">
+                {/* Info Note */}
+                <div className="bg-[#F27D26]/5 rounded-xl p-3.5 border border-[#F27D26]/10 flex items-start gap-2.5">
+                  <Info className="w-4 h-4 text-[#F27D26] shrink-0 mt-0.5" />
+                  <p className="text-xs text-[#141414]/70 leading-relaxed">
+                    Correct Exp1, Exp2, and Exp3 values. We loaded the <strong>Delivered Dates</strong> directly from Excel so you can easily click any of the dates to instantly auto-fill them as the corrected value!
+                  </p>
+                </div>
+
+                {/* Existing Delivered Dates pills */}
+                <div>
+                  <h4 className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#141414]/50 mb-2">
+                    Delivered Dates in Excel:
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedItemForCorrection.deliveredDates.map((delivDate, dateIdx) => (
+                      <span
+                        key={dateIdx}
+                        className="inline-block text-[11px] font-black text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200"
+                      >
+                        {delivDate}
+                      </span>
+                    ))}
+                    {selectedItemForCorrection.deliveredDates.length === 0 && (
+                      <span className="text-xs text-[#141414]/40 italic">No delivered dates recorded in this sheet.</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Form Controls for Correction */}
+                <div className="space-y-4">
+                  {/* Exp1 */}
+                  <div className="space-y-1.5 p-3.5 bg-stone-50 rounded-xl border border-stone-200">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-bold text-[#141414]/80">
+                        Exp1 (Primary Expiry)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCorrectingExp1('Non-expiry')}
+                        className="text-[9px] font-semibold px-2 py-0.5 border border-[#141414]/10 rounded bg-white hover:bg-[#141414]/3 shadow-sm"
+                      >
+                        Set Non-expiry
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="DD/MM/YYYY"
+                      value={correctingExp1}
+                      onChange={(e) => setCorrectingExp1(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-[#141414]/10 rounded-lg bg-white text-[#141414] focus:outline-none focus:border-[#F27D26]"
+                    />
+                    {/* Quick selectors for Exp1 */}
+                    {selectedItemForCorrection.deliveredDates.length > 0 && (
+                      <div className="flex flex-wrap gap-1 items-center mt-2">
+                        <span className="text-[9px] text-[#141414]/40 font-bold uppercase mr-1">Quick Select:</span>
+                        {selectedItemForCorrection.deliveredDates.map((d, dIdx) => (
+                          <button
+                            key={dIdx}
+                            type="button"
+                            onClick={() => setCorrectingExp1(d)}
+                            className="bg-white border text-[10px] font-black px-2 py-0.5 rounded shadow-sm text-red-600 border-red-200 hover:bg-[#F27D26]/5 hover:border-[#F27D26] hover:text-[#F27D26] cursor-pointer"
+                          >
+                            Correct to {d}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Exp2 */}
+                  <div className="space-y-1.5 p-3.5 bg-stone-50 rounded-xl border border-stone-200">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-bold text-[#141414]/80">
+                        Exp2 (Secondary Expiry)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCorrectingExp2('Non-expiry')}
+                        className="text-[9px] font-semibold px-2 py-0.5 border border-[#141414]/10 rounded bg-white hover:bg-[#141414]/3 shadow-sm"
+                      >
+                        Set Non-expiry
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="DD/MM/YYYY"
+                      value={correctingExp2}
+                      onChange={(e) => setCorrectingExp2(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-[#141414]/10 rounded-lg bg-white text-[#141414] focus:outline-none focus:border-[#F27D26]"
+                    />
+                    {/* Quick selectors for Exp2 */}
+                    {selectedItemForCorrection.deliveredDates.length > 0 && (
+                      <div className="flex flex-wrap gap-1 items-center mt-2">
+                        <span className="text-[9px] text-[#141414]/40 font-bold uppercase mr-1">Quick Select:</span>
+                        {selectedItemForCorrection.deliveredDates.map((d, dIdx) => (
+                          <button
+                            key={dIdx}
+                            type="button"
+                            onClick={() => setCorrectingExp2(d)}
+                            className="bg-white border text-[10px] font-black px-2 py-0.5 rounded shadow-sm text-red-600 border-red-200 hover:bg-[#F27D26]/5 hover:border-[#F27D26] hover:text-[#F27D26] cursor-pointer"
+                          >
+                            Correct to {d}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Exp3 */}
+                  <div className="space-y-1.5 p-3.5 bg-stone-50 rounded-xl border border-stone-200">
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-bold text-[#141414]/80">
+                        Exp3 (Tertiary Expiry)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCorrectingExp3('Non-expiry')}
+                        className="text-[9px] font-semibold px-2 py-0.5 border border-[#141414]/10 rounded bg-white hover:bg-[#141414]/3 shadow-sm"
+                      >
+                        Set Non-expiry
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="DD/MM/YYYY"
+                      value={correctingExp3}
+                      onChange={(e) => setCorrectingExp3(e.target.value)}
+                      className="w-full px-3 py-2 text-xs border border-[#141414]/10 rounded-lg bg-white text-[#141414] focus:outline-none focus:border-[#F27D26]"
+                    />
+                    {/* Quick selectors for Exp3 */}
+                    {selectedItemForCorrection.deliveredDates.length > 0 && (
+                      <div className="flex flex-wrap gap-1 items-center mt-2">
+                        <span className="text-[9px] text-[#141414]/40 font-bold uppercase mr-1">Quick Select:</span>
+                        {selectedItemForCorrection.deliveredDates.map((d, dIdx) => (
+                          <button
+                            key={dIdx}
+                            type="button"
+                            onClick={() => setCorrectingExp3(d)}
+                            className="bg-white border text-[10px] font-black px-2 py-0.5 rounded shadow-sm text-red-600 border-red-200 hover:bg-[#F27D26]/5 hover:border-[#F27D26] hover:text-[#F27D26] cursor-pointer"
+                          >
+                            Correct to {d}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Save Feedback Alerts */}
+                {saveError && (
+                  <div className="bg-red-50 text-red-600 p-3.5 rounded-xl border border-red-200 text-xs font-medium flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                    <span>{saveError}</span>
+                  </div>
+                )}
+
+                {saveSuccess && (
+                  <div className="bg-emerald-50 text-emerald-600 p-3.5 rounded-xl border border-emerald-200 text-xs font-semibold flex items-center gap-2 animate-pulse">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>{saveSuccess}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-5 bg-stone-50 border-t border-[#141414]/5 flex justify-end gap-3 sticky bottom-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedItemForCorrection(null)}
+                  className="px-4 py-2 border border-[#141414]/10 rounded-xl text-xs font-bold text-[#141414]/60 hover:text-[#141414]/80 hover:bg-[#141414]/5 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCorrection}
+                  disabled={isSavingCorrection}
+                  className="px-5 py-2.5 bg-[#F27D26] hover:bg-[#F27D26]/90 disabled:bg-[#F27D26]/50 text-white rounded-xl text-xs font-black shadow-md shadow-[#F27D26]/12 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isSavingCorrection ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving Correction...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Save and Synchronize</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

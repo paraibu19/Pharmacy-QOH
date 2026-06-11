@@ -573,10 +573,10 @@ export default function BrandGenericReportModal({
               <>
                 {/* Mobile Responsive Cards (Visible on mobile/tablet) */}
                 <div className="block md:hidden space-y-4">
-                  {pairs.map((pair) => {
+                  {pairs.map((pair, idx) => {
                     const brandStatus = getItemStatus(pair.brand);
                     const genericStatus = getItemStatus(pair.generic);
-                    const compositeKey = `${pair.brandCode}-${pair.genericCode}`;
+                    const compositeKey = `${pair.brandCode}-${pair.genericCode}-${idx}`;
                     
                     return (
                       <div 
@@ -712,10 +712,10 @@ export default function BrandGenericReportModal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#141414]/5">
-                      {pairs.map((pair) => {
+                      {pairs.map((pair, idx) => {
                         const brandStatus = getItemStatus(pair.brand);
                         const genericStatus = getItemStatus(pair.generic);
-                        const compositeKey = `${pair.brandCode}-${pair.genericCode}`;
+                        const compositeKey = `${pair.brandCode}-${pair.genericCode}-${idx}`;
                         
                         return (
                           <tr key={compositeKey} className="hover:bg-[#141414]/[0.01] transition-all">
