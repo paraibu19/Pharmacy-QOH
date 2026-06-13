@@ -2797,8 +2797,8 @@ export default function AdminDashboard() {
                     <Loader2 className="animate-spin w-4 h-4 text-[#F27D26]/40" />
                  </div>
                ) : audits.length > 0 ? (
-                 audits.map((audit) => (
-                   <div key={audit.id} className="flex flex-col gap-1 border-l-2 border-[#F27D26]/10 pl-2">
+                 audits.map((audit, idx) => (
+                   <div key={`${audit.id || 'audit'}-${idx}`} className="flex flex-col gap-1 border-l-2 border-[#F27D26]/10 pl-2">
                       <p className="text-[10px] font-bold text-[#141414] truncate">{audit.itemName}</p>
                       <div className="flex items-center justify-between text-[8px]">
                         <span className={`font-black uppercase tracking-widest ${audit.variance !== 0 ? 'text-[#F27D26]' : 'text-emerald-600'}`}>
@@ -3221,7 +3221,7 @@ export default function AdminDashboard() {
                           <span className="text-[#F27D26] font-bold">"Adult"</span>, 
                           <span className="text-[#F27D26] font-bold"> "Pediatric"</span>, or 
                           <span className="text-[#F27D26] font-bold"> "Mesaieed"</span>.<br/>
-                          Columns: itemCode, itemName, QOH, Min, Max, Exp1, Exp2, Exp3
+                          Columns: itemCode, itemName, QOH, Min, Max, Exp1, Exp2, Exp3, generic, to (Linked)
                         </p>
                         
                         <div className="w-full space-y-4">
@@ -3293,26 +3293,6 @@ export default function AdminDashboard() {
           </div>
           
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-            {/* Search Bar */}
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30" />
-              <input 
-                type="text" 
-                placeholder="Search code or name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-8 py-2.5 bg-[#141414]/5 border border-transparent rounded-2xl text-xs font-bold focus:outline-none focus:bg-white focus:border-[#F27D26]/20 transition-all"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-[#141414]/5 rounded-md text-[#141414]/40"
-                >
-                  <XIcon size={14} />
-                </button>
-              )}
-            </div>
-
             <div className="grid grid-cols-1 sm:flex gap-1.5 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-auto">
               {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => (
                 <button
@@ -3722,6 +3702,26 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Search Input directly above items table */}
+      <div className="relative group mb-4">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30 group-focus-within:text-[#F27D26] transition-colors" />
+        <input
+          type="text"
+          placeholder="Search by code or name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-11 pr-10 py-3 bg-white border border-[#141414]/10 rounded-2xl shadow-sm focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium focus:border-transparent"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-[#141414]/5 rounded-lg text-[#141414]/40 transition-colors"
+          >
+            <XIcon size={16} />
+          </button>
+        )}
+      </div>
+
       {/* Table Container */}
       <div className="bg-white rounded-3xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
         {/* Desktop Table View */}
@@ -3967,7 +3967,7 @@ export default function AdminDashboard() {
                 </td>
               </tr>
             )}
-            {!loading && sortedMedications.map(med => {
+            {!loading && sortedMedications.map((med, idx) => {
               const isOutOfStock = med.qoh <= 0;
               const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
               const parsedAdded = parseSafeDate(med.addedAt);
@@ -3991,7 +3991,7 @@ export default function AdminDashboard() {
               }
               
               return (
-                <tr key={med.id} className={`group hover:bg-[#141414]/[0.02] transition-colors ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : '')}`}>
+                <tr key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className={`group hover:bg-[#141414]/[0.02] transition-colors ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : '')}`}>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
                       {med.imageUrl ? (
@@ -4195,7 +4195,7 @@ export default function AdminDashboard() {
             </div>
          )}
         
-        {!loading && sortedMedications.map(med => {
+        {!loading && sortedMedications.map((med, idx) => {
           const isOutOfStock = med.qoh <= 0;
           const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
           const parsedAdded = parseSafeDate(med.addedAt);
@@ -4204,7 +4204,7 @@ export default function AdminDashboard() {
           return (
             <motion.div 
               layout
-              key={med.id} 
+              key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} 
               className={`p-4 space-y-4 ${isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : ''}`}
               onClick={() => startEdit(med)}
             >

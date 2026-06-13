@@ -128,9 +128,9 @@ export default function LinkedItemsModal({ medication, allMedications, onClose, 
           <div className="p-5 md:p-6 overflow-y-auto custom-scrollbar space-y-6">
             {linkedItems.length > 0 ? (
               <div className="grid grid-cols-1 gap-4">
-                {linkedItems.map((item) => (
+                {linkedItems.map((item, idx) => (
                   <motion.div
-                    key={item.id}
+                    key={`${item.id || 'link'}-${idx}`}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     className="flex flex-col md:flex-row gap-5 md:gap-6 p-4 md:p-5 bg-[#141414]/[0.02] border border-[#141414]/5 rounded-3xl group hover:border-[#F27D26]/20 transition-all"

@@ -529,25 +529,6 @@ export default function AdminInventory() {
           </button>
         </div>
 
-        <div className="relative group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30 group-focus-within:text-[#F27D26] transition-colors" />
-          <input
-            type="text"
-            placeholder="Search by code or name..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-11 pr-10 py-3 bg-[#141414]/[0.03] border-none rounded-xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-[#141414]/5 rounded-lg text-[#141414]/40 transition-colors"
-            >
-              <X size={16} />
-            </button>
-          )}
-        </div>
-
         {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd) && (
           <div className="flex flex-wrap items-center gap-2 p-3 bg-[#141414]/[0.02] rounded-xl border border-[#141414]/5 animate-in slide-in-from-top-2">
             <span className="text-[9px] font-bold uppercase tracking-widest text-[#141414]/40 flex items-center gap-1">
@@ -750,6 +731,26 @@ export default function AdminInventory() {
         )}
       </div>
 
+      {/* Search Input directly above items table */}
+      <div className="relative group mb-4">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30 group-focus-within:text-[#F27D26] transition-colors" />
+        <input
+          type="text"
+          placeholder="Search by code or name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-11 pr-10 py-3 bg-white border border-[#141414]/10 rounded-2xl shadow-sm focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium focus:border-transparent"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 hover:bg-[#141414]/5 rounded-lg text-[#141414]/40 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        )}
+      </div>
+
       {/* Audit View - Table on desktop, Cards on mobile */}
       <div className="bg-white rounded-2xl border border-[#141414]/10 shadow-sm overflow-hidden min-h-[400px]">
         {/* Desktop View */}
@@ -813,13 +814,13 @@ export default function AdminInventory() {
                   </td>
                 </tr>
               )}
-              {!loading && sortedMeds.map((med) => {
+              {!loading && sortedMeds.map((med, idx) => {
                 const physical = physicalCounts[med.id] ?? med.qoh;
                 const variance = physical - med.qoh;
                 const hasVariance = variance !== 0;
 
                 return (
-                  <tr key={med.id} className="hover:bg-[#141414]/[0.01] transition-colors group">
+                  <tr key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className="hover:bg-[#141414]/[0.01] transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className="text-[10px] font-mono text-[#141414]/40 mb-0.5">{med.itemCode}</span>
@@ -927,13 +928,13 @@ export default function AdminInventory() {
               <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#141414]/20" />
             </div>
           )}
-          {!loading && sortedMeds.map((med) => {
+          {!loading && sortedMeds.map((med, idx) => {
             const physical = physicalCounts[med.id] ?? med.qoh;
             const variance = physical - med.qoh;
             const hasVariance = variance !== 0;
 
             return (
-              <div key={med.id} className="p-4 space-y-4">
+              <div key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className="p-4 space-y-4">
                 <div className="flex justify-between items-start">
                   <div className="space-y-1">
                     <span className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</span>

@@ -539,9 +539,9 @@ export default function GeneralView() {
                     exit={{ opacity: 0, y: -10 }}
                     className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#141414]/10 rounded-xl shadow-xl z-50 overflow-hidden"
                   >
-                    {suggestions.map((s) => (
+                    {suggestions.map((s, idx) => (
                       <button
-                        key={s.id}
+                        key={`${s.id || 's'}-${idx}`}
                         onClick={() => {
                           setSearchQuery(s.itemName);
                           setShowSuggestions(false);
@@ -777,8 +777,8 @@ export default function GeneralView() {
                     <p className="font-bold text-xs uppercase tracking-widest text-[#141414]/40">{t.loading}</p>
                   </td>
                 </tr>
-              ) : filteredMeds.map((med) => (
-                <tr key={med.id} className="hover:bg-[#141414]/[0.02] transition-colors group">
+              ) : filteredMeds.map((med, idx) => (
+                <tr key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className="hover:bg-[#141414]/[0.02] transition-colors group">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
                       {med.imageUrl && (
@@ -866,8 +866,8 @@ export default function GeneralView() {
         </div>
 
         <div className="md:hidden divide-y divide-[#141414]/5">
-          {!loading && filteredMeds.map((med) => (
-            <div key={med.id} className="p-4 flex gap-4 items-center">
+          {!loading && filteredMeds.map((med, idx) => (
+            <div key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className="p-4 flex gap-4 items-center">
               {med.imageUrl && (
                 <button 
                   onClick={() => setSelectedImage(med.imageUrl!)}
@@ -1231,8 +1231,8 @@ export default function GeneralView() {
                     <p className="text-xs font-bold text-[#141414]/30 uppercase tracking-widest">{t.noResults}</p>
                   </div>
                 ) : (
-                  savedReminders.map((r) => (
-                    <div key={r.id} className="p-4 bg-[#141414]/[0.02] border border-[#141414]/5 rounded-2xl space-y-4">
+                  savedReminders.map((r, idx) => (
+                    <div key={`${r.id || 'reminder'}-${idx}`} className="p-4 bg-[#141414]/[0.02] border border-[#141414]/5 rounded-2xl space-y-4">
                       <div className="flex flex-col gap-2">
                         <div className="flex justify-between items-start">
                           <div className="flex flex-col gap-0.5">

@@ -1219,6 +1219,7 @@ export default function AdminExpiryCheck() {
       <AnimatePresence>
         {(Object.values(locationExcelData) as LocationExcelState[]).some(state => state.excelDataGroups !== null) && hasActiveLoc && (
           <motion.div 
+            key="expiry-analysis-report"
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 15 }}
@@ -1406,7 +1407,7 @@ export default function AdminExpiryCheck() {
                               ) : (
                                 <div className="space-y-0.5">
                                   {[item.systemExp1, item.systemExp2, item.systemExp3].filter(Boolean).map((exp, expIdx) => (
-                                    <span key={expIdx} className={`block text-[10px] font-bold px-1.5 py-0.5 rounded w-fit ${
+                                    <span key={`sys-exp-${item.itemCode}-${item.locationId}-${expIdx}-${exp}`} className={`block text-[10px] font-bold px-1.5 py-0.5 rounded w-fit ${
                                       item.isCrossLocation 
                                         ? 'bg-red-50 text-red-700 border border-red-100' 
                                         : 'bg-zinc-50 text-zinc-600 border border-zinc-100'
@@ -1454,7 +1455,7 @@ export default function AdminExpiryCheck() {
 
         {/* Expiry Date Correction Modal */}
         {selectedItemForCorrection && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+          <div key="expiry-correction-modal-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -1507,7 +1508,7 @@ export default function AdminExpiryCheck() {
                   <div className="flex flex-wrap gap-1.5">
                     {selectedItemForCorrection.deliveredDates.map((delivDate, dateIdx) => (
                       <span
-                        key={dateIdx}
+                        key={`modal-deliv-${delivDate}-${dateIdx}`}
                         className="inline-block text-[11px] font-black text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200"
                       >
                         {delivDate}
@@ -1548,7 +1549,7 @@ export default function AdminExpiryCheck() {
                         <span className="text-[9px] text-[#141414]/40 font-bold uppercase mr-1">Quick Select:</span>
                         {selectedItemForCorrection.deliveredDates.map((d, dIdx) => (
                           <button
-                            key={dIdx}
+                            key={`quick-exp1-${d}-${dIdx}`}
                             type="button"
                             onClick={() => setCorrectingExp1(d)}
                             className="bg-white border text-[10px] font-black px-2 py-0.5 rounded shadow-sm text-red-600 border-red-200 hover:bg-[#F27D26]/5 hover:border-[#F27D26] hover:text-[#F27D26] cursor-pointer"
@@ -1587,7 +1588,7 @@ export default function AdminExpiryCheck() {
                         <span className="text-[9px] text-[#141414]/40 font-bold uppercase mr-1">Quick Select:</span>
                         {selectedItemForCorrection.deliveredDates.map((d, dIdx) => (
                           <button
-                            key={dIdx}
+                            key={`quick-exp2-${d}-${dIdx}`}
                             type="button"
                             onClick={() => setCorrectingExp2(d)}
                             className="bg-white border text-[10px] font-black px-2 py-0.5 rounded shadow-sm text-red-600 border-red-200 hover:bg-[#F27D26]/5 hover:border-[#F27D26] hover:text-[#F27D26] cursor-pointer"
@@ -1626,7 +1627,7 @@ export default function AdminExpiryCheck() {
                         <span className="text-[9px] text-[#141414]/40 font-bold uppercase mr-1">Quick Select:</span>
                         {selectedItemForCorrection.deliveredDates.map((d, dIdx) => (
                           <button
-                            key={dIdx}
+                            key={`quick-exp3-${d}-${dIdx}`}
                             type="button"
                             onClick={() => setCorrectingExp3(d)}
                             className="bg-white border text-[10px] font-black px-2 py-0.5 rounded shadow-sm text-red-600 border-red-200 hover:bg-[#F27D26]/5 hover:border-[#F27D26] hover:text-[#F27D26] cursor-pointer"

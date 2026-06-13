@@ -893,9 +893,9 @@ export default function UserHome() {
                     exit={{ opacity: 0, y: -10 }}
                     className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#141414]/10 rounded-xl shadow-xl z-50 overflow-hidden"
                   >
-                    {suggestions.map((s) => (
+                    {suggestions.map((s, idx) => (
                       <button
-                        key={s.id}
+                        key={`${s.id || 's'}-${idx}`}
                         onClick={() => {
                           setSearchQuery(s.itemName);
                           setShowSuggestions(false);
@@ -1350,13 +1350,13 @@ export default function UserHome() {
                 </tr>
               )}
               <AnimatePresence mode="popLayout">
-                {!loading && filteredMeds.map((med) => (
+                {!loading && filteredMeds.map((med, idx) => (
                   <motion.tr 
                     layout
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    key={med.id} 
+                    key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} 
                     className="hover:bg-[#141414]/[0.02] transition-colors group"
                   >
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -1468,13 +1468,13 @@ export default function UserHome() {
           )}
           
           <AnimatePresence mode="popLayout">
-            {!loading && filteredMeds.map((med) => (
+            {!loading && filteredMeds.map((med, idx) => (
               <motion.div 
                 layout
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                key={med.id}
+                key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`}
                 className="p-4 space-y-3"
               >
                 <div className="flex justify-between items-start">

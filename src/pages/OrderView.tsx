@@ -1812,9 +1812,9 @@ export default function OrderView() {
                 exit={{ opacity: 0, y: -10 }}
                 className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#141414]/10 rounded-xl shadow-xl z-50 overflow-hidden"
               >
-                {suggestions.map((s) => (
+                {suggestions.map((s, idx) => (
                   <button
-                    key={s.id}
+                    key={`${s.id || 's'}-${idx}`}
                     onClick={() => {
                       setSearchQuery(s.itemName);
                       setShowSuggestions(false);
@@ -2159,13 +2159,13 @@ export default function OrderView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#141414]/5">
-                  {sortedMeds.map((med) => {
+                  {sortedMeds.map((med, idx) => {
                     const isOrdered = med.orderQty > 0;
                     
                     return (
                       <motion.tr 
                         layout
-                        key={med.id} 
+                        key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} 
                         className={`group border-b border-[#141414]/5 transition-colors hover:bg-[#141414]/[0.02] ${isOrdered ? 'bg-emerald-50/10' : ''}`}
                       >
                         <td className="px-6 py-4 font-mono text-xs text-[#141414]/50">{med.itemCode}</td>
@@ -2280,12 +2280,12 @@ export default function OrderView() {
 
             {/* Mobile Card View */}
             <div className="md:hidden divide-y divide-[#141414]/5">
-              {sortedMeds.map((med) => {
+              {sortedMeds.map((med, idx) => {
                 const isOrdered = med.orderQty > 0;
                 return (
                   <motion.div 
                     layout
-                    key={med.id}
+                    key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`}
                     className={`p-4 space-y-4 ${isOrdered ? 'bg-emerald-50/10' : ''}`}
                     onClick={() => startEdit(med)}
                   >

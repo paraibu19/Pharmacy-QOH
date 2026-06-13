@@ -138,10 +138,25 @@ const isNonQatariBrandMistake = (
 ): { isMistake: boolean; details: string; targetGenericCode?: string; targetGenericName?: string } => {
   // 1. Check if patient is Non-Qatari
   const nationalityLower = (rec.nationality || '').toLowerCase().trim();
-  if (!nationalityLower) {
-    return { isMistake: false, details: '' };
-  }
-  const isQatari = nationalityLower.includes('qat') || nationalityLower.includes('qa') || nationalityLower.includes('قطر');
+  
+  // Explicit check: Is this nationality explicitly Non-Qatari?
+  const isNonQatariExplicit = 
+    nationalityLower.includes('non') || 
+    nationalityLower.includes('not') || 
+    nationalityLower.includes('no ') || 
+    nationalityLower.includes('no-') || 
+    nationalityLower.includes('غير') || 
+    nationalityLower.includes('ليس');
+
+  // A patient is considered Qatari if and only if their nationality value contains Qatari keywords and doesn't explicitly start with / contain non- / not-
+  const isQatari = !isNonQatariExplicit && (
+    nationalityLower.includes('qatari') || 
+    nationalityLower.includes('qatar') || 
+    nationalityLower.includes('qat') || 
+    nationalityLower === 'qa' || 
+    nationalityLower.includes('قطر')
+  );
+
   if (isQatari) {
     return { isMistake: false, details: '' };
   }
@@ -169,21 +184,42 @@ const isNonQatariBrandMistake = (
   }
 
   // 3. Check if there are any connected/associated Generic items that are in stock (QOH > 0)
-  // linked items in `to` field
-  const linkedCodes = matchingMed.to 
+  // We check for bidirectional connections (either direct "Brand links to Generic" or inverse "Generic links to Brand").
+  const matchingMedCode = matchingMed.itemCode.trim().toLowerCase();
+  const brandLinkedCodes = matchingMed.to 
     ? matchingMed.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase()) 
     : [];
 
-  if (linkedCodes.length === 0) {
-    return { isMistake: false, details: '' };
-  }
+  const inStockGenericMed = medicationsList.find(m => {
+    const mCode = m.itemCode.trim().toLowerCase();
 
-  // Find if any connected medication is in stock (QOH > 0) at the SAME pharmacy location
-  const inStockGenericMed = medicationsList.find(m => 
-    linkedCodes.includes(m.itemCode.toLowerCase().trim()) &&
-    locationMatcher(m.locationId, rec.pharmacyLocation) &&
-    m.qoh > 0
-  );
+    // Prevent self-matching
+    if (mCode === matchingMedCode) return false;
+
+    // Must be in stock at the SAME pharmacy location
+    if (m.qoh <= 0) return false;
+    if (!locationMatcher(m.locationId, rec.pharmacyLocation)) return false;
+
+    // Must be classified as a Generic item (either says "generic", or is NOT "brand")
+    const isMGeneric = (m.generic && m.generic.toLowerCase().includes('generic')) || 
+                        (!m.generic || !m.generic.toLowerCase().includes('brand'));
+    if (!isMGeneric) return false;
+
+    // Direct path check: Is generic code listed in brand's 'to' field?
+    if (brandLinkedCodes.includes(mCode)) {
+      return true;
+    }
+
+    // Inverse path check: Is brand code listed in generic's 'to' field?
+    const genericLinkedCodes = m.to
+      ? m.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
+      : [];
+    if (genericLinkedCodes.includes(matchingMedCode)) {
+      return true;
+    }
+
+    return false;
+  });
 
   if (!inStockGenericMed) {
     return { isMistake: false, details: '' };
@@ -859,30 +895,25 @@ export default function AdminEntryMistakes() {
     return Object.values(map);
   }, [workloadRecords, brandVsGenericRecords, activeReportType, dbState.pharmacists, selectedLocation]);
 
-  // Unique lists for filters
+  // Unique lists for filters - include all parsed locations/staff from the entire uploaded source sheet (active and inactive) 
+  // so the user can easily select any of them to check metrics or confirm 0 mistakes!
   const uniqueLocations = React.useMemo(() => {
     const set = new Set<string>();
-    const baseSource = activeReportType === 'standard' 
-      ? workloadRecords.filter(r => r.isMismatch)
-      : brandVsGenericRecords;
-    baseSource.forEach(r => { if (r.pharmacyLocation) set.add(r.pharmacyLocation); });
-    return Array.from(set);
-  }, [workloadRecords, brandVsGenericRecords, activeReportType]);
+    workloadRecords.forEach(r => { if (r.pharmacyLocation) set.add(r.pharmacyLocation); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [workloadRecords]);
 
   const uniquePharmacists = React.useMemo(() => {
     const set = new Set<string>();
-    const baseSource = activeReportType === 'standard' 
-      ? workloadRecords.filter(r => r.isMismatch)
-      : brandVsGenericRecords;
-    baseSource.forEach(r => {
+    workloadRecords.forEach(r => {
       if (r.actionPersonnelPharmacy) {
         if (selectedLocation === 'all' || isLocationMatches(r.pharmacyLocation, selectedLocation)) {
           set.add(r.actionPersonnelPharmacy);
         }
       }
     });
-    return Array.from(set);
-  }, [workloadRecords, brandVsGenericRecords, activeReportType, selectedLocation]);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [workloadRecords, selectedLocation]);
 
   // Reset selectedPharmacist if it's no longer present in the updated unique list
   React.useEffect(() => {

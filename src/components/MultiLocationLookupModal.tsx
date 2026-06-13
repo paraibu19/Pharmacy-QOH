@@ -99,13 +99,13 @@ export default function MultiLocationLookupModal({
 
             {/* comparison cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {otherLocationsData.map(({ pharm, match, isCurrent }) => {
+              {otherLocationsData.map(({ pharm, match, isCurrent }, idx) => {
                 const hasItem = !!match;
                 const qoh = match ? match.qoh : 0;
                 
                 return (
                   <div
-                    key={pharm.id}
+                    key={`${pharm.id}-${idx}`}
                     className={`p-4 rounded-2xl border transition-all flex flex-col justify-between min-h-[160px] relative text-left ${
                       isCurrent 
                         ? 'border-[#F27D26] bg-[#F27D26]/[0.02] shadow-sm shadow-[#F27D26]/5' 
