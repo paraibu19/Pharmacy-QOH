@@ -516,10 +516,34 @@ export default function AdminEntryMistakes() {
 
   // Matches item configurations by location
   const isLocationMatches = (loc1: string, loc2: string): boolean => {
-    const clean1 = loc1.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const clean2 = loc2.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const clean1 = (loc1 || '').toLowerCase().trim();
+    const clean2 = (loc2 || '').toLowerCase().trim();
     if (!clean1 || !clean2) return false;
-    return clean1 === clean2 || clean1.includes(clean2) || clean2.includes(clean1);
+
+    const stripChars = (val: string) => val.replace(/[^a-z0-9]/g, '');
+    const stripped1 = stripChars(clean1);
+    const stripped2 = stripChars(clean2);
+
+    // Direct match or exact substring matches
+    if (stripped1 === stripped2 || stripped1.includes(stripped2) || stripped2.includes(stripped1)) {
+      return true;
+    }
+
+    // Standard group resolution mapping to support matching database location keys to daily report location strings
+    const resolveGroup = (val: string): string => {
+      if (val.includes('pediatric') || val.includes('peds') || val.includes('child') || val.includes('ped')) {
+        return 'pediatric';
+      }
+      if (val.includes('mesaieed') || val.includes('mesai') || val.includes('msd') || val.includes('mes')) {
+        return 'mesaieed';
+      }
+      if (val.includes('adult') || val.includes('emergency') || val.includes('male') || val.includes('main') || val.includes('ip') || val.includes('opd')) {
+        return 'adult';
+      }
+      return val;
+    };
+
+    return resolveGroup(clean1) === resolveGroup(clean2);
   };
 
   // Parses sheet dynamically by locating the correct row containing header labels
