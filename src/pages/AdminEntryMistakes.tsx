@@ -531,16 +531,50 @@ export default function AdminEntryMistakes() {
 
     // Standard group resolution mapping to support matching database location keys to daily report location strings
     const resolveGroup = (val: string): string => {
-      if (val.includes('pediatric') || val.includes('peds') || val.includes('child') || val.includes('ped')) {
+      const cleanVal = val.toLowerCase().trim();
+      
+      // 1. Pediatric Check
+      if (
+        cleanVal.includes('pediatric') || 
+        cleanVal.includes('ped') || 
+        cleanVal.includes('peds') || 
+        cleanVal.includes('child') || 
+        cleanVal.includes('kids') ||
+        cleanVal.includes('infant')
+      ) {
         return 'pediatric';
       }
-      if (val.includes('mesaieed') || val.includes('mesai') || val.includes('msd') || val.includes('mes')) {
+      
+      // 2. Mesaieed Check
+      if (
+        cleanVal.includes('mesaieed') || 
+        cleanVal.includes('mesai') || 
+        cleanVal.includes('msd') || 
+        cleanVal.includes('mes')
+      ) {
         return 'mesaieed';
       }
-      if (val.includes('adult') || val.includes('emergency') || val.includes('male') || val.includes('main') || val.includes('ip') || val.includes('opd')) {
+      
+      // 3. Adult / Emergency / General Check
+      if (
+        cleanVal.includes('adult') || 
+        cleanVal.includes('emergency') || 
+        cleanVal.includes('male') || 
+        cleanVal.includes('main') || 
+        cleanVal.includes('ip') || 
+        cleanVal.includes('opd') ||
+        cleanVal.includes('a&e') ||
+        cleanVal.includes('ae') ||
+        cleanVal.includes('er') ||
+        cleanVal.includes('acc') ||
+        cleanVal.includes('trauma') ||
+        cleanVal.includes('general') ||
+        cleanVal.includes('casualty')
+      ) {
         return 'adult';
       }
-      return val;
+      
+      return cleanVal;
     };
 
     return resolveGroup(clean1) === resolveGroup(clean2);
