@@ -85,6 +85,7 @@ export default function AdminDashboard() {
   const [skippedUploads, setSkippedUploads] = useState<string[]>([]);
   const [showCorrectionModal, setShowCorrectionModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [isExportingAllDb, setIsExportingAllDb] = useState(false);
 
   const handleSourcingToggle = (type: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp') => {
     const isCurrentlyActive = showSourcingTransferOnly && sourcingReportType === type;
@@ -709,6 +710,182 @@ export default function AdminDashboard() {
     for (let i = 0; i < locs.length; i++) {
       downloadFullLocationPDF(locs[i]);
       await new Promise(resolve => setTimeout(resolve, 350));
+    }
+  };
+
+  const downloadCompleteDatabaseExcel = async () => {
+    setIsExportingAllDb(true);
+    setSuccess(null);
+    setError(null);
+    try {
+      // 1. Fetch Medications
+      let medsList: Medication[] = [];
+      if (db) {
+        const snap = await getDocs(collection(db, 'medications'));
+        snap.forEach(docSnap => {
+          medsList.push({ id: docSnap.id, ...docSnap.data() } as Medication);
+        });
+      } else {
+        medsList = await sharedDb.getMedications();
+      }
+      if (medsList.length === 0 && allMedications && allMedications.length > 0) {
+        medsList = allMedications;
+      }
+
+      // 2. Fetch Audits
+      let auditsList: any[] = [];
+      if (db) {
+        const snap = await getDocs(collection(db, 'inventory_audits'));
+        snap.forEach(docSnap => {
+          auditsList.push({ id: docSnap.id, ...docSnap.data() });
+        });
+      } else {
+        auditsList = await sharedDb.getAudits();
+      }
+      
+      // Sort audits descending by date
+      auditsList.sort((a, b) => {
+        const timeA = a.auditedAt ? (typeof a.auditedAt.toDate === 'function' ? a.auditedAt.toDate().getTime() : new Date(a.auditedAt).getTime()) : 0;
+        const timeB = b.auditedAt ? (typeof b.auditedAt.toDate === 'function' ? b.auditedAt.toDate().getTime() : new Date(b.auditedAt).getTime()) : 0;
+        return timeB - timeA;
+      });
+
+      // 3. Fetch Mismatch Rules / Pharmacists
+      let paramsList: any[] = [];
+      let pharmaList: any[] = [];
+      try {
+        const res = await fetch('/api/entry-mistakes/db');
+        if (res.ok) {
+          const data = await res.json();
+          paramsList = data.parameters || [];
+          pharmaList = data.pharmacists || [];
+        }
+      } catch (e) {
+        console.warn("Error fetching entry mistakes parameters", e);
+      }
+
+      // Create new workbook
+      const wb = XLSX.utils.book_new();
+
+      // --- SHEET 1: Medications ---
+      const medHeaders = [
+        'ID', 'Item Code', 'Item Name', 'Generic Name', 'Pharmacy Location ID', 'Pharmacy Location Name', 
+        'QOH', 'Min Qty', 'Max Qty', 'Consumption', 'Sourcing Transfer (To)', 'Is Refrigerated',
+        'Expiration 1', 'Expiration 2', 'Expiration 3', 'Original Expiry 1', 'Original Expiry 2', 'Original Expiry 3',
+        'Qatari Classification', 'Restricted Status', 
+        'Indications (En)', 'Indications (Ar)', 'Indications (Hi)', 'Indications (Ur)', 'Indications (Ml)', 'Indications (Bn)', 'Indications (Tl)',
+        'Is Rearranged', 'Last Updated At', 'Updated By'
+      ];
+      const medRows = medsList.map(m => [
+        m.id || '',
+        m.itemCode || '',
+        m.itemName || '',
+        m.generic || '-',
+        m.locationId || '',
+        PHARMACY_NAMES[m.locationId as PharmacyLocation] || m.locationId || '',
+        m.qoh !== undefined ? m.qoh : 0,
+        m.minQty || 0,
+        m.maxQty || 0,
+        m.consumption || 0,
+        m.to || '-',
+        m.isRefrigerated ? 'Yes' : 'No',
+        m.expiration1 || '-',
+        m.expiration2 || '-',
+        m.expiration3 || '-',
+        m.originalExp1 || '-',
+        m.originalExp2 || '-',
+        m.originalExp3 || '-',
+        m.qatari || 'Non-Qatari',
+        m.restriction || 'Standard',
+        m.enIndications || '-',
+        m.arIndications || '-',
+        m.hiIndications || '-',
+        m.urIndications || '-',
+        m.mlIndications || '-',
+        m.bnIndications || '-',
+        m.tlIndications || '-',
+        m.wasRearranged ? 'Yes' : 'No',
+        m.lastUpdatedAt || m.addedAt || '-',
+        m.updatedBy || '-'
+      ]);
+      const wsMeds = XLSX.utils.aoa_to_sheet([medHeaders, ...medRows]);
+      XLSX.utils.book_append_sheet(wb, wsMeds, "Inventory_Medications");
+
+      // --- SHEET 2: Audit Logs ---
+      const auditHeaders = [
+        'Audit ID', 'Item Code', 'Item Name', 'Location ID', 'Location Name', 
+        'Physical Count', 'Recorded QOH', 'Variance', 'Audited At', 'Audited By'
+      ];
+      const auditRows = auditsList.map(a => {
+        let auditDateStr = '-';
+        if (a.auditedAt) {
+          if (typeof a.auditedAt.toDate === 'function') {
+            auditDateStr = format(a.auditedAt.toDate(), 'yyyy-MM-dd HH:mm:ss');
+          } else {
+            auditDateStr = format(new Date(a.auditedAt), 'yyyy-MM-dd HH:mm:ss');
+          }
+        }
+        return [
+          a.id || '',
+          a.itemCode || '',
+          a.itemName || '',
+          a.locationId || '',
+          PHARMACY_NAMES[a.locationId as PharmacyLocation] || a.locationId || '',
+          a.physicalCount !== undefined ? a.physicalCount : 0,
+          a.recordedQoh !== undefined ? a.recordedQoh : 0,
+          a.variance !== undefined ? a.variance : 0,
+          auditDateStr,
+          a.auditedBy || 'System'
+        ];
+      });
+      const wsAudits = XLSX.utils.aoa_to_sheet([auditHeaders, ...auditRows]);
+      XLSX.utils.book_append_sheet(wb, wsAudits, "Inventory_Audits");
+
+      // --- SHEET 3: Mismatch Parameters ---
+      const paramHeaders = ['Pharmacy Location', 'Item Number', 'Label Description', 'Allowed Quantities'];
+      const paramRows = paramsList.map(p => [
+        p.pharmacyLocation || '',
+        p.itemNumber || '',
+        p.labelDescription || '',
+        Array.isArray(p.allowedQuantities) ? p.allowedQuantities.join(', ') : String(p.allowedQuantities || '')
+      ]);
+      const wsParams = XLSX.utils.aoa_to_sheet([paramHeaders, ...paramRows]);
+      XLSX.utils.book_append_sheet(wb, wsParams, "Mismatch_Parameters");
+
+      // --- SHEET 4: Pharmacists List ---
+      const pharmaHeaders = ['Employee Name', 'Username / Initials'];
+      const pharmaRows = pharmaList.map(p => [
+        p.pharmacistName || '',
+        p.username || ''
+      ]);
+      const wsPharma = XLSX.utils.aoa_to_sheet([pharmaHeaders, ...pharmaRows]);
+      XLSX.utils.book_append_sheet(wb, wsPharma, "Pharmacists_Roster");
+
+      // --- SHEET 5: Database Metadata Info ---
+      const metaHeaders = ['Database Key / Parameter', 'Value'];
+      const metaRows = [
+        ['Database Export Host', window.location.origin],
+        ['Database Storage Engine', db ? 'Firebase Firestore (Cloud)' : 'Server Storage (Local Disk JSON)'],
+        ['Export Timestamp (UTC)', new Date().toISOString()],
+        ['Export Local Time', format(new Date(), 'EEEE, dd-MM-yyyy hh:mm a')],
+        ['Total Medications Records', medsList.length],
+        ['Total Audits/Variances logged', auditsList.length],
+        ['Total Mismatch Parameters configured', paramsList.length],
+        ['Total Pharmacists registered', pharmaList.length],
+        ['Mesaieed OPD Pharmacy Hidden state', isMesaieedHidden ? 'Hidden' : 'Visible'],
+        ['Last System Update timestamp', lastUpdate || 'N/A']
+      ];
+      const wsMeta = XLSX.utils.aoa_to_sheet([metaHeaders, ...metaRows]);
+      XLSX.utils.book_append_sheet(wb, wsMeta, "Database_Metadata");
+
+      // Save workbook to file
+      XLSX.writeFile(wb, `App_Database_Full_Export_${format(new Date(), 'yyyy-MM-dd_HHmmss')}.xlsx`);
+      setSuccess("Application Database fully compiled and downloaded successfully!");
+    } catch (err: any) {
+      console.error(err);
+      setError(`Failed to compile application database export: ${err.message || err}`);
+    } finally {
+      setIsExportingAllDb(false);
     }
   };
 
@@ -3623,6 +3800,40 @@ export default function AdminDashboard() {
           >
             <ClipboardList className="w-3.5 h-3.5" />
             Brand vs Generic Report
+          </button>
+        </div>
+      </div>
+
+      {/* Complete Application Database Export */}
+      <div className="bg-gradient-to-br from-emerald-50 to-teal-50/40 border border-emerald-500/15 p-6 rounded-3xl mb-4 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-emerald-900 flex items-center gap-2">
+                Unified Application Database Backup
+              </h3>
+            </div>
+            <p className="text-emerald-800/70 text-[11px] mt-0.5 font-medium">
+              Download the entire repository of the application in a single multi-sheet Excel file. This backup includes all live medications inventory databases, logs of physical audits and variances, system-wide mismatch parameters config, and the registered pharmacists team roster.
+            </p>
+          </div>
+          <button
+            onClick={downloadCompleteDatabaseExcel}
+            disabled={isExportingAllDb}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer self-start md:self-center"
+          >
+            {isExportingAllDb ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                <span>Compiling Database...</span>
+              </>
+            ) : (
+              <>
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
+                <span>Download Entire Database (Excel)</span>
+              </>
+            )}
           </button>
         </div>
       </div>
