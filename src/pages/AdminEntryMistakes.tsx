@@ -516,15 +516,18 @@ export default function AdminEntryMistakes() {
 
   // Matches item configurations by location
   const isLocationMatches = (loc1: string, loc2: string): boolean => {
-    const clean1 = (loc1 || '').toLowerCase().trim();
-    const clean2 = (loc2 || '').toLowerCase().trim();
+    const clean1 = (loc1 || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
+    const clean2 = (loc2 || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
     if (!clean1 || !clean2) return false;
+
+    // Direct comparison
+    if (clean1 === clean2) return true;
 
     const stripChars = (val: string) => val.replace(/[^a-z0-9]/g, '');
     const stripped1 = stripChars(clean1);
     const stripped2 = stripChars(clean2);
 
-    // Direct match or exact substring matches
+    // Direct match or exact substring matches of alphanumeric characters
     if (stripped1 === stripped2 || stripped1.includes(stripped2) || stripped2.includes(stripped1)) {
       return true;
     }
@@ -555,7 +558,7 @@ export default function AdminEntryMistakes() {
         return 'mesaieed';
       }
       
-      // 3. Adult / Emergency / General Check
+      // 3. Adult / Emergency / A&E / General Check
       if (
         cleanVal.includes('adult') || 
         cleanVal.includes('emergency') || 
@@ -564,6 +567,9 @@ export default function AdminEntryMistakes() {
         cleanVal.includes('ip') || 
         cleanVal.includes('opd') ||
         cleanVal.includes('a&e') ||
+        cleanVal.includes('a/e') ||
+        cleanVal.includes('a & e') ||
+        cleanVal.includes('a and e') ||
         cleanVal.includes('ae') ||
         cleanVal.includes('er') ||
         cleanVal.includes('acc') ||
