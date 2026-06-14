@@ -514,6 +514,14 @@ export default function AdminEntryMistakes() {
     return '';
   };
 
+  // Strict case and space insensitive match for filtering by user selected location filter
+  const isFilterLocationMatches = (recLoc: string, selectedLoc: string): boolean => {
+    if (!selectedLoc || selectedLoc === 'all') return true;
+    const cleanRec = (recLoc || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
+    const cleanSel = (selectedLoc || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
+    return cleanRec === cleanSel;
+  };
+
   // Matches item configurations by location
   const isLocationMatches = (loc1: string, loc2: string): boolean => {
     const clean1 = (loc1 || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
@@ -877,7 +885,7 @@ export default function AdminEntryMistakes() {
       const reasonMatches = selectedReason === 'all' || rec.reasons.some(r => String(r || '').toLowerCase().includes(selectedReason.toLowerCase()));
 
       // Filter location matches
-      const locationMatches = selectedLocation === 'all' || isLocationMatches(String(rec.pharmacyLocation || ''), selectedLocation);
+      const locationMatches = selectedLocation === 'all' || isFilterLocationMatches(String(rec.pharmacyLocation || ''), selectedLocation);
 
       // Filter pharmacist matches
       const pharmacistMatches = selectedPharmacist === 'all' || String(rec.actionPersonnelPharmacy || '').toLowerCase().trim() === selectedPharmacist.toLowerCase().trim();
@@ -897,7 +905,7 @@ export default function AdminEntryMistakes() {
   // Calculate stats
   const filteredWorkloadForStats = React.useMemo(() => {
     if (selectedLocation === 'all') return workloadRecords;
-    return workloadRecords.filter(rec => isLocationMatches(rec.pharmacyLocation, selectedLocation));
+    return workloadRecords.filter(rec => isFilterLocationMatches(rec.pharmacyLocation, selectedLocation));
   }, [workloadRecords, selectedLocation]);
 
   const totalProcessed = filteredWorkloadForStats.length;
@@ -908,7 +916,7 @@ export default function AdminEntryMistakes() {
 
   const filteredBrandVsGenericForStats = React.useMemo(() => {
     if (selectedLocation === 'all') return brandVsGenericRecords;
-    return brandVsGenericRecords.filter(rec => isLocationMatches(rec.pharmacyLocation, selectedLocation));
+    return brandVsGenericRecords.filter(rec => isFilterLocationMatches(rec.pharmacyLocation, selectedLocation));
   }, [brandVsGenericRecords, selectedLocation]);
 
   const uniqueBrandItemsCount = React.useMemo(() => {
@@ -938,7 +946,7 @@ export default function AdminEntryMistakes() {
 
     baseSource.forEach(rec => {
       // Filter mistakes per the selected pharmacy location
-      if (selectedLocation !== 'all' && !isLocationMatches(rec.pharmacyLocation, selectedLocation)) {
+      if (selectedLocation !== 'all' && !isFilterLocationMatches(rec.pharmacyLocation, selectedLocation)) {
         return;
       }
 
@@ -971,7 +979,7 @@ export default function AdminEntryMistakes() {
     const set = new Set<string>();
     workloadRecords.forEach(r => {
       if (r.actionPersonnelPharmacy) {
-        if (selectedLocation === 'all' || isLocationMatches(r.pharmacyLocation, selectedLocation)) {
+        if (selectedLocation === 'all' || isFilterLocationMatches(r.pharmacyLocation, selectedLocation)) {
           set.add(r.actionPersonnelPharmacy);
         }
       }
