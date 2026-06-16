@@ -35,6 +35,7 @@ const AUDITS_FILE = path.join(DATA_DIR, 'audits.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const TRANSLATION_CACHE_FILE = path.join(DATA_DIR, 'translation_cache.json');
 const ENTRY_MISTAKES_DB_FILE = path.join(DATA_DIR, 'entry_mistakes_db.json');
+const APPLICATION_STORAGE_FILE = path.join(DATA_DIR, 'application_storage.json');
 
 function getTranslationHashSync(text: string): string {
   const clean = (text || '').trim().toLowerCase();
@@ -352,6 +353,102 @@ app.delete('/api/entry-mistakes/db', (req, res) => {
       fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
     }
     res.json({ success: true, configured: false, parameters: [], pharmacists: [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET all stored application mistakes
+app.get('/api/application-storage', (req, res) => {
+  try {
+    if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
+      const data = fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8');
+      res.json(JSON.parse(data));
+    } else {
+      res.json([]);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to save a mismatch mistake to Application Storage
+app.post('/api/application-storage', (req, res) => {
+  try {
+    const item = req.body;
+    let items = [];
+    if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
+      items = JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
+    }
+    
+    // De-duplicate items by id or composite key (mrn + date + itemNumber)
+    const isDup = items.some((x: any) => 
+      x.id === item.id || 
+      (x.mrnOrganization === item.mrnOrganization && 
+       x.actionDateTime === item.actionDateTime && 
+       x.itemNumber === item.itemNumber)
+    );
+    
+    if (!isDup) {
+      items.push({
+        ...item,
+        savedAt: new Date().toISOString()
+      });
+      fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
+    }
+    res.json({ success: true, count: items.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to delete an item (Requires Admin Password in request body)
+app.post('/api/application-storage/delete', (req, res) => {
+  try {
+    const { id, mrnOrganization, actionDateTime, itemNumber, adminPassword } = req.body;
+    
+    // Read and verify password from settings
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    if (adminPassword !== settings.adminPassword) {
+      return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
+    }
+    
+    if (!fs.existsSync(APPLICATION_STORAGE_FILE)) {
+      return res.status(400).json({ error: 'Storage file does not exist.' });
+    }
+    
+    let items = JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
+    const initialCount = items.length;
+    
+    // Filter out item by ID first, or composite key fallback
+    items = items.filter((x: any) => {
+      if (id && x.id === id) return false;
+      if (x.mrnOrganization === mrnOrganization && x.actionDateTime === actionDateTime && x.itemNumber === itemNumber) {
+        return false;
+      }
+      return true;
+    });
+    
+    fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
+    res.json({ success: true, count: items.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to reset entire storage (Requires Admin Password inside body)
+app.post('/api/application-storage/reset', (req, res) => {
+  try {
+    const { adminPassword } = req.body;
+    
+    // Read and verify password from settings
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    if (adminPassword !== settings.adminPassword) {
+      return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
+    }
+    
+    fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

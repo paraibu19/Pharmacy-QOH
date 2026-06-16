@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { sharedDb } from '../lib/sharedDb';
+import { storage, sessionStorage } from '../lib/storage';
 
 export interface AuditLog {
   id: string;
@@ -82,10 +83,10 @@ export function useAudits(maxItems: number = 50) {
 
         if (isQuotaOrDenied || isConnectionError) {
           if (typeof window !== 'undefined') {
-            if (window.localStorage.getItem('firestore_fallback')) {
-              window.localStorage.removeItem('firestore_fallback');
+            if (storage.getItem('firestore_fallback')) {
+              storage.removeItem('firestore_fallback');
             }
-            window.sessionStorage.setItem('firestore_fallback', 'true');
+            sessionStorage.setItem('firestore_fallback', 'true');
             console.warn('Auto-switching useAudits to Local Server database mode.');
             setTimeout(() => {
               window.location.reload();

@@ -2,15 +2,16 @@ import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { storage, sessionStorage } from './storage';
 
 // Check if user manually opted to use Local Server Mode or if Firestore is over quota
 const checkQuotaOver = () => {
   if (typeof window !== 'undefined') {
     // Clear legacy permanent local storage fallback so they aren't stuck across sessions
-    if (window.localStorage.getItem('firestore_fallback') === 'true') {
-      window.localStorage.removeItem('firestore_fallback');
+    if (storage.getItem('firestore_fallback') === 'true') {
+      storage.removeItem('firestore_fallback');
     }
-    return window.sessionStorage.getItem('firestore_fallback') === 'true';
+    return sessionStorage.getItem('firestore_fallback') === 'true';
   }
   return false;
 };
@@ -108,10 +109,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
   if (isQuotaOrDenied || isConnectionError) {
     if (typeof window !== 'undefined') {
-      if (window.localStorage.getItem('firestore_fallback')) {
-        window.localStorage.removeItem('firestore_fallback');
+      if (storage.getItem('firestore_fallback')) {
+        storage.removeItem('firestore_fallback');
       }
-      window.sessionStorage.setItem('firestore_fallback', 'true');
+      sessionStorage.setItem('firestore_fallback', 'true');
       console.warn('Auto-switching to Local Server database mode because of Firestore error/unreachability:', errMsg);
       setTimeout(() => {
         window.location.reload();

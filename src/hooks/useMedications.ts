@@ -3,6 +3,7 @@ import { collection, onSnapshot, query, where, orderBy, getDocsFromCache } from 
 import { db, handleFirestoreError, OperationType, auth } from '../lib/firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from '../lib/sharedDb';
+import { storage, sessionStorage } from '../lib/storage';
 
 export function useMedications(locationId?: PharmacyLocation) {
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -101,10 +102,10 @@ export function useMedications(locationId?: PharmacyLocation) {
 
         if (isQuotaOrDenied || isConnectionError) {
           if (typeof window !== 'undefined') {
-            if (window.localStorage.getItem('firestore_fallback')) {
-              window.localStorage.removeItem('firestore_fallback');
+            if (storage.getItem('firestore_fallback')) {
+              storage.removeItem('firestore_fallback');
             }
-            window.sessionStorage.setItem('firestore_fallback', 'true');
+            sessionStorage.setItem('firestore_fallback', 'true');
             console.warn('Auto-switching useMedications to Local Server database mode.');
             setTimeout(() => {
               window.location.reload();

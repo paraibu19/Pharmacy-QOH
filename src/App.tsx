@@ -9,6 +9,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import AdminInventory from './pages/AdminInventory';
 import AdminExpiryCheck from './pages/AdminExpiryCheck';
 import AdminEntryMistakes from './pages/AdminEntryMistakes';
+import ApplicationStorage from './pages/ApplicationStorage';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { storage } from './lib/storage';
@@ -137,6 +138,15 @@ export default function App() {
           element={
             isAdmin 
               ? <Layout isAdmin onLogout={adminLogout}><AdminEntryMistakes /></Layout> 
+              : <Navigate to="/admin/login" />
+          } 
+        />
+
+        <Route 
+          path="/admin/application-storage" 
+          element={
+            isAdmin 
+              ? <Layout isAdmin onLogout={adminLogout}><ApplicationStorage /></Layout> 
               : <Navigate to="/admin/login" />
           } 
         />

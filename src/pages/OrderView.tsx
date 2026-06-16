@@ -76,7 +76,8 @@ export default function OrderView() {
   const handleSourcingToggle = (type: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp') => {
     const isCurrentlyActive = showSourcingTransferOnly && sourcingReportType === type;
     if (isCurrentlyActive) {
-      // Trigger a force-refresh visual feedback and fetch instead of turning it off
+      setShowSourcingTransferOnly(false);
+      setOrderTarget(1);
       refresh(true);
       if (refreshAll) {
         refreshAll(true).catch(err => console.warn("Background refreshAll error:", err));
@@ -1572,228 +1573,79 @@ export default function OrderView() {
           </button>
         </div>
       )}
-
-      {/* Controls */}
-      <div className="bg-white p-4 md:p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-6">
-        <div className="flex flex-col md:flex-row justify-between gap-4">
-          <div className="flex flex-col gap-4 w-full">
-            {/* Pharmacy Locations Selector - Styled responsive grid */}
-            <div className={`grid grid-cols-1 ${isMesaieedHidden ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-1.5 p-1 bg-[#141414]/5 rounded-2xl w-full md:w-auto`}>
-              {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => (
-                <button
-                  key={loc.id}
-                  onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-                  className={`px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold transition-all text-center select-none ${
-                    selectedLocation === loc.id 
-                      ? loc.id === PharmacyLocation.ADULT
-                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-md shadow-emerald-700/10'
-                        : loc.id === PharmacyLocation.PEDIATRIC
-                          ? 'bg-sky-100 text-sky-700 border border-sky-200 shadow-md shadow-sky-700/10'
-                          : loc.id === PharmacyLocation.MESAIEED
-                            ? 'bg-orange-100 text-orange-700 border border-orange-200 shadow-md shadow-orange-700/10'
-                            : 'bg-[#141414] text-white shadow-lg'
-                      : 'text-[#141414]/50 hover:text-[#141414] hover:bg-white/45'
-                  }`}
-                >
-                  {loc.name.replace('Aw-', '')}
-                </button>
-              ))}
-            </div>
-
-            {/* Other Quick Filters */}
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => handleSourcingToggle('qoh')}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
-                  showSourcingTransferOnly && sourcingReportType === 'qoh'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
-                    : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
-                }`}
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5" />
-                Sourcing: QOH ({sourcingTransferCount})
-              </button>
-              <button
-                onClick={() => handleSourcingToggle('current_exp')}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
-                  showSourcingTransferOnly && sourcingReportType === 'current_exp'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
-                    : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                Sourcing: Exp1 Current Month ({currentExpSourcingCount})
-              </button>
-              <button
-                onClick={() => handleSourcingToggle('next_exp')}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
-                  showSourcingTransferOnly && sourcingReportType === 'next_exp'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
-                    : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                Sourcing: Exp1 Next Month ({nextExpSourcingCount})
-              </button>
-              <button
-                onClick={() => handleSourcingToggle('after_next_exp')}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border ${
-                  showSourcingTransferOnly && sourcingReportType === 'after_next_exp'
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg ring-2 ring-emerald-600/20' 
-                    : 'bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-100 shadow-sm'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                Sourcing: Exp1 Month After Next ({afterNextExpSourcingCount})
-              </button>
-              <button
-                onClick={() => {
-                  setTypeFilter(prev => prev === 'generic' ? null : 'generic');
-                }}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  typeFilter === 'generic' 
-                    ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
-                    : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100 shadow-sm'
-                }`}
-              >
-                <Sparkles className="w-3 h-3" />
-                Available Generics ({availableGenericsCount})
-              </button>
-              <button
-                onClick={() => {
-                  setTypeFilter(prev => prev === 'brand' ? null : 'brand');
-                }}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  typeFilter === 'brand' 
-                    ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
-                    : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100 shadow-sm'
-                }`}
-              >
-                <Sparkles className="w-3 h-3" />
-                Available Brands ({availableBrandsCount})
-              </button>
-              <button
-                onClick={() => {
-                  setTypeFilter(prev => prev === 'non-generic-and-non-brand' ? null : 'non-generic-and-non-brand');
-                }}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  typeFilter === 'non-generic-and-non-brand' 
-                    ? 'bg-purple-600 text-white shadow-lg ring-2 ring-purple-600/20' 
-                    : 'bg-purple-50 text-purple-700 border border-purple-100 hover:bg-purple-100 shadow-sm'
-                }`}
-              >
-                <Sparkles className="w-3 h-3" />
-                Non-Generic & Non-Brand ({availableNonGenericAndNonBrandCount})
-              </button>
-              <button
-                onClick={() => {
-                  setRefFilter(prev => prev === 'refrigerated' ? 'all' : 'refrigerated');
-                }}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  refFilter === 'refrigerated' 
-                    ? 'bg-blue-400 text-white shadow-lg ring-2 ring-blue-400/20' 
-                    : 'bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 shadow-sm'
-                }`}
-              >
-                <ThermometerSnowflake className="w-3.5 h-3.5" />
-                Ref ({filterCounts.refrigerated})
-              </button>
-              <button
-                onClick={() => {
-                  setRefFilter(prev => prev === 'non-refrigerated' ? 'all' : 'non-refrigerated');
-                }}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  refFilter === 'non-refrigerated' 
-                    ? 'bg-cyan-500 text-white shadow-lg ring-2 ring-cyan-500/20' 
-                    : 'bg-cyan-50 text-cyan-700 border border-cyan-100 hover:bg-cyan-100 shadow-sm'
-                }`}
-              >
-                <ThermometerSnowflake className="w-3.5 h-3.5" />
-                Non-Ref ({filterCounts.nonRefrigerated})
-              </button>
-              <button
-                onClick={() => {
-                  setConsumptionFilter(prev => prev === 'zero' ? 'all' : 'zero');
-                }}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  consumptionFilter === 'zero' 
-                    ? 'bg-slate-700 text-white shadow-lg ring-2 ring-slate-700/20' 
-                    : 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 shadow-sm'
-                }`}
-              >
-                <Sparkles className="w-3 h-3" />
-                0 Consumption ({filterCounts.zeroConsumption})
-              </button>
-              <button
-                onClick={() => {
-                  setConsumptionFilter(prev => prev === 'positive' ? 'all' : 'positive');
-                }}
-                className={`px-4 md:px-6 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 ${
-                  consumptionFilter === 'positive' 
-                    ? 'bg-lime-600 text-white shadow-lg ring-2 ring-lime-600/20' 
-                    : 'bg-lime-50 text-lime-700 border border-lime-100 hover:bg-lime-100 shadow-sm'
-                }`}
-              >
-                <Sparkles className="w-3 h-3" />
-                &gt; 0 Consumption ({filterCounts.positiveConsumption})
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 whitespace-nowrap ml-1">Order Target:</span>
-              <div className="flex bg-[#141414]/5 p-1 rounded-2xl border border-[#141414]/5 overflow-x-auto no-scrollbar">
-                {[
-                  { label: 'All', value: 0, count: medications.length },
-                  { label: 'Full', value: 1, count: targetCounts.full },
-                  { label: '70%', value: 0.7, count: targetCounts.seventy },
-                  { label: '50%', value: 0.5, count: targetCounts.fifty }
-                ].map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setOrderTarget(opt.value)}
-                    className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
-                      orderTarget === opt.value
-                        ? 'bg-[#F27D26] text-white shadow-md'
-                        : 'text-[#141414]/40 hover:text-[#141414]'
-                    }`}
-                  >
-                    {opt.label}
-                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] ${
-                      orderTarget === opt.value ? 'bg-white/20' : 'bg-[#141414]/10'
-                    }`}>
-                      {opt.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+             {/* Section 1: Location & Department Scope Selection */}
+      <div className="bg-white p-5 md:p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#141414]/5 pb-4">
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold text-[#F27D26] uppercase tracking-widest block font-mono">DEPARTMENT SCOPE</span>
+            <h2 className="text-base font-black text-[#141414] uppercase tracking-wider">Pharmacy Location Selection</h2>
+            <p className="text-[11px] text-[#141414]/50 font-medium">Select a dispensary segment to browse and analyze store stock or build automatic orders.</p>
           </div>
-
-          <div className="flex items-start">
-            <button 
-              onClick={() => setShowFilters(!showFilters)}
-              className={`w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
-                showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter !== 'all' || expStart || expEnd || orderTarget !== 1
-                ? 'bg-[#F27D26] text-white shadow-lg'
-                : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
-              }`}
-            >
-              <Filter className="w-4 h-4" />
-              {showFilters ? 'Hide' : 'Filters'}
-            </button>
+          <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold px-3 py-1.5 bg-[#141414]/5 rounded-xl border border-[#141414]/10 text-[#141414]/60">
+            <MapPin className="w-3.5 h-3.5 text-[#F27D26]" />
+            <span>Scope: {PHARMACY_NAMES[selectedLocation].toUpperCase()}</span>
           </div>
         </div>
 
+        {/* Pharmacy Locations Selector - Styled responsive grid */}
+        <div className={`grid grid-cols-1 ${isMesaieedHidden ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full`}>
+          {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => {
+            const isActive = selectedLocation === loc.id;
+            return (
+              <button
+                key={loc.id}
+                onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
+                className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all text-center select-none flex items-center justify-center gap-2 ${
+                  isActive 
+                    ? loc.id === PharmacyLocation.ADULT
+                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 shadow-sm'
+                      : loc.id === PharmacyLocation.PEDIATRIC
+                        ? 'bg-sky-100 text-sky-700 border border-sky-300 shadow-sm'
+                        : loc.id === PharmacyLocation.MESAIEED
+                          ? 'bg-orange-100 text-orange-700 border border-orange-300 shadow-sm'
+                          : 'bg-[#141414] text-white shadow-lg'
+                    : 'bg-white text-[#141414]/50 hover:text-[#141414] hover:bg-white/80 border border-[#141414]/5'
+                }`}
+              >
+                <MapPin className={`w-3.5 h-3.5 opacity-70 ${isActive ? 'animate-bounce' : ''}`} />
+                {loc.name.replace('Aw-', '')}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Section 2: Catalog Search & Multi-Criteria Filtering */}
+      <div className="bg-white p-5 md:p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#141414]/5 pb-3">
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold text-[#F27D26] uppercase tracking-widest block font-mono">CATALOG QUERY</span>
+            <h2 className="text-base font-black text-[#141414] uppercase tracking-wider">Inventory Search Hub</h2>
+          </div>
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+              showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter !== 'all' || expStart || expEnd
+              ? 'bg-[#F27D26] text-white border-transparent shadow-md'
+              : 'bg-[#141414]/5 text-[#141414]/60 border-transparent hover:bg-[#141414]/10'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            {showFilters ? 'Hide Advanced Filters' : 'Show Advanced Filters'}
+          </button>
+        </div>
+
+        {/* Search Field */}
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#141414]/30" />
           <input 
             type="text"
-            placeholder="Search name or code..."
+            placeholder="Search medications by name, brand, generic, or item code..."
             value={searchQuery}
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-12 py-4 bg-[#141414]/[0.03] border border-transparent rounded-2xl focus:ring-2 focus:ring-[#F27D26]/20 transition-all text-sm font-medium"
+            className="w-full pl-12 pr-12 py-4 bg-[#141414]/[0.02] border border-[#141414]/10 rounded-2xl focus:ring-2 focus:ring-[#F27D26]/20 focus:border-[#F27D26]/30 focus:bg-white transition-all text-sm font-semibold text-[#141414]"
           />
           {searchQuery && (
             <button
@@ -1810,7 +1662,7 @@ export default function OrderView() {
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#141414]/10 rounded-xl shadow-xl z-50 overflow-hidden"
+                className="absolute left-0 right-0 top-full mt-2 bg-white border border-[#141414]/10 rounded-2xl shadow-xl z-50 overflow-hidden"
               >
                 {suggestions.map((s, idx) => (
                   <button
@@ -1819,7 +1671,7 @@ export default function OrderView() {
                       setSearchQuery(s.itemName);
                       setShowSuggestions(false);
                     }}
-                    className="w-full px-4 py-3 text-left hover:bg-[#141414]/5 flex items-center justify-between transition-colors border-b border-[#141414]/5 last:border-0"
+                    className="w-full px-5 py-3 text-left hover:bg-[#141414]/5 flex items-center justify-between transition-colors border-b border-[#141414]/5 last:border-0"
                   >
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
@@ -1837,48 +1689,49 @@ export default function OrderView() {
           </AnimatePresence>
         </div>
 
+        {/* Advanced Filters Block */}
         <AnimatePresence>
           {showFilters && (
             <motion.div 
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden mb-4"
+              className="overflow-hidden"
             >
-              <div className="flex flex-col gap-5 bg-[#141414]/[0.02] p-5 rounded-2xl border border-[#141414]/10 shadow-sm">
+              <div className="flex flex-col gap-6 bg-[#141414]/[0.01] p-5 rounded-2xl border border-[#141414]/10 mt-2">
                 
-                {/* Row 1: Filter Categories */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* Advanced Grid Categories */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   
-                  {/* Stock Status Category */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">Stock Status</span>
-                    <div className="flex flex-wrap gap-1.5">
+                  {/* Stock Status Box */}
+                  <div className="bg-white p-4 rounded-xl border border-[#141414]/5 space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Stock Status</span>
+                    <div className="flex flex-wrap gap-1.5 flex-1">
                       <button
                         onClick={() => setStockFilter('all')}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                           stockFilter === 'all'
-                            ? 'bg-[#141414] text-white border-[#141414]'
-                            : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                            ? 'bg-[#141414] text-white border-transparent'
+                            : 'bg-[#141414]/5 text-[#141414]/65 border-transparent hover:bg-[#141414]/10'
                         }`}
                       >
                         All ({filterCounts.all})
                       </button>
                       
                       {[
-                        { id: 'in', label: 'In Stock', count: filterCounts.inStock, activeColor: 'bg-emerald-500 text-white border-emerald-500' },
-                        { id: 'low', label: 'Low Stock', count: filterCounts.lowStock, activeColor: 'bg-amber-500 text-white border-amber-500' },
-                        { id: 'out', label: 'Out of Stock', count: filterCounts.outOfStock, activeColor: 'bg-red-500 text-white border-red-500' }
+                        { id: 'in', label: 'In Stock', count: filterCounts.inStock, activeColor: 'bg-emerald-600 text-white' },
+                        { id: 'low', label: 'Low Stock', count: filterCounts.lowStock, activeColor: 'bg-amber-500 text-white' },
+                        { id: 'out', label: 'Out of Stock', count: filterCounts.outOfStock, activeColor: 'bg-red-650 text-white' }
                       ].map((f) => {
                         const active = stockFilter === f.id;
                         return (
                           <button
                             key={f.id}
                             onClick={() => setStockFilter(f.id as any)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
                               active
                                 ? f.activeColor
-                                : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                                : 'bg-[#141414]/5 text-[#141414]/60 border-transparent hover:bg-[#141414]/10'
                             }`}
                           >
                             {f.label} ({f.count})
@@ -1888,13 +1741,13 @@ export default function OrderView() {
                     </div>
                   </div>
 
-                  {/* Classification Category */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Classification</span>
+                  {/* Classification Box */}
+                  <div className="bg-white p-4 rounded-xl border border-[#141414]/5 space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Classification</span>
                     <div className="flex flex-wrap gap-1.5">
                       {[
-                        { id: 'qatari', label: 'Qatari', count: filterCounts.qatari, activeColor: 'bg-[#F27D26] text-white border-[#F27D26]' },
-                        { id: 'restricted', label: 'Restricted', count: filterCounts.restricted, activeColor: 'bg-blue-500 text-white border-blue-500' }
+                        { id: 'qatari', label: 'Qatari', count: filterCounts.qatari, activeColor: 'bg-[#F27D26] text-white' },
+                        { id: 'restricted', label: 'Restricted', count: filterCounts.restricted, activeColor: 'bg-blue-600 text-white' }
                       ].map((f) => {
                         const active = classificationFilter === f.id;
                         return (
@@ -1903,10 +1756,10 @@ export default function OrderView() {
                             onClick={() => {
                               setClassificationFilter(prev => prev === f.id ? null : f.id as any);
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
                               active
                                 ? f.activeColor
-                                : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                                : 'bg-[#141414]/5 text-[#141414]/60 border-transparent hover:bg-[#141414]/10'
                             }`}
                           >
                             {f.label} ({f.count})
@@ -1916,14 +1769,14 @@ export default function OrderView() {
                     </div>
                   </div>
 
-                  {/* Type Category */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Type</span>
+                  {/* Type Box */}
+                  <div className="bg-white p-4 rounded-xl border border-[#141414]/5 space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Formula Type</span>
                     <div className="flex flex-wrap gap-1.5">
                       {[
-                        { id: 'generic', label: 'Generics', count: filterCounts.generics, activeColor: 'bg-yellow-500 text-white border-yellow-500' },
-                        { id: 'brand', label: 'Brands', count: filterCounts.brands, activeColor: 'bg-orange-500 text-white border-orange-500' },
-                        { id: 'non-generic-and-non-brand', label: 'Non-Generic & Non-Brand', count: filterCounts.nonGenericAndNonBrand, activeColor: 'bg-purple-600 text-white border-purple-600' }
+                        { id: 'generic', label: 'Generics', count: filterCounts.generics, activeColor: 'bg-yellow-500 text-white' },
+                        { id: 'brand', label: 'Brands', count: filterCounts.brands, activeColor: 'bg-orange-500 text-white' },
+                        { id: 'non-generic-and-non-brand', label: 'Others', count: filterCounts.nonGenericAndNonBrand, activeColor: 'bg-purple-600 text-white' }
                       ].map((f) => {
                         const active = typeFilter === f.id;
                         return (
@@ -1932,10 +1785,10 @@ export default function OrderView() {
                             onClick={() => {
                               setTypeFilter(prev => prev === f.id ? null : f.id as any);
                             }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
                               active
                                 ? f.activeColor
-                                : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                                : 'bg-[#141414]/5 text-[#141414]/60 border-transparent hover:bg-[#141414]/10'
                             }`}
                           >
                             {f.label} ({f.count})
@@ -1945,117 +1798,262 @@ export default function OrderView() {
                     </div>
                   </div>
 
-                  {/* Refrigeration (Ref) Category */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Storage</span>
+                  {/* Storage Method Box */}
+                  <div className="bg-white p-4 rounded-xl border border-[#141414]/5 space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Storage Requirements</span>
                     <div className="flex flex-wrap gap-1.5">
                       <button
                         onClick={() => setRefFilter(prev => prev === 'refrigerated' ? 'all' : 'refrigerated')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1.5 ${
                           refFilter === 'refrigerated'
-                            ? 'bg-blue-500 text-white border-blue-500'
-                            : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                            ? 'bg-blue-600 text-white font-bold'
+                            : 'bg-[#141414]/5 text-[#141414]/60 border-transparent hover:bg-[#141414]/10'
                         }`}
                       >
-                        <ThermometerSnowflake className="w-3 h-3" />
-                        Ref Storage ({filterCounts.refrigerated})
+                        <ThermometerSnowflake className="w-3.5 h-3.5" />
+                        Refrigerated ({filterCounts.refrigerated})
                       </button>
                       <button
                         onClick={() => setRefFilter(prev => prev === 'non-refrigerated' ? 'all' : 'non-refrigerated')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1.5 ${
                           refFilter === 'non-refrigerated'
-                            ? 'bg-[#06B6D4] text-white border-[#06B6D4]'
-                            : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-[#141414]/5 text-[#141414]/60 border-transparent hover:bg-[#141414]/10'
                         }`}
                       >
-                        <ThermometerSnowflake className="w-3 h-3" />
-                        Non-Ref Storage ({filterCounts.nonRefrigerated})
+                        <ThermometerSnowflake className="w-3.5 h-3.5" />
+                        Ambient ({filterCounts.nonRefrigerated})
                       </button>
                     </div>
                   </div>
 
-                  {/* Consumption Category */}
-                  <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">Consumption</span>
+                  {/* Consumptions Box */}
+                  <div className="bg-white p-4 rounded-xl border border-[#141414]/5 space-y-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Usage Constraints</span>
                     <div className="flex flex-wrap gap-1.5">
                       <button
                         onClick={() => setConsumptionFilter(prev => prev === 'zero' ? 'all' : 'zero')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1.5 ${
                           consumptionFilter === 'zero'
-                            ? 'bg-slate-700 text-white border-slate-700'
-                            : 'bg-white text-[#141414]/65 border-[#141414]/10 hover:bg-[#141414]/5'
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-[#141414]/5 text-[#141414]/60 border-transparent hover:bg-[#141414]/10'
                         }`}
                       >
-                        <Sparkles className="w-3 h-3" />
+                        <Sparkles className="w-3.5 h-3.5" />
                         0 Consumption ({filterCounts.zeroConsumption})
                       </button>
                       <button
                         onClick={() => setConsumptionFilter(prev => prev === 'positive' ? 'all' : 'positive')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1.5 ${
                           consumptionFilter === 'positive'
-                            ? 'bg-lime-600 text-white border-lime-600'
-                            : 'bg-white text-[#141414]/56 border-[#141414]/10 hover:bg-[#141414]/5'
+                            ? 'bg-lime-600 text-white'
+                            : 'bg-[#141414]/5 text-[#141414]/56 border-transparent hover:bg-[#141414]/10'
                         }`}
                       >
-                        <Sparkles className="w-3 h-3" />
+                        <Sparkles className="w-3.5 h-3.5" />
                         &gt; 0 Consumption ({filterCounts.positiveConsumption})
                       </button>
                     </div>
                   </div>
 
+                  {/* Expiry Range Selection Box */}
+                  <div className="bg-white p-4 rounded-xl border border-[#141414]/5 space-y-2 shadow-xs">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Expiry date limit bounds</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[8px] font-black uppercase text-[#141414]/40">Start Date</label>
+                        <input
+                          type="date"
+                          value={expStart}
+                          onChange={(e) => setExpStart(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-[#141414]/5 border border-[#141414]/10 rounded-lg text-[11px] font-bold text-[#141414]/80"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[8px] font-black uppercase text-[#141414]/40">End Date</label>
+                        <input
+                          type="date"
+                          value={expEnd}
+                          onChange={(e) => setExpEnd(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-[#141414]/5 border border-[#141414]/10 rounded-lg text-[11px] font-bold text-[#141414]/80"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
 
-                {/* Row 2: Expiry & Reset */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-[#141414]/5">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">
-                      Exp. Range (Start)
-                    </label>
-                    <input
-                      type="date"
-                      value={expStart}
-                      onChange={(e) => setExpStart(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-medium text-[#141414]/80"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 font-sans">
-                      Exp. Range (End)
-                    </label>
-                    <input
-                      type="date"
-                      value={expEnd}
-                      onChange={(e) => setExpEnd(e.target.value)}
-                      className="w-full px-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-sm focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-medium text-[#141414]/80"
-                    />
-                  </div>
-
-                  <div className="flex items-end">
-                    <button
-                      onClick={() => {
-                        setStockFilter('all');
-                        setClassificationFilter(null);
-                        setTypeFilter(null);
-                        setRefFilter('all');
-                        setConsumptionFilter('all');
-                        setExpStart('');
-                        setExpEnd('');
-                        setSearchQuery('');
-                        setOrderTarget(1);
-                      }}
-                      className="w-full h-10 flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 rounded-xl text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
-                    >
-                      <XIcon className="w-4 h-4" />
-                      Reset All Filters
-                    </button>
-                  </div>
+                {/* Reset Filters Option bar */}
+                <div className="flex justify-end pt-3 border-t border-[#141414]/5">
+                  <button
+                    onClick={() => {
+                      setStockFilter('all');
+                      setClassificationFilter(null);
+                      setTypeFilter(null);
+                      setRefFilter('all');
+                      setConsumptionFilter('all');
+                      setExpStart('');
+                      setExpEnd('');
+                      setSearchQuery('');
+                      setOrderTarget(1);
+                    }}
+                    className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer"
+                  >
+                    <XIcon className="w-3.5 h-3.5" />
+                    Reset Catalog Query
+                  </button>
                 </div>
 
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* Section 3: Purchase Sizing & Automated Sourcing Engine */}
+      <div className="bg-white p-5 md:p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-5">
+        <div className="border-b border-[#141414]/5 pb-4">
+          <span className="text-[10px] font-bold text-[#F27D26] uppercase tracking-widest block font-mono">REPLENISHMENT CONFIGURATION</span>
+          <h2 className="text-base font-black text-[#141414] uppercase tracking-wider">Replenishment Targets & Smart Sourcing</h2>
+          <p className="text-[11px] text-[#141414]/50 font-medium">Configure calculation bounds relative to maximum quantities, or engage cross-location sourcing to search other dispensary divisions.</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Purchase Multiplier */}
+          <div className="lg:col-span-4 space-y-3">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Restock Quantity Multiplier</span>
+            <div className="flex flex-col bg-[#141414]/5 p-1 rounded-2xl border border-[#141414]/5">
+              {[
+                { label: 'All Medications', value: 0, count: medications.length },
+                { label: 'Full Refill (100%)', value: 1, count: targetCounts.full },
+                { label: '70% Target Threshold', value: 0.7, count: targetCounts.seventy },
+                { label: '50% Target Threshold', value: 0.5, count: targetCounts.fifty }
+              ].map(opt => {
+                const isActive = orderTarget === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setOrderTarget(opt.value)}
+                    className={`px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-between ${
+                      isActive
+                        ? 'bg-[#F27D26] text-white shadow-md'
+                        : 'text-[#141414]/50 hover:text-[#141414]/80'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-[#141414]/15 text-[#141414]/70'
+                    }`}>
+                      {opt.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Sourcing Overrides */}
+          <div className="lg:col-span-8 space-y-3">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Advanced Sourcing Overrides</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                onClick={() => handleSourcingToggle('qoh')}
+                className={`p-4 rounded-xl text-left transition-all border flex flex-col justify-between h-28 cursor-pointer ${
+                  showSourcingTransferOnly && sourcingReportType === 'qoh'
+                    ? 'bg-emerald-600 text-white border-transparent shadow-md' 
+                    : 'bg-white border-[#141414]/10 hover:border-emerald-500/40 hover:bg-emerald-50/[0.1]'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <ArrowRightLeft className={`w-4 h-4 ${showSourcingTransferOnly && sourcingReportType === 'qoh' ? 'text-white' : 'text-emerald-600'}`} />
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider ${
+                    showSourcingTransferOnly && sourcingReportType === 'qoh' ? 'bg-white/25 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  }`}>
+                    {sourcingTransferCount} Available
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider">Cross-Location Finder</h4>
+                  <p className={`text-[9px] mt-0.5 leading-normal ${showSourcingTransferOnly && sourcingReportType === 'qoh' ? 'text-white/80' : 'text-[#141414]/40 font-medium'}`}>
+                    Detect equivalent items present in other locations before ordering.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleSourcingToggle('current_exp')}
+                className={`p-4 rounded-xl text-left transition-all border flex flex-col justify-between h-28 cursor-pointer ${
+                  showSourcingTransferOnly && sourcingReportType === 'current_exp'
+                    ? 'bg-emerald-600 text-white border-transparent shadow-md' 
+                    : 'bg-white border-[#141414]/10 hover:border-emerald-500/40 hover:bg-emerald-50/[0.1]'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <Calendar className={`w-4 h-4 ${showSourcingTransferOnly && sourcingReportType === 'current_exp' ? 'text-white' : 'text-emerald-600'}`} />
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider ${
+                    showSourcingTransferOnly && sourcingReportType === 'current_exp' ? 'bg-white/25 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  }`}>
+                    {currentExpSourcingCount} Items
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider">Current Month Expiry</h4>
+                  <p className={`text-[9px] mt-0.5 leading-normal ${showSourcingTransferOnly && sourcingReportType === 'current_exp' ? 'text-white/80' : 'text-[#141414]/40 font-medium'}`}>
+                    Source packages expiring inside the current monthly sequence.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleSourcingToggle('next_exp')}
+                className={`p-4 rounded-xl text-left transition-all border flex flex-col justify-between h-28 cursor-pointer ${
+                  showSourcingTransferOnly && sourcingReportType === 'next_exp'
+                    ? 'bg-emerald-600 text-white border-transparent shadow-md' 
+                    : 'bg-white border-[#141414]/10 hover:border-emerald-500/40 hover:bg-emerald-50/[0.1]'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <Calendar className={`w-4 h-4 ${showSourcingTransferOnly && sourcingReportType === 'next_exp' ? 'text-white' : 'text-emerald-600'}`} />
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider ${
+                    showSourcingTransferOnly && sourcingReportType === 'next_exp' ? 'bg-white/25 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  }`}>
+                    {nextExpSourcingCount} Items
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider">Next Month Expiry</h4>
+                  <p className={`text-[9px] mt-0.5 leading-normal ${showSourcingTransferOnly && sourcingReportType === 'next_exp' ? 'text-white/80' : 'text-[#141414]/40 font-medium'}`}>
+                    Pre-emptively source medications expiring in the upcoming month.
+                  </p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleSourcingToggle('after_next_exp')}
+                className={`p-4 rounded-xl text-left transition-all border flex flex-col justify-between h-28 cursor-pointer ${
+                  showSourcingTransferOnly && sourcingReportType === 'after_next_exp'
+                    ? 'bg-emerald-600 text-white border-transparent shadow-md' 
+                    : 'bg-white border-[#141414]/10 hover:border-emerald-500/40 hover:bg-emerald-50/[0.1]'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <Calendar className={`w-4 h-4 ${showSourcingTransferOnly && sourcingReportType === 'after_next_exp' ? 'text-white' : 'text-emerald-600'}`} />
+                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold font-mono uppercase tracking-wider ${
+                    showSourcingTransferOnly && sourcingReportType === 'after_next_exp' ? 'bg-white/25 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  }`}>
+                    {afterNextExpSourcingCount} Items
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-black uppercase tracking-wider">Month After Next Expiry</h4>
+                  <p className={`text-[9px] mt-0.5 leading-normal ${showSourcingTransferOnly && sourcingReportType === 'after_next_exp' ? 'text-white/80' : 'text-[#141414]/40 font-medium'}`}>
+                    Analyze and source stocks scheduled for expiration two months ahead.
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Content View - Table on desktop, Cards on mobile */}

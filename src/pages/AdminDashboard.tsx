@@ -121,7 +121,7 @@ export default function AdminDashboard() {
 
   const [rearrangedReportItems, setRearrangedReportItems] = useState<any[]>(() => {
     try {
-      const raw = localStorage.getItem('rearranged_report_last_upload');
+      const raw = storage.getItem('rearranged_report_last_upload');
       return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
@@ -942,7 +942,7 @@ export default function AdminDashboard() {
 
     setRearrangedReportItems(tempReportList);
     try {
-      localStorage.setItem('rearranged_report_last_upload', JSON.stringify(tempReportList));
+      storage.setItem('rearranged_report_last_upload', JSON.stringify(tempReportList));
     } catch (e) {
       console.warn('Failed to save rearrangement report to localStorage:', e);
     }
@@ -2071,7 +2071,7 @@ export default function AdminDashboard() {
 
         setRearrangedReportItems(tempReportList);
         try {
-          localStorage.setItem('rearranged_report_last_upload', JSON.stringify(tempReportList));
+          storage.setItem('rearranged_report_last_upload', JSON.stringify(tempReportList));
         } catch (e) {
           console.warn('Failed to save rearrangement report to localStorage:', e);
         }

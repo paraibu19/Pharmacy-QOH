@@ -27,6 +27,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMedications } from '../hooks/useMedications';
 import { Medication } from '../types';
+import { sessionStorage } from '../lib/storage';
 
 // Types representing the database schema
 interface ParameterRow {
@@ -65,6 +66,7 @@ interface WorkloadRecord {
   // Evaluation outcomes
   reasons: string[];
   isMismatch: boolean;
+  dismissedBrandVsGeneric?: boolean;
 }
 
 function formatActionDateTime(val: any): string {
@@ -235,7 +237,14 @@ const isNonQatariBrandMistake = (
 
 export default function AdminEntryMistakes() {
   const { medications } = useMedications();
-  const [activeReportType, setActiveReportType] = useState<'standard' | 'brand-vs-generic'>('standard');
+  const [activeReportType, setActiveReportType] = useState<'standard' | 'brand-vs-generic'>(() => {
+    try {
+      const saved = sessionStorage.getItem('daily_workload_report_type');
+      return (saved === 'brand-vs-generic' || saved === 'standard') ? saved : 'standard';
+    } catch {
+      return 'standard';
+    }
+  });
 
   const [dbState, setDbState] = useState<ParameterDb>({
     configured: false,
@@ -246,13 +255,35 @@ export default function AdminEntryMistakes() {
   const [isDraggingDb, setIsDraggingDb] = useState(false);
   const [isDraggingWorkload, setIsDraggingWorkload] = useState(false);
   const [workloadLoading, setWorkloadLoading] = useState(false);
-  const [workloadRecords, setWorkloadRecords] = useState<WorkloadRecord[]>([]);
-  const [workloadUploaded, setWorkloadUploaded] = useState(false);
+  const [workloadRecords, setWorkloadRecords] = useState<WorkloadRecord[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('daily_workload_records');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [workloadUploaded, setWorkloadUploaded] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('daily_workload_uploaded');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
   
   // Custom dialog modals to bypass iframe popup blocking
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [whatsappPromptInfo, setWhatsappPromptInfo] = useState<{ pharmacistName: string; mistakes: WorkloadRecord[] } | null>(null);
   const [customPhoneInput, setCustomPhoneInput] = useState('');
+
+  // Application Storage states
+  const [savedStorageItems, setSavedStorageItems] = useState<any[]>([]);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordTargetItem, setPasswordTargetItem] = useState<any | null>(null);
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isDeletingFromStorage, setIsDeletingFromStorage] = useState(false);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -273,10 +304,12 @@ export default function AdminEntryMistakes() {
       prev.map(rec => {
         if (rec.id === recordId) {
           const updatedReasons = rec.reasons.filter(r => r !== reasonToDelete);
+          const isBrandVsGen = activeReportType === 'brand-vs-generic';
           return {
             ...rec,
             reasons: updatedReasons,
-            isMismatch: updatedReasons.length > 0
+            isMismatch: updatedReasons.length > 0,
+            dismissedBrandVsGeneric: isBrandVsGen ? true : rec.dismissedBrandVsGeneric
           };
         }
         return rec;
@@ -284,10 +317,97 @@ export default function AdminEntryMistakes() {
     );
   };
 
+  // Keep workload records in sync with sessionStorage to persist across page transitions
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('daily_workload_records', JSON.stringify(workloadRecords));
+      sessionStorage.setItem('daily_workload_uploaded', workloadUploaded ? 'true' : 'false');
+      sessionStorage.setItem('daily_workload_report_type', activeReportType);
+    } catch (e) {
+      console.warn('Failed to sync workload with sessionStorage:', e);
+    }
+  }, [workloadRecords, workloadUploaded, activeReportType]);
+
+  const resetWorkload = () => {
+    setWorkloadRecords([]);
+    setWorkloadUploaded(false);
+    try {
+      sessionStorage.removeItem('daily_workload_records');
+      sessionStorage.removeItem('daily_workload_uploaded');
+    } catch (e) {
+      console.warn('Failed to clear workload from sessionStorage:', e);
+    }
+  };
+
   // Fetch configured parameters database on load
   useEffect(() => {
     fetchDb();
+    fetchSavedStorageItems();
   }, []);
+
+  const fetchSavedStorageItems = async () => {
+    try {
+      const res = await fetch('/api/application-storage');
+      if (res.ok) {
+        const data = await res.json();
+        setSavedStorageItems(data);
+      }
+    } catch (err) {
+      console.error('Failed to load application storage data:', err);
+    }
+  };
+
+  const handleSaveToStorage = async (record: WorkloadRecord) => {
+    try {
+      const res = await fetch('/api/application-storage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record)
+      });
+      if (res.ok) {
+        fetchSavedStorageItems();
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to save to Application Storage');
+      }
+    } catch (err) {
+      console.error('Network error saving to storage:', err);
+    }
+  };
+
+  const handleDeleteFromStorage = async () => {
+    if (!passwordTargetItem) return;
+    setIsDeletingFromStorage(true);
+    setPasswordError('');
+    try {
+      const res = await fetch('/api/application-storage/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: passwordTargetItem.id,
+          mrnOrganization: passwordTargetItem.mrnOrganization,
+          actionDateTime: passwordTargetItem.actionDateTime,
+          itemNumber: passwordTargetItem.itemNumber,
+          adminPassword: adminPasswordInput
+        })
+      });
+      
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPasswordModalOpen(false);
+        setPasswordTargetItem(null);
+        setAdminPasswordInput('');
+        fetchSavedStorageItems();
+      } else {
+        setPasswordError(data.error || 'Incorrect admin password. Action unauthorized.');
+      }
+    } catch (err) {
+      console.error('Network error deleting from storage:', err);
+      setPasswordError('Network request failed. Please try again.');
+    } finally {
+      setIsDeletingFromStorage(false);
+    }
+  };
 
   const fetchDb = async () => {
     setDbLoading(true);
@@ -839,6 +959,13 @@ export default function AdminEntryMistakes() {
   // Dynamically calculate brand vs generic policy mistake records
   const brandVsGenericRecords = React.useMemo(() => {
     return workloadRecords.map(rec => {
+      if (rec.dismissedBrandVsGeneric) {
+        return {
+          ...rec,
+          reasons: [],
+          isMismatch: false
+        };
+      }
       const outcome = isNonQatariBrandMistake(rec, medications, isLocationMatches);
       if (outcome.isMistake) {
         return {
@@ -1295,25 +1422,51 @@ export default function AdminEntryMistakes() {
                   <p className="text-xs font-bold text-[#141414]/60">Processing workload ledger matrices and evaluating mismatch constraints...</p>
                 </div>
               ) : (
-                <div 
-                  onDragOver={handleDragOverWorkload}
-                  onDragLeave={handleDragLeaveWorkload}
-                  onDrop={handleDropWorkload}
-                  onClick={() => fileInputWorkloadRef.current?.click()}
-                  className={`cursor-pointer rounded-xl border border-dashed p-6 text-center hover:border-[#F27D26] hover:bg-[#F27D26]/[0.01] transition-all ${
-                    isDraggingWorkload ? 'border-[#F27D26] bg-[#F27D26]/5' : 'border-[#141414]/15'
-                  }`}
-                >
-                  <input 
-                    type="file" 
-                    ref={fileInputWorkloadRef} 
-                    className="hidden" 
-                    accept=".xlsx, .xls"
-                    onChange={handleFileChangeWorkload}
-                  />
-                  <Upload className="w-6 h-6 text-[#141414]/40 mx-auto mb-2 animate-bounce" />
-                  <p className="text-xs font-bold text-[#141414]">Drag & Drop Workload Excel or browse file</p>
-                  <p className="text-[10px] text-[#141414]/40 mt-0.5">Expects sheet name: "Yesterday HBKMC Workload (Detai"</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+                  <div 
+                    onDragOver={handleDragOverWorkload}
+                    onDragLeave={handleDragLeaveWorkload}
+                    onDrop={handleDropWorkload}
+                    onClick={() => fileInputWorkloadRef.current?.click()}
+                    className={`cursor-pointer rounded-xl border border-dashed p-6 text-center hover:border-[#F27D26] hover:bg-[#F27D26]/[0.01] transition-all flex flex-col justify-center items-center ${
+                      workloadUploaded ? 'md:col-span-2' : 'md:col-span-3'
+                    } ${
+                      isDraggingWorkload ? 'border-[#F27D26] bg-[#F27D26]/5' : 'border-[#141414]/15'
+                    }`}
+                  >
+                    <input 
+                      type="file" 
+                      ref={fileInputWorkloadRef} 
+                      className="hidden" 
+                      accept=".xlsx, .xls"
+                      onChange={handleFileChangeWorkload}
+                    />
+                    <Upload className="w-6 h-6 text-[#141414]/40 mx-auto mb-2 animate-bounce" />
+                    <p className="text-xs font-bold text-[#141414]">Drag & Drop Workload Excel or browse file</p>
+                    <p className="text-[10px] text-[#141414]/40 mt-0.5">Expects sheet name: "Yesterday HBKMC Workload (Detai"</p>
+                  </div>
+
+                  {workloadUploaded && (
+                    <div className="bg-emerald-50/50 border border-emerald-500/15 rounded-xl p-4 flex flex-col justify-between items-center text-center">
+                      <div className="space-y-1.5 my-auto">
+                        <CheckCircle2 className="w-7 h-7 text-emerald-600 mx-auto" />
+                        <h4 className="text-xs font-black text-emerald-800 uppercase tracking-widest">Active Ledger Data</h4>
+                        <p className="text-[10px] text-emerald-700/80 font-semibold leading-normal">
+                          Yesterday's HBKMC Workload parsed with <span className="font-extrabold text-emerald-900">{workloadRecords.length} records</span>.
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          resetWorkload();
+                        }}
+                        className="w-full mt-3 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors cursor-pointer active:scale-[0.98]"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Reset Workload
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1543,50 +1696,87 @@ export default function AdminEntryMistakes() {
                           <th className="p-3">Label Description</th>
                           <th className="p-3">Qty</th>
                           <th className="p-3">Mismatch Discrepancies Details</th>
+                          <th className="p-3 text-center">Storage Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#141414]/8">
                         {filteredRecords.length === 0 ? (
                           <tr>
-                            <td colSpan={12} className="p-10 text-center text-[#141414]/40 font-bold">
+                            <td colSpan={13} className="p-10 text-center text-[#141414]/40 font-bold">
                               No entry mistakes found matching selected filter criteria.
                             </td>
                           </tr>
                         ) : (
-                          paginatedRecords.map((r, idx) => (
-                            <tr key={`${r.id || 'mistake-row'}-${idx}`} className="hover:bg-red-50/20 group transition-colors">
-                              <td className="p-3 font-bold text-indigo-600">{r.actionPersonnelPharmacy || 'N/A'}</td>
-                              <td className="p-3 font-mono text-[11px] font-medium text-[#141414]/70">{r.actionDateTime || 'N/A'}</td>
-                              <td className="p-3 font-mono text-[11px] font-bold text-[#141414]/80">{r.mrnOrganization || 'N/A'}</td>
-                              <td className="p-3 font-bold text-[#141414]">{r.personNameFull || 'N/A'}</td>
-                              <td className="p-3 text-center">{r.sex || 'N/A'}</td>
-                              <td className="p-3 text-ellipsis overflow-hidden font-medium text-[#141414]/70">{r.nationality || 'N/A'}</td>
-                              <td className="p-3 font-medium text-[#141414]">{r.pharmacyLocation || 'N/A'}</td>
-                              <td className="p-3 text-[10px] uppercase font-bold text-[#141414]/60">{r.actionType || 'N/A'}</td>
-                              <td className="p-3 font-bold text-[#141414] font-mono">{r.itemNumber || 'N/A'}</td>
-                              <td className="p-3 min-w-[200px] max-w-[320px] whitespace-normal break-words text-[#141414]/80 font-medium">{r.labelDescription || 'N/A'}</td>
-                              <td className="p-3 text-center font-extrabold text-[#F27D26] font-mono bg-[#F27D26]/5">{r.dispenseQuantity || 'N/A'}</td>
-                              <td className="p-3 min-w-[280px] max-w-[360px] whitespace-normal break-words">
-                                <div className="space-y-1">
-                                  {r.reasons.map((re, reIdx) => (
-                                    <span key={`reason-${r.id || 'row'}-${reIdx}`} className="inline-flex items-start justify-between gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-[10px] font-semibold px-2.5 py-1.5 rounded-md leading-normal shadow-sm flex w-full">
-                                      <span className="flex items-start gap-1.5 min-w-0 whitespace-normal break-words py-0.5">
-                                        <AlertTriangle className="w-2.5 h-2.5 text-red-500 shrink-0 mt-0.5" />
-                                        <span className="whitespace-normal break-words" title={re}>{re}</span>
+                          paginatedRecords.map((r, idx) => {
+                            const isSaved = savedStorageItems.some(x => 
+                              x.id === r.id || 
+                              (x.mrnOrganization === r.mrnOrganization && 
+                               x.actionDateTime === r.actionDateTime && 
+                               x.itemNumber === r.itemNumber)
+                            );
+                            
+                            return (
+                              <tr key={`${r.id || 'mistake-row'}-${idx}`} className="hover:bg-red-50/20 group transition-colors">
+                                <td className="p-3 font-bold text-indigo-600">{r.actionPersonnelPharmacy || 'N/A'}</td>
+                                <td className="p-3 font-mono text-[11px] font-medium text-[#141414]/70">{r.actionDateTime || 'N/A'}</td>
+                                <td className="p-3 font-mono text-[11px] font-bold text-[#141414]/80">{r.mrnOrganization || 'N/A'}</td>
+                                <td className="p-3 font-bold text-[#141414]">{r.personNameFull || 'N/A'}</td>
+                                <td className="p-3 text-center">{r.sex || 'N/A'}</td>
+                                <td className="p-3 text-ellipsis overflow-hidden font-medium text-[#141414]/70">{r.nationality || 'N/A'}</td>
+                                <td className="p-3 font-medium text-[#141414]">{r.pharmacyLocation || 'N/A'}</td>
+                                <td className="p-3 text-[10px] uppercase font-bold text-[#141414]/60">{r.actionType || 'N/A'}</td>
+                                <td className="p-3 font-bold text-[#141414] font-mono">{r.itemNumber || 'N/A'}</td>
+                                <td className="p-3 min-w-[200px] max-w-[320px] whitespace-normal break-words text-[#141414]/80 font-medium">{r.labelDescription || 'N/A'}</td>
+                                <td className="p-3 text-center font-extrabold text-[#F27D26] font-mono bg-[#F27D26]/5">{r.dispenseQuantity || 'N/A'}</td>
+                                <td className="p-3 min-w-[280px] max-w-[360px] whitespace-normal break-words">
+                                  <div className="space-y-1">
+                                    {r.reasons.map((re, reIdx) => (
+                                      <span key={`reason-${r.id || 'row'}-${reIdx}`} className="inline-flex items-start justify-between gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-[10px] font-semibold px-2.5 py-1.5 rounded-md leading-normal shadow-sm flex w-full">
+                                        <span className="flex items-start gap-1.5 min-w-0 whitespace-normal break-words py-0.5">
+                                          <AlertTriangle className="w-2.5 h-2.5 text-red-500 shrink-0 mt-0.5" />
+                                          <span className="whitespace-normal break-words" title={re}>{re}</span>
+                                        </span>
+                                        <button
+                                          onClick={() => handleDeleteReason(r.id, re)}
+                                          title="Delete this mismatch detail"
+                                          className="text-red-400 hover:text-red-700 hover:bg-red-200/50 p-0.5 rounded cursor-pointer transition-colors ml-1 shrink-0 self-start"
+                                        >
+                                          <X className="w-2.5 h-2.5" />
+                                        </button>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td className="p-3 text-center whitespace-nowrap">
+                                  {isSaved ? (
+                                    <div className="flex flex-col items-center gap-1.5 justify-center">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black uppercase tracking-wider">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Saved
                                       </span>
                                       <button
-                                        onClick={() => handleDeleteReason(r.id, re)}
-                                        title="Delete this mismatch detail"
-                                        className="text-red-400 hover:text-red-700 hover:bg-red-200/50 p-0.5 rounded cursor-pointer transition-colors ml-1 shrink-0 self-start"
+                                        onClick={() => {
+                                          setPasswordTargetItem(r);
+                                          setAdminPasswordInput('');
+                                          setPasswordError('');
+                                          setPasswordModalOpen(true);
+                                        }}
+                                        className="text-[9px] font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100/60 px-2 py-0.5 rounded border border-red-200 transition-colors"
                                       >
-                                        <X className="w-2.5 h-2.5" />
+                                        Remove
                                       </button>
-                                    </span>
-                                  ))}
-                                </div>
-                              </td>
-                            </tr>
-                          ))
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleSaveToStorage(r)}
+                                      className="px-2.5 py-1.5 rounded bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[10px] font-black uppercase tracking-wider transition-colors inline-flex items-center gap-1"
+                                    >
+                                      <Upload className="w-3 h-3" /> Save To DB
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -1838,6 +2028,71 @@ export default function AdminEntryMistakes() {
                 className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:hover:bg-emerald-600 rounded-xl shadow-md transition-all active:scale-95"
               >
                 Open WhatsApp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Authorization Modal to make removal password-protected */}
+      {passwordModalOpen && (
+        <div className="fixed inset-0 bg-[#141414]/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white border border-[#141414]/10 max-w-md w-full rounded-2xl shadow-2xl p-6 relative overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-red-50 text-red-600 border border-red-100 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-black text-[#141414] uppercase tracking-wide">Admin Security Authorization</h3>
+                <p className="text-xs text-[#141414]/60 mt-1 leading-relaxed">
+                  Removing stored records from Application Storage is a restricted catalog operation. Please verify your <strong className="text-red-600 font-bold uppercase">Admin Password</strong> to proceed:
+                </p>
+
+                <div className="mt-4">
+                  <label className="block text-[9px] uppercase font-black text-[#141414]/40 tracking-widest mb-1">Enter Admin Password</label>
+                  <input
+                    type="password"
+                    value={adminPasswordInput}
+                    onChange={(e) => setAdminPasswordInput(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full text-xs font-mono font-bold bg-[#141414]/5 border border-[#141414]/10 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-red-500 focus:bg-white text-[#141414] transition-all"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleDeleteFromStorage();
+                      }
+                    }}
+                  />
+                  {passwordError && (
+                    <p className="text-red-600 text-[10px] font-bold mt-1.5 flex items-center gap-1 bg-red-50 border border-red-100 p-2 rounded-lg">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {passwordError}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3 border-t border-[#141414]/5 pt-4 text-xs font-bold">
+              <button
+                onClick={() => {
+                  setPasswordModalOpen(false);
+                  setPasswordTargetItem(null);
+                  setAdminPasswordInput('');
+                  setPasswordError('');
+                }}
+                className="px-4 py-2 text-[#141414]/70 hover:text-[#141414] bg-[#141414]/5 rounded-xl transition-all"
+                disabled={isDeletingFromStorage}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteFromStorage}
+                disabled={!adminPasswordInput || isDeletingFromStorage}
+                className="px-4 py-2 text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:hover:bg-red-600 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1"
+              >
+                {isDeletingFromStorage && <RefreshCw className="w-3 h-3 animate-spin mr-1" />}
+                Authorize Removal
               </button>
             </div>
           </div>

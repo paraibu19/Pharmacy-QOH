@@ -9,6 +9,7 @@ import { onSnapshotsInSync } from 'firebase/firestore';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 import { formatSafeDate } from '../lib/formatters';
 import InstallGuideModal from './InstallGuideModal';
+import { storage, sessionStorage } from '../lib/storage';
 
 interface LayoutProps {
   children: ReactNode;
@@ -25,19 +26,19 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      if (window.localStorage.getItem('firestore_fallback') === 'true') {
-        window.localStorage.removeItem('firestore_fallback');
+      if (storage.getItem('firestore_fallback') === 'true') {
+        storage.removeItem('firestore_fallback');
       }
-      setIsLocalMode(window.sessionStorage.getItem('firestore_fallback') === 'true');
+      setIsLocalMode(sessionStorage.getItem('firestore_fallback') === 'true');
     }
   }, []);
 
   const handleToggleDatabaseMode = () => {
     if (typeof window !== 'undefined') {
       if (isLocalMode) {
-        window.sessionStorage.removeItem('firestore_fallback');
+        sessionStorage.removeItem('firestore_fallback');
       } else {
-        window.sessionStorage.setItem('firestore_fallback', 'true');
+        sessionStorage.setItem('firestore_fallback', 'true');
       }
       window.location.reload();
     }
@@ -135,6 +136,16 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
           >
             <AlertCircle className="w-4 h-4 text-[#F27D26]" />
             Entry Mistakes
+          </NavLink>
+          <NavLink 
+            to="/admin/application-storage" 
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={({ isActive }) => 
+              `flex items-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-bold transition-all ${isMobile ? 'w-full' : ''} ${isActive ? 'bg-[#141414] text-white shadow-lg' : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.02] sm:bg-transparent'}`
+            }
+          >
+            <ShieldCheck className="w-4 h-4 text-indigo-600 animate-pulse" />
+            Application Storage
           </NavLink>
         </>
       )}
@@ -270,97 +281,125 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
         {/* Mobile Nav Overlay */}
         <AnimatePresence>
           {isMobileMenuOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="lg:hidden border-t border-[#141414]/10 bg-white overflow-hidden shadow-xl"
-            >
-              <div className="px-4 pt-4 pb-8 space-y-4">
-                <div className="flex lg:hidden flex-col gap-1 px-4 py-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10">
-                  <span className="text-[8px] font-bold text-[#F27D26] uppercase tracking-widest">Metadata Reference</span>
-                  <div className="flex items-center gap-1.5 text-[9px] font-bold text-[#141414]/60 uppercase">
-                    <UploadCloud className="w-3.5 h-3.5 text-[#F27D26]" />
-                    <span>Last Update:</span>
-                    <span className="text-[#141414] font-black">
-                      {formatSafeDate(lastUpdate, 'dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase()}
-                    </span>
-                  </div>
-                </div>
+            <>
+              {/* Dimmed backdrop background */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.4 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="fixed inset-0 bg-black z-40 lg:hidden"
+              />
 
-                <div className="space-y-1">
-                  <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Database Environment</span>
-                  <button
-                    onClick={handleToggleDatabaseMode}
-                    className={`w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border ${
-                      isLocalMode 
-                        ? 'bg-amber-50 border-amber-200 text-amber-700' 
-                        : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                    }`}
+              {/* Slide-out scrollable Side Drawer Menu */}
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+                className="fixed top-0 right-0 bottom-0 w-[300px] bg-white z-50 lg:hidden flex flex-col h-screen h-[100dvh] overflow-hidden shadow-2xl border-l border-[#141414]/10"
+              >
+                {/* Header of Side Drawer */}
+                <div className="flex items-center justify-between p-5 border-b border-[#141414]/10 bg-[#FDFCFB] shrink-0">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-base tracking-tight leading-none text-[#141414]">AW-PharmaStock</span>
+                    <span className="text-[9px] uppercase font-bold tracking-[0.2em] text-[#F27D26] mt-1.5">Pro Edition</span>
+                  </div>
+                  <button 
+                    className="p-2 bg-[#141414]/5 rounded-xl text-[#141414] hover:bg-[#141414]/10 transition-colors"
+                    onClick={() => setIsMobileMenuOpen(false)}
                   >
-                    <div className="flex items-center gap-2">
-                      {isLocalMode ? <CloudOff className="w-4 h-4 text-amber-600" /> : <Cloud className="w-4 h-4 text-emerald-600 animate-pulse" />}
-                      <span className="font-extrabold">DB Mode: {isLocalMode ? 'Local Dev (Offline)' : 'Cloud DB (Live)'}</span>
-                    </div>
-                    <span className="text-[9px] px-2 py-0.5 rounded bg-white/60 font-black border uppercase tracking-widest">Switch</span>
+                    <XIcon className="w-5 h-5" />
                   </button>
                 </div>
 
-                <div className="space-y-1">
-                  <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Device Instructions</span>
-                  <button
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      setIsInstallGuideOpen(true);
-                    }}
-                    className="w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border border-orange-200 bg-orange-50/50 text-[#F27D26] hover:bg-orange-100 cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Smartphone className="w-4 h-4 text-[#F27D26]" />
-                      <span className="font-extrabold">Phone & PC Installation Guide</span>
+                {/* Scrollable menu content container */}
+                <div className="flex-1 overflow-y-auto space-y-6 p-5 custom-scrollbar pb-16 bg-white">
+                  <div className="flex flex-col gap-1 px-4 py-3 bg-[#F27D26]/5 rounded-xl border border-[#F27D26]/10">
+                    <span className="text-[8px] font-bold text-[#F27D26] uppercase tracking-widest">Metadata Reference</span>
+                    <div className="flex items-center gap-1.5 text-[9px] font-bold text-[#141414]/60 uppercase">
+                      <UploadCloud className="w-3.5 h-3.5 text-[#F27D26]" />
+                      <span>Last Update:</span>
+                      <span className="text-[#141414] font-black">
+                        {formatSafeDate(lastUpdate, 'dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase()}
+                      </span>
                     </div>
-                    <span className="text-[9px] px-2 py-0.5 rounded bg-white font-black border uppercase tracking-widest text-[#F27D26]">View</span>
-                  </button>
-                </div>
-                
-                <div className="space-y-1">
-                  <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Navigation Menu</span>
-                  <div className="flex flex-col gap-2">
-                    <NavLinks isMobile={true} />
                   </div>
-                </div>
 
-                {!isAdmin && (
-                  <div className="space-y-2 pt-2 border-t border-[#141414]/5">
-                    <NavLink 
-                      to="/admin/login" 
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className={({ isActive }) => 
-                        `w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#F27D26] text-white shadow-lg' : 'bg-[#141414]/5 text-[#141414]/60'}`
-                      }
+                  <div className="space-y-1">
+                    <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Database Environment</span>
+                    <button
+                      onClick={handleToggleDatabaseMode}
+                      className={`w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border ${
+                        isLocalMode 
+                          ? 'bg-amber-50 border-amber-200 text-amber-700' 
+                          : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                      }`}
                     >
-                      <ShieldCheck className="w-4 h-4" />
-                      Admin Login
-                    </NavLink>
-                  </div>
-                )}
-
-                {onLogout && (
-                  <div className="pt-2 border-t border-[#141414]/5">
-                    <button 
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        onLogout();
-                      }}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-sm font-bold text-red-500 bg-red-50 hover:bg-red-100 transition-all"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Logout
+                      <div className="flex items-center gap-2">
+                        {isLocalMode ? <CloudOff className="w-4 h-4 text-amber-600" /> : <Cloud className="w-4 h-4 text-emerald-600 animate-pulse" />}
+                        <span className="font-extrabold">DB Mode: {isLocalMode ? 'Local Dev' : 'Cloud DB'}</span>
+                      </div>
+                      <span className="text-[9px] px-2 py-0.5 rounded bg-white/60 font-black border uppercase tracking-widest">Switch</span>
                     </button>
                   </div>
-                )}
-              </div>
-            </motion.div>
+
+                  <div className="space-y-1">
+                    <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Device Instructions</span>
+                    <button
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        setIsInstallGuideOpen(true);
+                      }}
+                      className="w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border border-orange-200 bg-orange-50/50 text-[#F27D26] hover:bg-orange-100 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="w-4 h-4 text-[#F27D26]" />
+                        <span className="font-extrabold">Phone & PC Installation Guide</span>
+                      </div>
+                      <span className="text-[9px] px-2 py-0.5 rounded bg-white font-black border uppercase tracking-widest text-[#F27D26]">View</span>
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Navigation Menu</span>
+                    <div className="flex flex-col gap-2">
+                      <NavLinks isMobile={true} />
+                    </div>
+                  </div>
+
+                  {!isAdmin && (
+                    <div className="space-y-2 pt-2 border-t border-[#141414]/5">
+                      <NavLink 
+                        to="/admin/login" 
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={({ isActive }) => 
+                          `w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-sm font-bold transition-all ${isActive ? 'bg-[#F27D26] text-white shadow-lg' : 'bg-[#141414]/5 text-[#141414]/60'}`
+                        }
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                        Admin Login
+                      </NavLink>
+                    </div>
+                  )}
+
+                  {onLogout && (
+                    <div className="pt-2 border-t border-[#141414]/5">
+                      <button 
+                        onClick={() => {
+                          setIsMobileMenuOpen(false);
+                          onLogout();
+                        }}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl text-sm font-bold text-red-500 bg-red-50 hover:bg-red-100 transition-all"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Logout
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
       </nav>
