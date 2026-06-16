@@ -1445,7 +1445,7 @@ export default function AdminDashboard() {
     let result = medications.map(med => {
       const dates = [med.expiration1, med.expiration2, med.expiration3]
         .map(parseExpDate)
-        .filter(d => d !== null && !isBefore(d, today)) as Date[];
+        .filter(d => d !== null) as Date[];
       
       if (dates.length === 0) return null;
       
@@ -3271,37 +3271,67 @@ export default function AdminDashboard() {
             <div className="max-h-[300px] overflow-y-auto">
               {expiringItems.length > 0 ? (
                 <div className="divide-y divide-[#141414]/5">
-                  {expiringItems.map((item, itemIdx) => item && (
-                    <div key={`${item.id}-${itemIdx}`} className="p-4 flex items-center justify-between hover:bg-[#F27D26]/[0.02] transition-colors">
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-[#141414]">{item.itemName}</span>
-                          {item.isRefrigerated && (
-                            <ThermometerSnowflake size={10} className="text-blue-500" />
-                          )}
+                  {expiringItems.map((item, itemIdx) => {
+                    if (!item) return null;
+                    const isExpired = item.daysLeft < 0;
+                    return (
+                      <div 
+                        key={`${item.id}-${itemIdx}`} 
+                        className={`p-4 flex items-center justify-between hover:bg-[#F27D26]/[0.02] transition-colors ${
+                          isExpired ? 'bg-red-50/20 hover:bg-red-50/45 border-l-4 border-red-500' : ''
+                        }`}
+                      >
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-xs font-bold ${isExpired ? 'text-red-700' : 'text-[#141414]'}`}>
+                              {item.itemName}
+                            </span>
+                            {isExpired && (
+                              <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded">
+                                EXPIRED
+                              </span>
+                            )}
+                            {item.isRefrigerated && (
+                              <ThermometerSnowflake size={10} className="text-blue-500" />
+                            )}
+                          </div>
+                          <span className="text-[10px] font-mono text-[#141414]/40">{item.itemCode}</span>
                         </div>
-                        <span className="text-[10px] font-mono text-[#141414]/40">{item.itemCode}</span>
-                      </div>
-                      <div className="flex items-center gap-6">
-                        <div className="text-right">
-                          <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Expires On</div>
-                          <div className="text-[10px] font-bold text-[#141414]">
-                            {format(item.nextExp, 'dd-MM-yyyy')}
+                        <div className="flex items-center gap-6">
+                          <div className="text-right">
+                            <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Expires On</div>
+                            <div className={`text-[10px] font-bold ${isExpired ? 'text-red-700' : 'text-[#141414]'}`}>
+                              {format(item.nextExp, 'dd-MM-yyyy')}
+                            </div>
+                          </div>
+                          <div className="text-right min-w-[90px]">
+                            <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">
+                              {isExpired ? 'Overdue' : 'In'}
+                            </div>
+                            <div className={`text-sm font-bold ${
+                              isExpired 
+                                ? 'text-red-650' 
+                                : item.daysLeft <= 15 
+                                  ? 'text-red-500' 
+                                  : item.daysLeft <= 30 
+                                    ? 'text-[#F27D26]' 
+                                    : 'text-amber-500'
+                            }`}>
+                              {isExpired ? (
+                                <span>{Math.abs(item.daysLeft)}d ago</span>
+                              ) : (
+                                `${formatNumber(item.daysLeft)}d`
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right min-w-[80px]">
+                            <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Qty</div>
+                            <div className={`text-sm font-bold ${isExpired && item.qoh > 0 ? 'text-red-700 font-extrabold' : ''}`}>{formatNumber(item.qoh)}</div>
                           </div>
                         </div>
-                        <div className="text-right min-w-[70px]">
-                          <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">In</div>
-                          <div className={`text-sm font-bold ${item.daysLeft <= 15 ? 'text-red-500' : item.daysLeft <= 30 ? 'text-[#F27D26]' : 'text-amber-500'}`}>
-                            {formatNumber(item.daysLeft)}d
-                          </div>
-                        </div>
-                        <div className="text-right min-w-[80px]">
-                          <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Qty</div>
-                          <div className="text-sm font-bold">{formatNumber(item.qoh)}</div>
-                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="p-10 text-center text-[#141414]/20 font-bold italic text-sm">
