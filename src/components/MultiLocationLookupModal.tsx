@@ -5,6 +5,7 @@ import {
   ArrowRightLeft, Layers, Calendar, ClipboardCheck, Info 
 } from 'lucide-react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
+import { formatExpirationDate } from '../lib/formatters';
 
 interface MultiLocationLookupModalProps {
   isOpen: boolean;
@@ -142,15 +143,15 @@ export default function MultiLocationLookupModal({
                             <div className="space-y-1 font-mono text-[10px] text-[#141414]/70">
                               <div className="flex items-center justify-between border-b border-[#141414]/5 pb-0.5">
                                 <span className="text-[8px] font-bold text-[#141414]/30 uppercase">Exp 1:</span>
-                                <span className="font-extrabold">{match.expiration1 || 'N/A'}</span>
+                                <span className="font-extrabold">{formatExpirationDate(match.expiration1) || 'N/A'}</span>
                               </div>
                               <div className="flex items-center justify-between border-b border-[#141414]/5 pb-0.5">
                                 <span className="text-[8px] font-bold text-[#141414]/30 uppercase">Exp 2:</span>
-                                <span className="font-semibold">{match.expiration2 || '-'}</span>
+                                <span className="font-semibold">{formatExpirationDate(match.expiration2) || '-'}</span>
                               </div>
                               <div className="flex items-center justify-between">
                                 <span className="text-[8px] font-bold text-[#141414]/30 uppercase">Exp 3:</span>
-                                <span className="font-semibold">{match.expiration3 || '-'}</span>
+                                <span className="font-semibold">{formatExpirationDate(match.expiration3) || '-'}</span>
                               </div>
                             </div>
                           </div>

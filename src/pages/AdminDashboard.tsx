@@ -20,7 +20,7 @@ import { useAudits } from '../hooks/useAudits';
 import { medicationOps, systemOps, translationCacheOps } from '../lib/firebaseOperations';
 import { sharedDb } from '../lib/sharedDb';
 import { translateIndications, batchTranslateIndications } from '../services/translationService';
-import { formatNumber, parseSafeDate, formatSafeDate } from '../lib/formatters';
+import { formatNumber, parseSafeDate, formatSafeDate, formatExpirationDate } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { storage } from '../lib/storage';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
@@ -290,7 +290,7 @@ export default function AdminDashboard() {
             m.itemCode,
             m.itemName,
             m.qoh,
-            m.expiration1 || '-',
+            formatExpirationDate(m.expiration1) || '-',
             getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
           ];
         } else {
@@ -313,9 +313,9 @@ export default function AdminDashboard() {
           m.qoh,
           m.minQty || 0,
           m.maxQty || 0,
-          m.expiration1 || '-',
-          m.expiration2 || '-',
-          m.expiration3 || '-'
+          formatExpirationDate(m.expiration1) || '-',
+          formatExpirationDate(m.expiration2) || '-',
+          formatExpirationDate(m.expiration3) || '-'
         ];
       }
     });
@@ -389,7 +389,7 @@ export default function AdminDashboard() {
             m.itemCode,
             m.itemName,
             m.qoh,
-            m.expiration1 || '-',
+            formatExpirationDate(m.expiration1) || '-',
             getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
           ]);
         } else {
@@ -412,9 +412,9 @@ export default function AdminDashboard() {
           m.qoh,
           m.minQty || 0,
           m.maxQty || 0,
-          m.expiration1 || '-',
-          m.expiration2 || '-',
-          m.expiration3 || '-'
+          formatExpirationDate(m.expiration1) || '-',
+          formatExpirationDate(m.expiration2) || '-',
+          formatExpirationDate(m.expiration3) || '-'
         ]);
       }
     });
@@ -477,7 +477,7 @@ export default function AdminDashboard() {
             m.itemCode,
             m.itemName,
             formatNumber(m.qoh),
-            m.expiration1 || '-',
+            formatExpirationDate(m.expiration1) || '-',
             getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
           ];
         } else {
@@ -500,7 +500,7 @@ export default function AdminDashboard() {
           formatNumber(m.qoh),
           formatNumber(m.minQty || 0),
           formatNumber(m.maxQty || 0),
-          m.expiration1 || '-'
+          formatExpirationDate(m.expiration1) || '-'
         ];
       }
     });
@@ -576,9 +576,9 @@ export default function AdminDashboard() {
       m.qoh,
       m.minQty || 0,
       m.maxQty || 0,
-      m.expiration1 || '-',
-      m.expiration2 || '-',
-      m.expiration3 || '-'
+      formatExpirationDate(m.expiration1) || '-',
+      formatExpirationDate(m.expiration2) || '-',
+      formatExpirationDate(m.expiration3) || '-'
     ]);
 
     const csvContent = [
@@ -620,9 +620,9 @@ export default function AdminDashboard() {
         m.qoh,
         m.minQty || 0,
         m.maxQty || 0,
-        m.expiration1 || '-',
-        m.expiration2 || '-',
-        m.expiration3 || '-'
+        formatExpirationDate(m.expiration1) || '-',
+        formatExpirationDate(m.expiration2) || '-',
+        formatExpirationDate(m.expiration3) || '-'
       ]);
     });
 
@@ -655,7 +655,7 @@ export default function AdminDashboard() {
       formatNumber(m.qoh),
       formatNumber(m.minQty || 0),
       formatNumber(m.maxQty || 0),
-      m.expiration1 || '-'
+      formatExpirationDate(m.expiration1) || '-'
     ]);
 
     autoTable(doc, {
@@ -798,12 +798,12 @@ export default function AdminDashboard() {
         m.consumption || 0,
         m.to || '-',
         m.isRefrigerated ? 'Yes' : 'No',
-        m.expiration1 || '-',
-        m.expiration2 || '-',
-        m.expiration3 || '-',
-        m.originalExp1 || '-',
-        m.originalExp2 || '-',
-        m.originalExp3 || '-',
+        formatExpirationDate(m.expiration1) || '-',
+        formatExpirationDate(m.expiration2) || '-',
+        formatExpirationDate(m.expiration3) || '-',
+        formatExpirationDate(m.originalExp1) || '-',
+        formatExpirationDate(m.originalExp2) || '-',
+        formatExpirationDate(m.originalExp3) || '-',
         m.qatari || 'Non-Qatari',
         m.restriction || 'Standard',
         m.enIndications || '-',
@@ -1468,7 +1468,7 @@ export default function AdminDashboard() {
     if (expSearchQuery) {
       const query = expSearchQuery.toLowerCase();
       result = result.filter(item => {
-        const formattedDate = format(item.nextExp, 'dd-MM-yyyy').toLowerCase();
+        const formattedDate = format(item.nextExp, 'dd-MMM-yyyy').toLowerCase();
         const itemName = item.itemName.toLowerCase();
         const itemCode = item.itemCode.toLowerCase();
         return formattedDate.includes(query) || itemName.includes(query) || itemCode.includes(query);
@@ -2898,7 +2898,7 @@ export default function AdminDashboard() {
                                   if (!d || !isExp) return null;
                                   return (
                                     <span key={idx} className="text-[8px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded">
-                                      {exp}
+                                      {formatExpirationDate(exp)}
                                     </span>
                                   );
                                 })}
@@ -3184,7 +3184,7 @@ export default function AdminDashboard() {
                       const formattedItems = expiringItems.map(item => {
                         if (!item) return '';
                         if (item.qoh <= 0) return '';
-                        const formattedDate = format(item.nextExp, 'dd-MM-yyyy');
+                        const formattedDate = format(item.nextExp, 'dd-MMM-yyyy');
                         return `Item code: ${item.itemCode || 'N/A'}\nItem name: ${item.itemName}\nExpires on: ${formattedDate}\nIN: ${item.daysLeft}d\nQTY: ${formatNumber(item.qoh)}`;
                       }).filter(Boolean);
                       
@@ -3301,7 +3301,7 @@ export default function AdminDashboard() {
                           <div className="text-right">
                             <div className="text-[10px] text-[#141414]/40 font-bold uppercase tracking-widest mb-0.5">Expires On</div>
                             <div className={`text-[10px] font-bold ${isExpired ? 'text-red-700' : 'text-[#141414]'}`}>
-                              {format(item.nextExp, 'dd-MM-yyyy')}
+                              {format(item.nextExp, 'dd-MMM-yyyy')}
                             </div>
                           </div>
                           <div className="text-right min-w-[90px]">
@@ -4413,9 +4413,9 @@ export default function AdminDashboard() {
                   </td>
                   <td className="px-6 py-4">
                   <div className="flex gap-2 font-mono text-[10px]">
-                    <span className={`px-2 py-0.5 rounded font-bold ${getExpirationColor(med.expiration1)}`}>{med.expiration1 || '-'}</span>
-                    <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration2 || '-'}</span>
-                    <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{med.expiration3 || '-'}</span>
+                    <span className={`px-2 py-0.5 rounded font-bold ${getExpirationColor(med.expiration1)}`}>{formatExpirationDate(med.expiration1) || '-'}</span>
+                    <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{formatExpirationDate(med.expiration2) || '-'}</span>
+                    <span className="bg-[#141414]/5 px-1.5 py-0.5 rounded italic">{formatExpirationDate(med.expiration3) || '-'}</span>
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right">
@@ -4608,9 +4608,9 @@ export default function AdminDashboard() {
               <div className="bg-[#141414]/[0.03] p-2 rounded-xl">
                  <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mb-1 ml-1">Expirations</p>
                  <div className="flex gap-2 font-mono text-[9px]">
-                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration1 || '-'}</span>
-                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration2 || '-'}</span>
-                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{med.expiration3 || '-'}</span>
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{formatExpirationDate(med.expiration1) || '-'}</span>
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{formatExpirationDate(med.expiration2) || '-'}</span>
+                   <span className="flex-1 bg-white px-2 py-1.5 rounded border border-[#141414]/5 text-center">{formatExpirationDate(med.expiration3) || '-'}</span>
                  </div>
               </div>
             </motion.div>

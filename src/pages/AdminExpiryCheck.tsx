@@ -14,7 +14,7 @@ import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { useMedications } from '../hooks/useMedications';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
-import { formatNumber } from '../lib/formatters';
+import { formatNumber, formatExpirationDate } from '../lib/formatters';
 import { medicationOps } from '../lib/firebaseOperations';
 
 interface ExcelGroupedRow {
@@ -623,9 +623,9 @@ export default function AdminExpiryCheck() {
                 itemCode: excelGroup.itemCode,
                 systemItemName: systemMed.itemName || excelGroup.description,
                 systemQoh: systemMed.qoh,
-                systemExp1: systemMed.expiration1 || '-',
-                systemExp2: systemMed.expiration2 || '-',
-                systemExp3: systemMed.expiration3 || '-',
+                systemExp1: formatExpirationDate(systemMed.expiration1) || '-',
+                systemExp2: formatExpirationDate(systemMed.expiration2) || '-',
+                systemExp3: formatExpirationDate(systemMed.expiration3) || '-',
                 totalDeliveredQty: excelGroup.totalQty,
                 deliveredDates: excelGroup.dates,
                 isCrossLocation: isCrossLocation,

@@ -13,7 +13,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
-import { formatNumber, parseSafeDate, formatSafeDate } from '../lib/formatters';
+import { formatNumber, parseSafeDate, formatSafeDate, formatExpirationDate } from '../lib/formatters';
 import { technicianAuthOps, medicationOps } from '../lib/firebaseOperations';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MedicationFormModal from '../components/MedicationFormModal';
@@ -409,9 +409,9 @@ export default function UserHome() {
       m.restriction || '-',
       (m.qatari && m.qatari.trim().toUpperCase() === 'TRUE') ? 'Qatari' : (m.qatari || '-'),
       formatNumber(m.qoh),
-      m.expiration1 || '-',
-      m.expiration2 || '-',
-      m.expiration3 || '-'
+      formatExpirationDate(m.expiration1) || '-',
+      formatExpirationDate(m.expiration2) || '-',
+      formatExpirationDate(m.expiration3) || '-'
     ]);
 
     const csvContent = [
@@ -449,9 +449,9 @@ export default function UserHome() {
         m.restriction || '-',
         (m.qatari && m.qatari.trim().toUpperCase() === 'TRUE') ? 'Qatari' : (m.qatari || '-'),
         m.qoh,
-        m.expiration1 || '-',
-        m.expiration2 || '-',
-        m.expiration3 || '-'
+        formatExpirationDate(m.expiration1) || '-',
+        formatExpirationDate(m.expiration2) || '-',
+        formatExpirationDate(m.expiration3) || '-'
       ]);
     });
 
@@ -479,9 +479,9 @@ export default function UserHome() {
       m.restriction || '-',
       (m.qatari && m.qatari.trim().toUpperCase() === 'TRUE') ? 'Qatari' : (m.qatari || '-'),
       formatNumber(m.qoh),
-      m.expiration1 || '-',
-      m.expiration2 || '-',
-      m.expiration3 || '-'
+      formatExpirationDate(m.expiration1) || '-',
+      formatExpirationDate(m.expiration2) || '-',
+      formatExpirationDate(m.expiration3) || '-'
     ]);
 
     const formatIndicatorMonth = (date: Date) => {
@@ -1446,11 +1446,11 @@ export default function UserHome() {
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${getExpirationColor(med.expiration1)}`}>
-                        {med.expiration1 || '-'}
+                        {formatExpirationDate(med.expiration1) || '-'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration2 || '-'}</td>
-                    <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{med.expiration3 || '-'}</td>
+                    <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{formatExpirationDate(med.expiration2) || '-'}</td>
+                    <td className="px-6 py-4 text-xs font-medium text-[#141414]/60">{formatExpirationDate(med.expiration3) || '-'}</td>
                   </motion.tr>
                 ))}
               </AnimatePresence>
@@ -1555,15 +1555,15 @@ export default function UserHome() {
                 <div className="grid grid-cols-3 gap-2 p-2 bg-[#141414]/[0.02] rounded-xl border border-[#141414]/5">
                   <div className="text-center">
                     <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 1</p>
-                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration1 || '-'}</p>
+                    <p className="text-[10px] font-bold text-[#141414]/60">{formatExpirationDate(med.expiration1) || '-'}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 2</p>
-                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration2 || '-'}</p>
+                    <p className="text-[10px] font-bold text-[#141414]/60">{formatExpirationDate(med.expiration2) || '-'}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-[8px] font-bold uppercase tracking-wider text-[#141414]/40 mb-0.5">Exp 3</p>
-                    <p className="text-[10px] font-bold text-[#141414]/60">{med.expiration3 || '-'}</p>
+                    <p className="text-[10px] font-bold text-[#141414]/60">{formatExpirationDate(med.expiration3) || '-'}</p>
                   </div>
                 </div>
               </motion.div>

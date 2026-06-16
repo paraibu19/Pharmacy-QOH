@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Medication, PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { X, Image as ImageIcon, Download, FileSpreadsheet, ClipboardList, AlertCircle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
-import { formatNumber, formatSafeDate } from '../lib/formatters';
+import { formatNumber, formatSafeDate, formatExpirationDate } from '../lib/formatters';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -238,18 +238,18 @@ export default function BrandGenericReportModal({
         pair.brand ? pair.brand.itemName : 'Not in the list',
         brandStatus,
         pair.brand ? pair.brand.qoh : '',
-        pair.brand ? pair.brand.expiration1 || '-' : '',
-        pair.brand ? pair.brand.expiration2 || '-' : '',
-        pair.brand ? pair.brand.expiration3 || '-' : '',
+        pair.brand ? formatExpirationDate(pair.brand.expiration1) || '-' : '',
+        pair.brand ? formatExpirationDate(pair.brand.expiration2) || '-' : '',
+        pair.brand ? formatExpirationDate(pair.brand.expiration3) || '-' : '',
         pair.brand ? pair.brand.imageUrl || '' : '',
         
         pair.generic ? pair.generic.itemCode : (pair.genericCode || ''),
         pair.generic ? pair.generic.itemName : 'Not in the list',
         genericStatus,
         pair.generic ? pair.generic.qoh : '',
-        pair.generic ? pair.generic.expiration1 || '-' : '',
-        pair.generic ? pair.generic.expiration2 || '-' : '',
-        pair.generic ? pair.generic.expiration3 || '-' : '',
+        pair.generic ? formatExpirationDate(pair.generic.expiration1) || '-' : '',
+        pair.generic ? formatExpirationDate(pair.generic.expiration2) || '-' : '',
+        pair.generic ? formatExpirationDate(pair.generic.expiration3) || '-' : '',
         pair.generic ? pair.generic.imageUrl || '' : ''
       ];
       csvRows.push(row.map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(','));
@@ -290,18 +290,18 @@ export default function BrandGenericReportModal({
         pair.brand ? pair.brand.itemName : 'Not in the list',
         brandStatus,
         pair.brand ? pair.brand.qoh : '',
-        pair.brand ? pair.brand.expiration1 || '-' : '',
-        pair.brand ? pair.brand.expiration2 || '-' : '',
-        pair.brand ? pair.brand.expiration3 || '-' : '',
+        pair.brand ? formatExpirationDate(pair.brand.expiration1) || '-' : '',
+        pair.brand ? formatExpirationDate(pair.brand.expiration2) || '-' : '',
+        pair.brand ? formatExpirationDate(pair.brand.expiration3) || '-' : '',
         pair.brand ? pair.brand.imageUrl || '' : '',
         
         pair.generic ? pair.generic.itemCode : (pair.genericCode || ''),
         pair.generic ? pair.generic.itemName : 'Not in the list',
         genericStatus,
         pair.generic ? pair.generic.qoh : '',
-        pair.generic ? pair.generic.expiration1 || '-' : '',
-        pair.generic ? pair.generic.expiration2 || '-' : '',
-        pair.generic ? pair.generic.expiration3 || '-' : '',
+        pair.generic ? formatExpirationDate(pair.generic.expiration1) || '-' : '',
+        pair.generic ? formatExpirationDate(pair.generic.expiration2) || '-' : '',
+        pair.generic ? formatExpirationDate(pair.generic.expiration3) || '-' : '',
         pair.generic ? pair.generic.imageUrl || '' : ''
       ]);
     });
@@ -423,10 +423,10 @@ export default function BrandGenericReportModal({
       const genericStatus = getItemStatus(pair.generic);
       
       const brandExpiries = pair.brand 
-        ? [pair.brand.expiration1, pair.brand.expiration2, pair.brand.expiration3].filter(Boolean).join('\n') || '-' 
+        ? [pair.brand.expiration1, pair.brand.expiration2, pair.brand.expiration3].filter(Boolean).map(formatExpirationDate).join('\n') || '-' 
         : '-';
       const genericExpiries = pair.generic 
-        ? [pair.generic.expiration1, pair.generic.expiration2, pair.generic.expiration3].filter(Boolean).join('\n') || '-' 
+        ? [pair.generic.expiration1, pair.generic.expiration2, pair.generic.expiration3].filter(Boolean).map(formatExpirationDate).join('\n') || '-' 
         : '-';
 
       const getPdfStatusCell = (status: 'in stock' | 'low stock' | 'out of stock' | 'not in the list') => {
@@ -625,9 +625,9 @@ export default function BrandGenericReportModal({
                                   QOH: {formatNumber(pair.brand.qoh)}
                                 </span>
                                 <div className="text-[8px] text-slate-500 font-mono mt-0.5 leading-none space-y-0.5 text-right">
-                                  {pair.brand.expiration1 && <p>E1: {pair.brand.expiration1}</p>}
-                                  {pair.brand.expiration2 && <p>E2: {pair.brand.expiration2}</p>}
-                                  {pair.brand.expiration3 && <p>E3: {pair.brand.expiration3}</p>}
+                                  {pair.brand.expiration1 && <p>E1: {formatExpirationDate(pair.brand.expiration1)}</p>}
+                                  {pair.brand.expiration2 && <p>E2: {formatExpirationDate(pair.brand.expiration2)}</p>}
+                                  {pair.brand.expiration3 && <p>E3: {formatExpirationDate(pair.brand.expiration3)}</p>}
                                 </div>
                               </div>
                             )}
@@ -674,9 +674,9 @@ export default function BrandGenericReportModal({
                                   QOH: {formatNumber(pair.generic.qoh)}
                                 </span>
                                 <div className="text-[8px] text-slate-500 font-mono mt-0.5 leading-none space-y-0.5 text-right font-semibold">
-                                  {pair.generic.expiration1 && <p>E1: {pair.generic.expiration1}</p>}
-                                  {pair.generic.expiration2 && <p>E2: {pair.generic.expiration2}</p>}
-                                  {pair.generic.expiration3 && <p>E3: {pair.generic.expiration3}</p>}
+                                  {pair.generic.expiration1 && <p>E1: {formatExpirationDate(pair.generic.expiration1)}</p>}
+                                  {pair.generic.expiration2 && <p>E2: {formatExpirationDate(pair.generic.expiration2)}</p>}
+                                  {pair.generic.expiration3 && <p>E3: {formatExpirationDate(pair.generic.expiration3)}</p>}
                                 </div>
                               </div>
                             )}
@@ -743,9 +743,9 @@ export default function BrandGenericReportModal({
                                   </span>
                                   <p className="text-xs font-black text-slate-800">QOH: {formatNumber(pair.brand.qoh)}</p>
                                   <div className="text-[10px] text-slate-500 font-mono space-y-0.5">
-                                    {pair.brand.expiration1 && <p>E1: {pair.brand.expiration1}</p>}
-                                    {pair.brand.expiration2 && <p>E2: {pair.brand.expiration2}</p>}
-                                    {pair.brand.expiration3 && <p>E3: {pair.brand.expiration3}</p>}
+                                    {pair.brand.expiration1 && <p>E1: {formatExpirationDate(pair.brand.expiration1)}</p>}
+                                    {pair.brand.expiration2 && <p>E2: {formatExpirationDate(pair.brand.expiration2)}</p>}
+                                    {pair.brand.expiration3 && <p>E3: {formatExpirationDate(pair.brand.expiration3)}</p>}
                                   </div>
                                 </div>
                               ) : (
@@ -783,9 +783,9 @@ export default function BrandGenericReportModal({
                                   <>
                                     <p className="text-xs font-black text-emerald-700">QOH: {formatNumber(pair.generic.qoh)}</p>
                                     <div className="text-[10px] text-slate-500 font-mono space-y-0.5">
-                                      {pair.generic.expiration1 && <p>E1: {pair.generic.expiration1}</p>}
-                                      {pair.generic.expiration2 && <p>E2: {pair.generic.expiration2}</p>}
-                                      {pair.generic.expiration3 && <p>E3: {pair.generic.expiration3}</p>}
+                                      {pair.generic.expiration1 && <p>E1: {formatExpirationDate(pair.generic.expiration1)}</p>}
+                                      {pair.generic.expiration2 && <p>E2: {formatExpirationDate(pair.generic.expiration2)}</p>}
+                                      {pair.generic.expiration3 && <p>E3: {formatExpirationDate(pair.generic.expiration3)}</p>}
                                     </div>
                                   </>
                                 ) : (

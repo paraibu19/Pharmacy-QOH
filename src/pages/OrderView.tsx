@@ -14,7 +14,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { useMedications } from '../hooks/useMedications';
 import { medicationOps, technicianAuthOps } from '../lib/firebaseOperations';
-import { formatNumber, parseSafeDate, formatSafeDate } from '../lib/formatters';
+import { formatNumber, parseSafeDate, formatSafeDate, formatExpirationDate } from '../lib/formatters';
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MultiLocationLookupModal from '../components/MultiLocationLookupModal';
 import BrandGenericReportModal from '../components/BrandGenericReportModal';
@@ -190,7 +190,7 @@ export default function OrderView() {
     if (eligible.length === 0) return 'None';
     return eligible.map(om => {
       const locName = om.locationId === PharmacyLocation.ADULT ? 'Adult' : om.locationId === PharmacyLocation.PEDIATRIC ? 'Pediatric' : 'Mesaieed';
-      return `${locName} (${om.qoh} Box${om.expiration1 ? ` - Exp1: ${om.expiration1}` : ''})`;
+      return `${locName} (${om.qoh} Box${om.expiration1 ? ` - Exp1: ${formatExpirationDate(om.expiration1)}` : ''})`;
     }).join(' | ');
   };
   
@@ -779,7 +779,7 @@ export default function OrderView() {
           m.itemCode,
           `${m.itemName} [${m.consumption || 0}]`,
           m.qoh,
-          m.expiration1 || '-',
+          formatExpirationDate(m.expiration1) || '-',
           getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
         ];
       } else {
@@ -790,12 +790,12 @@ export default function OrderView() {
             `${m.itemName} [${m.consumption || 0}]`,
             m.qoh,
             m.orderQty,
-            m.expiration1 || '-',
+            formatExpirationDate(m.expiration1) || '-',
             getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh')
           ];
         } else {
           const expCell = [m.expiration1, m.expiration2, m.expiration3]
-            .map(e => e || '-')
+            .map(e => formatExpirationDate(e) || '-')
             .join('\n');
           return [
             i + 1,
@@ -916,7 +916,7 @@ export default function OrderView() {
           m.itemCode,
           `${m.itemName} [${m.consumption || 0}]`,
           m.qoh,
-          m.expiration1 || '-',
+          formatExpirationDate(m.expiration1) || '-',
           getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
         ]);
       } else {
@@ -927,12 +927,12 @@ export default function OrderView() {
             `${m.itemName} [${m.consumption || 0}]`,
             m.qoh,
             m.orderQty,
-            m.expiration1 || '-',
+            formatExpirationDate(m.expiration1) || '-',
             getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh')
           ]);
         } else {
           const expCell = [m.expiration1, m.expiration2, m.expiration3]
-            .map(e => e || '-')
+            .map(e => formatExpirationDate(e) || '-')
             .join('\n');
           aoa.push([
             i + 1,
@@ -1057,7 +1057,7 @@ export default function OrderView() {
           m.itemCode,
           `${m.itemName} [${m.consumption || 0}]`,
           formatNumber(m.qoh),
-          m.expiration1 || '-',
+          formatExpirationDate(m.expiration1) || '-',
           getSourcingLocationsText(m.itemCode, m.qoh, sourcingReportType)
         ];
       } else {
@@ -1068,12 +1068,12 @@ export default function OrderView() {
             `${m.itemName} [${m.consumption || 0}]`,
             formatNumber(m.qoh),
             formatNumber(m.orderQty),
-            m.expiration1 || '-',
+            formatExpirationDate(m.expiration1) || '-',
             getSourcingLocationsText(m.itemCode, m.orderQty, 'qoh')
           ];
         } else {
           const expCell = [m.expiration1, m.expiration2, m.expiration3]
-            .map(e => e || '-')
+            .map(e => formatExpirationDate(e) || '-')
             .join('\n');
           return [
             i + 1,
@@ -2258,7 +2258,7 @@ export default function OrderView() {
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 rounded text-[10px] font-bold font-mono ${getExpirationColor(med.expiration1)}`}>
-                            {med.expiration1 || '-'}
+                            {formatExpirationDate(med.expiration1) || '-'}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
@@ -2373,7 +2373,7 @@ export default function OrderView() {
                       </div>
                       <div className={`p-2 text-center flex flex-col justify-center items-center ${getExpirationColor(med.expiration1)}`}>
                         <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mb-0.5">Expiry</p>
-                        <p className="text-[10px] font-black">{med.expiration1 || '-'}</p>
+                        <p className="text-[10px] font-black">{formatExpirationDate(med.expiration1) || '-'}</p>
                       </div>
                     </div>
                   </motion.div>

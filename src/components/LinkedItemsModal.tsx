@@ -2,7 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Medication, PHARMACY_NAMES } from '../types';
 import { X, Image as ImageIcon, ExternalLink, ArrowRightLeft, ThermometerSnowflake } from 'lucide-react';
-import { formatNumber } from '../lib/formatters';
+import { formatNumber, formatExpirationDate } from '../lib/formatters';
 
 interface LinkedItemsModalProps {
   medication: Medication | null;
@@ -208,7 +208,7 @@ export default function LinkedItemsModal({ medication, allMedications, onClose, 
                         <div className={showQoh ? "col-span-1 md:col-span-2" : "col-span-1 md:col-span-3"}>
                           <p className="text-[8px] md:text-[9px] font-bold text-[#141414]/30 uppercase tracking-widest mb-1">Primary Expiry</p>
                           <p className={`text-xs md:text-sm font-black ${item.expiration1 ? 'text-[#141414]' : 'text-[#141414]/20'}`}>
-                            {item.expiration1 || 'N/A'}
+                            {formatExpirationDate(item.expiration1) || 'N/A'}
                           </p>
                         </div>
                         <div className="col-span-1">
