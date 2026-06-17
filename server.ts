@@ -5,8 +5,37 @@ import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from "@google/genai";
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 dotenv.config();
+
+// Initialize Firebase Admin for persistent Firestore synchronization
+let adminDb: any = null;
+try {
+  let projectId = process.env.GOOGLE_CLOUD_PROJECT;
+  if (!projectId) {
+    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      projectId = config.projectId;
+    }
+  }
+  
+  if (projectId) {
+    if (getApps().length === 0) {
+      initializeApp({
+        projectId: projectId
+      });
+    }
+    adminDb = getFirestore();
+    console.log(`[Firebase Admin Sync] Firestore initialized successfully for project: ${projectId}`);
+  } else {
+    console.warn('[Firebase Admin Sync] No project ID found. Running in local-only storage fallback.');
+  }
+} catch (err: any) {
+  console.warn('[Firebase Admin Sync] Graceful initialization failure:', err.message);
+}
 
 let aiClient: any = null;
 function getGeminiClient() {
@@ -134,47 +163,403 @@ app.get('/api/auth/settings', (req, res) => {
   });
 });
 
+// Firestore Sync Helpers and Converters
+function convertTimestampToISO(val: any): string {
+  if (!val) return new Date().toISOString();
+  if (typeof val.toDate === 'function') {
+    return val.toDate().toISOString();
+  }
+  if (val._seconds !== undefined) {
+    return new Date(val._seconds * 1000).toISOString();
+  }
+  return typeof val === 'string' ? val : new Date(val).toISOString();
+}
+
+function parseFirestoreDoc(doc: any): any {
+  const data = doc.data();
+  const res = { ...data, id: doc.id };
+  if (res.addedAt) res.addedAt = convertTimestampToISO(res.addedAt);
+  if (res.lastUpdatedAt) res.lastUpdatedAt = convertTimestampToISO(res.lastUpdatedAt);
+  if (res.auditedAt) res.auditedAt = convertTimestampToISO(res.auditedAt);
+  if (res.savedAt) res.savedAt = convertTimestampToISO(res.savedAt);
+  return res;
+}
+
+async function syncMedicationsFromFirestore(): Promise<any[]> {
+  if (!adminDb) return JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+  try {
+    const snapshot = await adminDb.collection('medications').get();
+    const meds: any[] = [];
+    snapshot.forEach(doc => {
+      meds.push(parseFirestoreDoc(doc));
+    });
+    
+    // Keep local cache up to date
+    if (meds.length > 0) {
+      meds.sort((a, b) => (a.itemName || '').localeCompare(b.itemName || ''));
+      fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+    }
+    return meds;
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to sync medications from Firestore:', err.message);
+    return JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+  }
+}
+
+async function saveMedicationToFirestore(item: any): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const { id, addedAt, lastUpdatedAt, ...rest } = item;
+    const docRef = adminDb.collection('medications').doc(id);
+    await docRef.set({
+      ...rest,
+      id: id,
+      addedAt: addedAt || new Date().toISOString(),
+      lastUpdatedAt: lastUpdatedAt || new Date().toISOString(),
+      updatedBy: rest.updatedBy || 'system'
+    }, { merge: true });
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to save medication to Firestore:', err.message);
+  }
+}
+
+async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
+  if (!adminDb) return;
+  try {
+    let batch = adminDb.batch();
+    let count = 0;
+    for (const item of items) {
+      const { id, addedAt, lastUpdatedAt, ...rest } = item;
+      const docRef = adminDb.collection('medications').doc(id);
+      batch.set(docRef, {
+        ...rest,
+        id: id,
+        addedAt: addedAt || new Date().toISOString(),
+        lastUpdatedAt: lastUpdatedAt || new Date().toISOString(),
+        updatedBy: rest.updatedBy || 'system'
+      }, { merge: true });
+      
+      count++;
+      if (count >= 500) {
+        await batch.commit();
+        batch = adminDb.batch();
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed bulk-save medications to Firestore:', err.message);
+  }
+}
+
+async function deleteMedicationFromFirestore(id: string): Promise<void> {
+  if (!adminDb) return;
+  try {
+    await adminDb.collection('medications').doc(id).delete();
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed delete medication from Firestore:', err.message);
+  }
+}
+
+async function syncAuditsFromFirestore(): Promise<any[]> {
+  if (!adminDb) return JSON.parse(fs.readFileSync(AUDITS_FILE, 'utf8'));
+  try {
+    const snapshot = await adminDb.collection('inventory_audits').get();
+    const audits: any[] = [];
+    snapshot.forEach(doc => {
+      audits.push(parseFirestoreDoc(doc));
+    });
+    
+    if (audits.length > 0) {
+      audits.sort((a, b) => new Date(b.auditedAt || 0).getTime() - new Date(a.auditedAt || 0).getTime());
+      fs.writeFileSync(AUDITS_FILE, JSON.stringify(audits, null, 2));
+    }
+    return audits;
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to sync audits from Firestore:', err.message);
+    return JSON.parse(fs.readFileSync(AUDITS_FILE, 'utf8'));
+  }
+}
+
+async function saveAuditToFirestore(item: any): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const { id, auditedAt, ...rest } = item;
+    await adminDb.collection('inventory_audits').doc(id).set({
+      ...rest,
+      id: id,
+      auditedAt: auditedAt ? Timestamp.fromDate(new Date(auditedAt)) : FieldValue.serverTimestamp(),
+      auditedBy: rest.auditedBy || 'system'
+    });
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to save audit to Firestore:', err.message);
+  }
+}
+
+async function syncEntryMistakesDbFromFirestore(): Promise<any> {
+  if (!adminDb) {
+    if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+      return JSON.parse(fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8'));
+    }
+    return null;
+  }
+  try {
+    const docRef = adminDb.collection('entry_mistakes_configs').doc('global');
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      fs.writeFileSync(ENTRY_MISTAKES_DB_FILE, JSON.stringify(data, null, 2));
+      return data;
+    }
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to sync parameters DB from Firestore:', err.message);
+  }
+  if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+    return JSON.parse(fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8'));
+  }
+  return null;
+}
+
+async function saveEntryMistakesDbToFirestore(dbState: any): Promise<void> {
+  if (!adminDb) return;
+  try {
+    await adminDb.collection('entry_mistakes_configs').doc('global').set(dbState);
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to save parameters DB to Firestore:', err.message);
+  }
+}
+
+async function deleteEntryMistakesDbFromFirestore(): Promise<void> {
+  if (!adminDb) return;
+  try {
+    await adminDb.collection('entry_mistakes_configs').doc('global').delete();
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to delete parameters DB from Firestore:', err.message);
+  }
+}
+
+async function syncApplicationStorageFromFirestore(): Promise<any[]> {
+  if (!adminDb) {
+    if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
+      return JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
+    }
+    return [];
+  }
+  try {
+    const snapshot = await adminDb.collection('application_storage').get();
+    const items: any[] = [];
+    snapshot.forEach(doc => {
+      items.push(parseFirestoreDoc(doc));
+    });
+    
+    if (items.length > 0) {
+      items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+      fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
+    }
+    return items;
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to sync application storage from Firestore:', err.message);
+    if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
+      return JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
+    }
+    return [];
+  }
+}
+
+async function saveMismatchesBulkToFirestore(items: any[]): Promise<void> {
+  if (!adminDb) return;
+  try {
+    let batch = adminDb.batch();
+    let count = 0;
+    for (const item of items) {
+      const id = item.id || `${item.mrnOrganization || ''}_${item.actionDateTime || ''}_${item.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const docRef = adminDb.collection('application_storage').doc(id);
+      batch.set(docRef, {
+        ...item,
+        id: id,
+        savedAt: item.savedAt || new Date().toISOString()
+      }, { merge: true });
+      
+      count++;
+      if (count >= 500) {
+        await batch.commit();
+        batch = adminDb.batch();
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed bulk-save mismatches to Firestore:', err.message);
+  }
+}
+
+async function deleteMismatchFromFirestore(item: any): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const id = item.id || `${item.mrnOrganization || ''}_${item.actionDateTime || ''}_${item.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    await adminDb.collection('application_storage').doc(id).delete();
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to delete mismatch from Firestore:', err.message);
+  }
+}
+
+async function resetApplicationStorageInFirestore(): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const snapshot = await adminDb.collection('application_storage').get();
+    let batch = adminDb.batch();
+    let count = 0;
+    for (const doc of snapshot.docs) {
+      batch.delete(doc.ref);
+      count++;
+      if (count >= 500) {
+        await batch.commit();
+        batch = adminDb.batch();
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to reset application storage in Firestore:', err.message);
+  }
+}
+
+async function syncAllFromFirestoreAtStartup() {
+  if (!adminDb) {
+    console.log('[Firebase Startup Sync] Firestore admin database not active. Skipping startup pull.');
+    return;
+  }
+  console.log('[Firebase Startup Sync] Loading persistent data from Firestore...');
+  try {
+    await Promise.all([
+      syncMedicationsFromFirestore().catch(e => console.error('Startup medications sync failed:', e.message)),
+      syncAuditsFromFirestore().catch(e => console.error('Startup audits sync failed:', e.message)),
+      syncEntryMistakesDbFromFirestore().catch(e => console.error('Startup parameters DB sync failed:', e.message)),
+      syncApplicationStorageFromFirestore().catch(e => console.error('Startup application storage sync failed:', e.message))
+    ]);
+    console.log('[Firebase Startup Sync] All persistent data loaded successfully!');
+  } catch (err: any) {
+    console.error('[Firebase Startup Sync] Error during startup fetch:', err.message);
+  }
+}
+
+async function resetAllInFirestore(): Promise<void> {
+  if (!adminDb) return;
+  try {
+    // Delete medications
+    const medsSnap = await adminDb.collection('medications').get();
+    let batch = adminDb.batch();
+    let count = 0;
+    for (const doc of medsSnap.docs) {
+      batch.delete(doc.ref);
+      count++;
+      if (count >= 500) {
+        await batch.commit();
+        batch = adminDb.batch();
+        count = 0;
+      }
+    }
+    if (count > 0) await batch.commit();
+
+    // Delete audits
+    const auditsSnap = await adminDb.collection('inventory_audits').get();
+    batch = adminDb.batch();
+    count = 0;
+    for (const doc of auditsSnap.docs) {
+      batch.delete(doc.ref);
+      count++;
+      if (count >= 500) {
+        await batch.commit();
+        batch = adminDb.batch();
+        count = 0;
+      }
+    }
+    if (count > 0) await batch.commit();
+
+    // Delete entry mistakes config doc
+    await adminDb.collection('entry_mistakes_configs').doc('global').delete();
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to clear Firestore collections during system reset:', err.message);
+  }
+}
+
 // API Routes
-app.get('/api/medications', (req, res) => {
+app.get('/api/medications', async (req, res) => {
+  if (adminDb) {
+    await syncMedicationsFromFirestore().catch(err => console.error(err));
+  }
   const data = fs.readFileSync(MEDS_FILE, 'utf8');
   res.json(JSON.parse(data));
 });
 
-app.post('/api/medications', (req, res) => {
-  const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
-  const newMed = {
-    ...req.body,
-    id: Math.random().toString(36).substring(2, 15),
-    addedAt: new Date().toISOString(),
-    lastUpdatedAt: new Date().toISOString()
-  };
-  meds.push(newMed);
-  fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
-  res.status(201).json(newMed);
-});
-
-app.put('/api/medications/:id', (req, res) => {
-  const { id } = req.params;
-  const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
-  const index = meds.findIndex((m: any) => m.id === id);
-  if (index !== -1) {
-    meds[index] = { ...meds[index], ...req.body, lastUpdatedAt: new Date().toISOString() };
+app.post('/api/medications', async (req, res) => {
+  try {
+    const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+    const newMed = {
+      ...req.body,
+      id: Math.random().toString(36).substring(2, 15),
+      addedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString()
+    };
+    meds.push(newMed);
     fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
-    res.json(meds[index]);
-  } else {
-    res.status(404).send('Not found');
+
+    if (adminDb) {
+      await saveMedicationToFirestore(newMed).catch(err => console.error(err));
+    }
+
+    res.status(201).json(newMed);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/medications/:id', (req, res) => {
-  const { id } = req.params;
-  let meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
-  meds = meds.filter((m: any) => m.id !== id);
-  fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
-  res.status(204).send();
+app.put('/api/medications/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+    const index = meds.findIndex((m: any) => m.id === id);
+    if (index !== -1) {
+      meds[index] = { ...meds[index], ...req.body, lastUpdatedAt: new Date().toISOString() };
+      fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+
+      if (adminDb) {
+        await saveMedicationToFirestore(meds[index]).catch(err => console.error(err));
+      }
+
+      res.json(meds[index]);
+    } else {
+      res.status(404).send('Not found');
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/medications/bulk', (req, res) => {
+app.delete('/api/medications/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    let meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+    meds = meds.filter((m: any) => m.id !== id);
+    fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+
+    if (adminDb) {
+      await deleteMedicationFromFirestore(id).catch(err => console.error(err));
+    }
+
+    res.status(204).send();
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/medications/bulk', async (req, res) => {
   try {
     const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
     const { items, options } = req.body;
@@ -263,6 +648,11 @@ app.post('/api/medications/bulk', (req, res) => {
     });
 
     fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+
+    if (adminDb) {
+      await saveMedicationsBulkToFirestore(meds).catch(err => console.error(err));
+    }
+
     res.json({ count: newMeds.length });
   } catch (err: any) {
     console.error('Bulk import error:', err);
@@ -270,21 +660,33 @@ app.post('/api/medications/bulk', (req, res) => {
   }
 });
 
-app.get('/api/audits', (req, res) => {
+app.get('/api/audits', async (req, res) => {
+  if (adminDb) {
+    await syncAuditsFromFirestore().catch(err => console.error(err));
+  }
   const data = fs.readFileSync(AUDITS_FILE, 'utf8');
   res.json(JSON.parse(data));
 });
 
-app.post('/api/audits', (req, res) => {
-  const audits = JSON.parse(fs.readFileSync(AUDITS_FILE, 'utf8'));
-  const newAudit = {
-    ...req.body,
-    id: Math.random().toString(36).substring(2, 11),
-    auditedAt: new Date().toISOString()
-  };
-  audits.push(newAudit);
-  fs.writeFileSync(AUDITS_FILE, JSON.stringify(audits, null, 2));
-  res.status(201).json(newAudit);
+app.post('/api/audits', async (req, res) => {
+  try {
+    const audits = JSON.parse(fs.readFileSync(AUDITS_FILE, 'utf8'));
+    const newAudit = {
+      ...req.body,
+      id: Math.random().toString(36).substring(2, 11),
+      auditedAt: new Date().toISOString()
+    };
+    audits.push(newAudit);
+    fs.writeFileSync(AUDITS_FILE, JSON.stringify(audits, null, 2));
+
+    if (adminDb) {
+      await saveAuditToFirestore(newAudit).catch(err => console.error(err));
+    }
+
+    res.status(201).json(newAudit);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/translation_cache', (req, res) => {
@@ -308,18 +710,30 @@ app.post('/api/translation_cache', (req, res) => {
   }
 });
 
-app.post('/api/system/reset', (req, res) => {
-  fs.writeFileSync(MEDS_FILE, '[]');
-  fs.writeFileSync(AUDITS_FILE, '[]');
-  fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
-  if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
-    fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
+app.post('/api/system/reset', async (req, res) => {
+  try {
+    fs.writeFileSync(MEDS_FILE, '[]');
+    fs.writeFileSync(AUDITS_FILE, '[]');
+    fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
+    if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+      fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
+    }
+
+    if (adminDb) {
+      await resetAllInFirestore().catch(err => console.error(err));
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
-  res.json({ success: true });
 });
 
-app.get('/api/entry-mistakes/db', (req, res) => {
+app.get('/api/entry-mistakes/db', async (req, res) => {
   try {
+    if (adminDb) {
+      await syncEntryMistakesDbFromFirestore().catch(err => console.error(err));
+    }
     if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
       const data = fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8');
       res.json(JSON.parse(data));
@@ -331,7 +745,7 @@ app.get('/api/entry-mistakes/db', (req, res) => {
   }
 });
 
-app.post('/api/entry-mistakes/db', (req, res) => {
+app.post('/api/entry-mistakes/db', async (req, res) => {
   try {
     const { parameters, pharmacists } = req.body;
     const dbState = {
@@ -341,17 +755,33 @@ app.post('/api/entry-mistakes/db', (req, res) => {
       pharmacists: pharmacists || []
     };
     fs.writeFileSync(ENTRY_MISTAKES_DB_FILE, JSON.stringify(dbState, null, 2));
+
+    if (adminDb) {
+      await saveEntryMistakesDbToFirestore(dbState).catch(err => console.error(err));
+    }
+
     res.json({ success: true, dbState });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.delete('/api/entry-mistakes/db', (req, res) => {
+app.delete('/api/entry-mistakes/db', async (req, res) => {
   try {
+    const adminPassword = req.headers['x-admin-password'] || req.body?.adminPassword || req.query?.adminPassword;
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    if (adminPassword !== settings.adminPassword) {
+      return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
+    }
+
     if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
       fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
     }
+
+    if (adminDb) {
+      await deleteEntryMistakesDbFromFirestore().catch(err => console.error(err));
+    }
+
     res.json({ success: true, configured: false, parameters: [], pharmacists: [] });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -359,8 +789,11 @@ app.delete('/api/entry-mistakes/db', (req, res) => {
 });
 
 // GET all stored application mistakes
-app.get('/api/application-storage', (req, res) => {
+app.get('/api/application-storage', async (req, res) => {
   try {
+    if (adminDb) {
+      await syncApplicationStorageFromFirestore().catch(err => console.error(err));
+    }
     if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
       const data = fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8');
       res.json(JSON.parse(data));
@@ -372,29 +805,44 @@ app.get('/api/application-storage', (req, res) => {
   }
 });
 
-// POST to save a mismatch mistake to Application Storage
-app.post('/api/application-storage', (req, res) => {
+// POST to save a mismatch mistake to Application Storage (Supports both single object and array of objects for bulk uploads)
+app.post('/api/application-storage', async (req, res) => {
   try {
-    const item = req.body;
+    const body = req.body;
+    const itemsToSave = Array.isArray(body) ? body : [body];
+    
     let items = [];
     if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
       items = JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
     }
     
-    // De-duplicate items by id or composite key (mrn + date + itemNumber)
-    const isDup = items.some((x: any) => 
-      x.id === item.id || 
-      (x.mrnOrganization === item.mrnOrganization && 
-       x.actionDateTime === item.actionDateTime && 
-       x.itemNumber === item.itemNumber)
-    );
+    let addedCount = 0;
+    const newlyAddedItems: any[] = [];
+    for (const item of itemsToSave) {
+      // De-duplicate items by id or composite key (mrn + date + itemNumber)
+      const isDup = items.some((x: any) => 
+        x.id === item.id || 
+        (x.mrnOrganization === item.mrnOrganization && 
+         x.actionDateTime === item.actionDateTime && 
+         x.itemNumber === item.itemNumber)
+      );
+      
+      if (!isDup) {
+        const itemWithTime = {
+          ...item,
+          savedAt: new Date().toISOString()
+        };
+        items.push(itemWithTime);
+        newlyAddedItems.push(itemWithTime);
+        addedCount++;
+      }
+    }
     
-    if (!isDup) {
-      items.push({
-        ...item,
-        savedAt: new Date().toISOString()
-      });
+    if (addedCount > 0) {
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
+      if (adminDb) {
+        await saveMismatchesBulkToFirestore(newlyAddedItems).catch(err => console.error(err));
+      }
     }
     res.json({ success: true, count: items.length });
   } catch (err: any) {
@@ -403,11 +851,9 @@ app.post('/api/application-storage', (req, res) => {
 });
 
 // POST to delete an item (Requires Admin Password in request body)
-app.post('/api/application-storage/delete', (req, res) => {
+app.post('/api/application-storage/delete', async (req, res) => {
   try {
     const { id, mrnOrganization, actionDateTime, itemNumber, adminPassword } = req.body;
-    
-    // Read and verify password from settings
     const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
     if (adminPassword !== settings.adminPassword) {
       return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
@@ -418,18 +864,23 @@ app.post('/api/application-storage/delete', (req, res) => {
     }
     
     let items = JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
-    const initialCount = items.length;
-    
-    // Filter out item by ID first, or composite key fallback
-    items = items.filter((x: any) => {
-      if (id && x.id === id) return false;
+    const itemToDelete = items.find((x: any) => {
+      if (id && x.id === id) return true;
       if (x.mrnOrganization === mrnOrganization && x.actionDateTime === actionDateTime && x.itemNumber === itemNumber) {
-        return false;
+        return true;
       }
-      return true;
+      return false;
     });
+
+    if (itemToDelete) {
+      items = items.filter((x: any) => x !== itemToDelete);
+      fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
+      
+      if (adminDb) {
+        await deleteMismatchFromFirestore(itemToDelete).catch(err => console.error(err));
+      }
+    }
     
-    fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
     res.json({ success: true, count: items.length });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -437,17 +888,20 @@ app.post('/api/application-storage/delete', (req, res) => {
 });
 
 // POST to reset entire storage (Requires Admin Password inside body)
-app.post('/api/application-storage/reset', (req, res) => {
+app.post('/api/application-storage/reset', async (req, res) => {
   try {
     const { adminPassword } = req.body;
-    
-    // Read and verify password from settings
     const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
     if (adminPassword !== settings.adminPassword) {
       return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
     }
     
     fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+
+    if (adminDb) {
+      await resetApplicationStorageInFirestore().catch(err => console.error(err));
+    }
+
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -640,6 +1094,11 @@ app.use(express.static(path.join(process.cwd(), 'public'), {
 
 async function startServer() {
   const isProd = process.env.NODE_ENV === "production" && fs.existsSync(path.join(process.cwd(), 'dist/index.html'));
+
+  // Run startup sync to fetch persistent Firestore state down into local cache
+  await syncAllFromFirestoreAtStartup().catch(err => {
+    console.error('[Firebase Startup Sync Init] Failed to run startup fetch:', err.message);
+  });
 
   // Vite middleware for development
   if (!isProd) {

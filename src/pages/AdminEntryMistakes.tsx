@@ -425,25 +425,36 @@ export default function AdminEntryMistakes() {
   };
 
   const deleteDb = () => {
+    setAdminPasswordInput('');
+    setPasswordError('');
     setShowDeleteConfirm(true);
   };
 
   const confirmDeleteDb = async () => {
-    setShowDeleteConfirm(false);
-    setDbLoading(true);
+    setPasswordError('');
     try {
       const res = await fetch('/api/entry-mistakes/db', {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': adminPasswordInput
+        },
+        body: JSON.stringify({ adminPassword: adminPasswordInput })
       });
+      const data = await res.json();
       if (res.ok) {
         setDbState({ configured: false, parameters: [], pharmacists: [] });
         setWorkloadRecords([]);
         setWorkloadUploaded(false);
+        setShowDeleteConfirm(false);
+        setAdminPasswordInput('');
+        setPasswordError('');
+      } else {
+        setPasswordError(data.error || 'Incorrect admin password. Action unauthorized.');
       }
     } catch (err) {
       console.error('Failed to delete database parameters:', err);
-    } finally {
-      setDbLoading(false);
+      setPasswordError('Network request failed. Please try again.');
     }
   };
 
@@ -947,6 +958,57 @@ export default function AdminEntryMistakes() {
         const mismatchOnly = evaluated.filter(r => r.isMismatch);
         setWorkloadRecords(evaluated);
         setWorkloadUploaded(true);
+
+        // Auto-save discovered mismatches to Application Storage forever (admin can delete individual items)
+        const standardMismatches = evaluated.filter(r => r.isMismatch);
+        const brandVsGenericMismatches = evaluated.map(rec => {
+          const outcome = isNonQatariBrandMistake(rec, medications, isLocationMatches);
+          if (outcome.isMistake) {
+            return {
+              ...rec,
+              reasons: [outcome.details],
+              isMismatch: true
+            };
+          }
+          return null;
+        }).filter(Boolean) as WorkloadRecord[];
+
+        const allMismatchesToSave: WorkloadRecord[] = [];
+        const seenKeys = new Set<string>();
+
+        for (const item of standardMismatches) {
+          const compKey = `${item.mrnOrganization}_${item.actionDateTime}_${item.itemNumber}`;
+          allMismatchesToSave.push({ ...item });
+          seenKeys.add(compKey);
+        }
+
+        for (const item of brandVsGenericMismatches) {
+          const compKey = `${item.mrnOrganization}_${item.actionDateTime}_${item.itemNumber}`;
+          if (seenKeys.has(compKey)) {
+            const existingItem = allMismatchesToSave.find(x => `${x.mrnOrganization}_${x.actionDateTime}_${x.itemNumber}` === compKey);
+            if (existingItem) {
+              existingItem.reasons = Array.from(new Set([...existingItem.reasons, ...item.reasons]));
+            }
+          } else {
+            allMismatchesToSave.push({ ...item });
+            seenKeys.add(compKey);
+          }
+        }
+
+        if (allMismatchesToSave.length > 0) {
+          try {
+            const saveRes = await fetch('/api/application-storage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(allMismatchesToSave)
+            });
+            if (saveRes.ok) {
+              fetchSavedStorageItems();
+            }
+          } catch (saveErr) {
+            console.error('Failed to automatically save mismatches:', saveErr);
+          }
+        }
       } catch (err: any) {
         alert(`Error parsing workload Excel: ${err.message}`);
       } finally {
@@ -1943,26 +2005,57 @@ export default function AdminEntryMistakes() {
           <div className="bg-white border border-[#141414]/10 max-w-md w-full rounded-2xl shadow-2xl p-6 relative overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="flex items-start gap-4">
               <div className="p-3 bg-red-50 text-red-600 rounded-xl border border-red-100 shrink-0">
-                <AlertTriangle className="w-6 h-6" />
+                <AlertTriangle className="w-6 h-6 animate-pulse" />
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <h3 className="text-base font-black text-[#141414] uppercase tracking-wide">Delete Reference Ledger?</h3>
                 <p className="text-xs text-[#141414]/60 mt-1 leading-relaxed">
-                  Are you sure you want to delete the stored Database Parameters and Pharmacist List? This action is <strong className="text-red-600 font-extrabold uppercase">irreversible</strong>, and all mismatch validations will stop working until you upload a new reference sheet.
+                  Are you sure you want to delete the stored Database Parameters and Pharmacist List? This action is <strong className="text-red-600 font-extrabold uppercase">irreversible</strong>, and all mismatch validations will stop working.
                 </p>
+                <p className="text-xs text-[#141414]/60 mt-1.5 leading-relaxed">
+                  Please verify your <strong className="text-red-700 font-bold uppercase">Admin Password</strong> to proceed:
+                </p>
+
+                <div className="mt-4">
+                  <label className="block text-[9px] uppercase font-black text-[#141414]/40 tracking-widest mb-1">Enter Admin Password</label>
+                  <input
+                    type="password"
+                    value={adminPasswordInput}
+                    onChange={(e) => setAdminPasswordInput(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full text-xs font-mono font-bold bg-[#141414]/5 border border-[#141414]/10 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-red-500 focus:bg-white text-[#141414] transition-all"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        confirmDeleteDb();
+                      }
+                    }}
+                  />
+                  {passwordError && (
+                    <p className="text-red-600 text-[10px] font-bold mt-1.5 flex items-center gap-1 bg-red-50 border border-red-100 p-2 rounded-lg">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {passwordError}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
             
             <div className="mt-6 flex justify-end gap-3 border-t border-[#141414]/5 pt-4">
               <button 
-                onClick={() => setShowDeleteConfirm(false)}
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setAdminPasswordInput('');
+                  setPasswordError('');
+                }}
                 className="px-4 py-2 text-xs font-bold text-[#141414]/70 hover:text-[#141414] bg-[#141414]/5 rounded-xl transition-all hover:bg-[#141414]/10"
               >
                 Cancel
               </button>
               <button 
                 onClick={confirmDeleteDb}
-                className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md transition-all active:scale-95"
+                disabled={!adminPasswordInput}
+                className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 rounded-xl shadow-md transition-all active:scale-95"
               >
                 Yes, Delete Ledger
               </button>

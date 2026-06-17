@@ -3287,7 +3287,7 @@ export default function AdminDashboard() {
                               {item.itemName}
                             </span>
                             {isExpired && (
-                              <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded">
+                              <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded animate-pulse">
                                 EXPIRED
                               </span>
                             )}
@@ -3295,7 +3295,29 @@ export default function AdminDashboard() {
                               <ThermometerSnowflake size={10} className="text-blue-500" />
                             )}
                           </div>
-                          <span className="text-[10px] font-mono text-[#141414]/40">{item.itemCode}</span>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-1">
+                            <span className="text-[10px] font-mono text-[#141414]/40">{item.itemCode}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {[item.expiration1, item.expiration2, item.expiration3].map((exp, expIdx) => {
+                                if (!exp || exp === '-' || exp === '.') return null;
+                                const parsedDate = parseExpDate(exp);
+                                const isDateExpired = parsedDate && isBefore(parsedDate, startOfToday());
+                                return (
+                                  <span 
+                                    key={expIdx} 
+                                    className={`text-[8.5px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                                      isDateExpired 
+                                        ? 'bg-red-500 text-white font-black' 
+                                        : 'bg-[#141414]/5 text-[#141414]/60'
+                                    }`}
+                                  >
+                                    <span>E{expIdx + 1}: {formatExpirationDate(exp)}</span>
+                                    {isDateExpired && <span className="text-[8px]">⚠️</span>}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
                         <div className="flex items-center gap-6">
                           <div className="text-right">
