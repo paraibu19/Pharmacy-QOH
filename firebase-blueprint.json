@@ -44,6 +44,28 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["password"]
+    },
+    "StoredMistake": {
+      "title": "Stored Mistake",
+      "description": "Represents a stored dispensing mismatch/fault",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "actionDateTime": { "type": "string" },
+        "mrnOrganization": { "type": "string" },
+        "personNameFull": { "type": "string" },
+        "sex": { "type": "string" },
+        "nationality": { "type": "string" },
+        "pharmacyLocation": { "type": "string" },
+        "actionType": { "type": "string" },
+        "itemNumber": { "type": "string" },
+        "labelDescription": { "type": "string" },
+        "dispenseQuantity": { "type": "string" },
+        "actionPersonnelPharmacy": { "type": "string" },
+        "reasons": { "type": "array" },
+        "savedAt": { "type": "string" }
+      },
+      "required": ["id", "mrnOrganization", "itemNumber"]
     }
   },
   "firestore": {
@@ -58,6 +80,10 @@
     "settings": {
       "schema": "Setting",
       "description": "Portal passwords and system configuration"
+    },
+    "application_storage": {
+      "schema": "StoredMistake",
+      "description": "Log of dispensing mistakes & mismatches"
     }
   }
 }

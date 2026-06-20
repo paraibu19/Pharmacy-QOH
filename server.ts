@@ -13,23 +13,31 @@ dotenv.config();
 // Initialize Firebase Admin for persistent Firestore synchronization
 let adminDb: any = null;
 try {
-  let projectId = process.env.GOOGLE_CLOUD_PROJECT;
+  let projectId: string | undefined = undefined;
+  let databaseId: string | undefined = undefined;
+  
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    projectId = config.projectId;
+    databaseId = config.firestoreDatabaseId;
+  }
+  
   if (!projectId) {
-    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      projectId = config.projectId;
-    }
+    projectId = process.env.GOOGLE_CLOUD_PROJECT;
   }
   
   if (projectId) {
+    let adminApp;
     if (getApps().length === 0) {
-      initializeApp({
+      adminApp = initializeApp({
         projectId: projectId
       });
+    } else {
+      adminApp = getApps()[0];
     }
-    adminDb = getFirestore();
-    console.log(`[Firebase Admin Sync] Firestore initialized successfully for project: ${projectId}`);
+    adminDb = databaseId ? getFirestore(adminApp, databaseId) : getFirestore(adminApp);
+    console.log(`[Firebase Admin Sync] Firestore initialized successfully for project: ${projectId}, database: ${databaseId || '(default)'}`);
   } else {
     console.warn('[Firebase Admin Sync] No project ID found. Running in local-only storage fallback.');
   }
@@ -185,6 +193,25 @@ function parseFirestoreDoc(doc: any): any {
   return res;
 }
 
+function handleAdminDbError(err: any, context: string) {
+  const errMsg = err.message || String(err);
+  const isPermissionDenied = errMsg.includes('PERMISSION_DENIED') || 
+                             errMsg.includes('insufficient permissions') || 
+                             errMsg.includes(' 7 ') ||
+                             errMsg.startsWith('7 ') ||
+                             errMsg.includes(': 7') ||
+                             errMsg.includes('Status code: 7');
+  
+  if (isPermissionDenied) {
+    if (adminDb) {
+      console.warn(`[Firebase Sync Fallback] Server credentials do not have permission to sync (${context}). Gracefully disabling live server-side Firestore sync and using local filesystem storage fallback.`);
+      adminDb = null;
+    }
+  } else {
+    console.error(`[Firebase Sync] Failed: ${context}:`, errMsg);
+  }
+}
+
 async function syncMedicationsFromFirestore(): Promise<any[]> {
   if (!adminDb) return JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
   try {
@@ -198,10 +225,41 @@ async function syncMedicationsFromFirestore(): Promise<any[]> {
     if (meds.length > 0) {
       meds.sort((a, b) => (a.itemName || '').localeCompare(b.itemName || ''));
       fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+    } else {
+      // If Firestore is empty but our local JSON has medications, seed Firestore!
+      const localDataStr = fs.readFileSync(MEDS_FILE, 'utf8');
+      const localMeds = JSON.parse(localDataStr);
+      if (localMeds && localMeds.length > 0) {
+        console.log(`[Firebase Seed] Firestore 'medications' is empty. Seeding Firestore with ${localMeds.length} items from local medications.json...`);
+        let batch = adminDb.batch();
+        let count = 0;
+        for (const med of localMeds) {
+          const { id, addedAt, lastUpdatedAt, ...rest } = med;
+          const docRef = adminDb.collection('medications').doc(id);
+          batch.set(docRef, {
+            ...rest,
+            id: id,
+            addedAt: addedAt || new Date().toISOString(),
+            lastUpdatedAt: lastUpdatedAt || new Date().toISOString(),
+            updatedBy: rest.updatedBy || 'system'
+          }, { merge: true });
+          count++;
+          if (count >= 400) {
+            await batch.commit();
+            batch = adminDb.batch();
+            count = 0;
+          }
+        }
+        if (count > 0) {
+          await batch.commit();
+        }
+        console.log(`[Firebase Seed] Seeding completed for ${localMeds.length} medications.`);
+        return localMeds;
+      }
     }
     return meds;
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed to sync medications from Firestore:', err.message);
+    handleAdminDbError(err, 'sync medications');
     return JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
   }
 }
@@ -219,7 +277,7 @@ async function saveMedicationToFirestore(item: any): Promise<void> {
       updatedBy: rest.updatedBy || 'system'
     }, { merge: true });
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed to save medication to Firestore:', err.message);
+    handleAdminDbError(err, 'save medication');
   }
 }
 
@@ -250,7 +308,7 @@ async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
       await batch.commit();
     }
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed bulk-save medications to Firestore:', err.message);
+    handleAdminDbError(err, 'bulk-save medications');
   }
 }
 
@@ -259,7 +317,7 @@ async function deleteMedicationFromFirestore(id: string): Promise<void> {
   try {
     await adminDb.collection('medications').doc(id).delete();
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed delete medication from Firestore:', err.message);
+    handleAdminDbError(err, 'delete medication');
   }
 }
 
@@ -275,10 +333,40 @@ async function syncAuditsFromFirestore(): Promise<any[]> {
     if (audits.length > 0) {
       audits.sort((a, b) => new Date(b.auditedAt || 0).getTime() - new Date(a.auditedAt || 0).getTime());
       fs.writeFileSync(AUDITS_FILE, JSON.stringify(audits, null, 2));
+    } else {
+      // Seed audits from local JSON
+      const localDataStr = fs.readFileSync(AUDITS_FILE, 'utf8');
+      const localAudits = JSON.parse(localDataStr);
+      if (localAudits && localAudits.length > 0) {
+        console.log(`[Firebase Seed] Firestore 'inventory_audits' is empty. Seeding Firestore with ${localAudits.length} items...`);
+        let batch = adminDb.batch();
+        let count = 0;
+        for (const item of localAudits) {
+          const { id, auditedAt, ...rest } = item;
+          const docRef = adminDb.collection('inventory_audits').doc(id);
+          batch.set(docRef, {
+            ...rest,
+            id: id,
+            auditedAt: auditedAt ? Timestamp.fromDate(new Date(auditedAt)) : FieldValue.serverTimestamp(),
+            auditedBy: rest.auditedBy || 'system'
+          }, { merge: true });
+          count++;
+          if (count >= 400) {
+            await batch.commit();
+            batch = adminDb.batch();
+            count = 0;
+          }
+        }
+        if (count > 0) {
+          await batch.commit();
+        }
+        console.log(`[Firebase Seed] Seeding completed for ${localAudits.length} audits.`);
+        return localAudits;
+      }
     }
     return audits;
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed to sync audits from Firestore:', err.message);
+    handleAdminDbError(err, 'sync audits');
     return JSON.parse(fs.readFileSync(AUDITS_FILE, 'utf8'));
   }
 }
@@ -294,7 +382,7 @@ async function saveAuditToFirestore(item: any): Promise<void> {
       auditedBy: rest.auditedBy || 'system'
     });
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed to save audit to Firestore:', err.message);
+    handleAdminDbError(err, 'save audit');
   }
 }
 
@@ -312,9 +400,24 @@ async function syncEntryMistakesDbFromFirestore(): Promise<any> {
       const data = docSnap.data();
       fs.writeFileSync(ENTRY_MISTAKES_DB_FILE, JSON.stringify(data, null, 2));
       return data;
+    } else {
+      // Seed entry_mistakes_configs if local exists
+      if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+        const localDataStr = fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8');
+        try {
+          const localData = JSON.parse(localDataStr);
+          if (localData) {
+            console.log(`[Firebase Seed] Firestore 'entry_mistakes_configs/global' is empty. Seeding Firestore with local parameters...`);
+            await docRef.set(localData);
+            return localData;
+          }
+        } catch (e: any) {
+          console.warn("Error parsing local entry mistakes JSON file during seeding:", e.message);
+        }
+      }
     }
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed to sync parameters DB from Firestore:', err.message);
+    handleAdminDbError(err, 'sync parameters DB');
   }
   if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
     return JSON.parse(fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8'));
@@ -327,7 +430,7 @@ async function saveEntryMistakesDbToFirestore(dbState: any): Promise<void> {
   try {
     await adminDb.collection('entry_mistakes_configs').doc('global').set(dbState);
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed to save parameters DB to Firestore:', err.message);
+    handleAdminDbError(err, 'save parameters DB');
   }
 }
 
@@ -336,7 +439,7 @@ async function deleteEntryMistakesDbFromFirestore(): Promise<void> {
   try {
     await adminDb.collection('entry_mistakes_configs').doc('global').delete();
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed to delete parameters DB from Firestore:', err.message);
+    handleAdminDbError(err, 'delete parameters DB');
   }
 }
 
@@ -357,10 +460,45 @@ async function syncApplicationStorageFromFirestore(): Promise<any[]> {
     if (items.length > 0) {
       items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
+    } else {
+      // Seed application storage from local JSON file if exists and has records
+      if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
+        try {
+          const localDataStr = fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8');
+          const localItems = JSON.parse(localDataStr);
+          if (localItems && localItems.length > 0) {
+            console.log(`[Firebase Seed] Firestore 'application_storage' is empty. Seeding Firestore with ${localItems.length} items...`);
+            let batch = adminDb.batch();
+            let count = 0;
+            for (const item of localItems) {
+              const { id, savedAt, ...rest } = item;
+              const docRef = adminDb.collection('application_storage').doc(id);
+              batch.set(docRef, {
+                ...rest,
+                id: id,
+                savedAt: savedAt || new Date().toISOString()
+              }, { merge: true });
+              count++;
+              if (count >= 400) {
+                await batch.commit();
+                batch = adminDb.batch();
+                count = 0;
+              }
+            }
+            if (count > 0) {
+              await batch.commit();
+            }
+            console.log(`[Firebase Seed] Seeding completed for ${localItems.length} application storage records.`);
+            return localItems;
+          }
+        } catch (e: any) {
+          console.warn("Error parsing or seeding application_storage from local JSON file:", e.message);
+        }
+      }
     }
     return items;
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed to sync application storage from Firestore:', err.message);
+    handleAdminDbError(err, 'sync application storage');
     if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
       return JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
     }

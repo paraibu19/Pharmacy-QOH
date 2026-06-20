@@ -125,5 +125,11 @@ service cloud.firestore {
       allow read, get, list: if true;
       allow write, create, update: if true;
     }
+
+    // Application Storage Collection
+    match /application_storage/{storageId} {
+      allow read, get, list: if true;
+      allow write, create, update, delete: if true;
+    }
   }
 }

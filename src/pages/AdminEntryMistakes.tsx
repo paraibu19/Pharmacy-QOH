@@ -28,6 +28,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useMedications } from '../hooks/useMedications';
 import { Medication } from '../types';
 import { sessionStorage } from '../lib/storage';
+import { db } from '../lib/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 // Types representing the database schema
 interface ParameterRow {
@@ -297,6 +299,17 @@ export default function AdminEntryMistakes() {
 
   const fileInputDbRef = useRef<HTMLInputElement>(null);
   const fileInputWorkloadRef = useRef<HTMLInputElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollTable = (direction: 'left' | 'right') => {
+    if (tableContainerRef.current) {
+      const scrollAmount = 350;
+      tableContainerRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   // Handler to delete a specific mismatch reason one by one
   const handleDeleteReason = (recordId: string, reasonToDelete: string) => {
@@ -342,7 +355,53 @@ export default function AdminEntryMistakes() {
   // Fetch configured parameters database on load
   useEffect(() => {
     fetchDb();
-    fetchSavedStorageItems();
+    
+    let unsubscribe: (() => void) | undefined = undefined;
+
+    if (db) {
+      try {
+        const colRef = collection(db, 'application_storage');
+        unsubscribe = onSnapshot(colRef, (snapshot) => {
+          const loaded: any[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            loaded.push({
+              id: doc.id,
+              actionDateTime: data.actionDateTime || '',
+              mrnOrganization: data.mrnOrganization || '',
+              personNameFull: data.personNameFull || '',
+              sex: data.sex || '',
+              nationality: data.nationality || '',
+              pharmacyLocation: data.pharmacyLocation || '',
+              actionType: data.actionType || '',
+              itemNumber: data.itemNumber || '',
+              labelDescription: data.labelDescription || '',
+              dispenseQuantity: data.dispenseQuantity || '',
+              actionPersonnelPharmacy: data.actionPersonnelPharmacy || '',
+              reasons: data.reasons || [],
+              savedAt: data.savedAt || ''
+            });
+          });
+          // Sort items by savedAt descending
+          loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+          setSavedStorageItems(loaded);
+        }, (error) => {
+          console.warn("Firestore onSnapshot error on application_storage mapping:", error);
+          fetchSavedStorageItems();
+        });
+      } catch (err) {
+        console.warn("Firestore subscription failed in AdminEntryMistakes, fallback:", err);
+        fetchSavedStorageItems();
+      }
+    } else {
+      fetchSavedStorageItems();
+    }
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
   const fetchSavedStorageItems = async () => {
@@ -973,42 +1032,6 @@ export default function AdminEntryMistakes() {
           return null;
         }).filter(Boolean) as WorkloadRecord[];
 
-        const allMismatchesToSave: WorkloadRecord[] = [];
-        const seenKeys = new Set<string>();
-
-        for (const item of standardMismatches) {
-          const compKey = `${item.mrnOrganization}_${item.actionDateTime}_${item.itemNumber}`;
-          allMismatchesToSave.push({ ...item });
-          seenKeys.add(compKey);
-        }
-
-        for (const item of brandVsGenericMismatches) {
-          const compKey = `${item.mrnOrganization}_${item.actionDateTime}_${item.itemNumber}`;
-          if (seenKeys.has(compKey)) {
-            const existingItem = allMismatchesToSave.find(x => `${x.mrnOrganization}_${x.actionDateTime}_${x.itemNumber}` === compKey);
-            if (existingItem) {
-              existingItem.reasons = Array.from(new Set([...existingItem.reasons, ...item.reasons]));
-            }
-          } else {
-            allMismatchesToSave.push({ ...item });
-            seenKeys.add(compKey);
-          }
-        }
-
-        if (allMismatchesToSave.length > 0) {
-          try {
-            const saveRes = await fetch('/api/application-storage', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(allMismatchesToSave)
-            });
-            if (saveRes.ok) {
-              fetchSavedStorageItems();
-            }
-          } catch (saveErr) {
-            console.error('Failed to automatically save mismatches:', saveErr);
-          }
-        }
       } catch (err: any) {
         alert(`Error parsing workload Excel: ${err.message}`);
       } finally {
@@ -1642,7 +1665,7 @@ export default function AdminEntryMistakes() {
                 )}
 
                 {/* Main Mistakes Report Table */}
-                <div className="bg-white border border-[#141414]/10 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="bg-white border border-[#141414]/10 rounded-2xl p-6 shadow-sm space-y-4 max-w-full overflow-hidden">
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#141414]/5 pb-4">
                     <div>
                       <h3 className="text-base font-black text-[#141414] uppercase tracking-wide">
@@ -1741,8 +1764,34 @@ export default function AdminEntryMistakes() {
                     </div>
                   </div>
 
+                  {/* Horizontal Scroll Helpers */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#F27D26]/5 border border-[#F27D26]/12 px-4 py-3 rounded-xl shadow-sm">
+                    <div className="flex items-center gap-2 text-xs font-extrabold text-[#141414]/70">
+                      <span className="text-[#F1651D] text-sm animate-pulse">↔</span>
+                      <span>Horizontal Scroll Assistant: Swipe or slide table to view full columns. Use controls for fast navigation:</span>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => scrollTable('left')}
+                        className="px-3 py-1.5 bg-white hover:bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-sm"
+                        title="Scroll Left"
+                      >
+                        ← Scroll Left
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => scrollTable('right')}
+                        className="px-3 py-1.5 bg-white hover:bg-[#F27D26]/10 text-[#F27D26] border border-[#F27D26]/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-sm"
+                        title="Scroll Right"
+                      >
+                        Scroll Right →
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Interactive Table */}
-                  <div className="overflow-x-auto border border-[#141414]/8 rounded-xl bg-white">
+                  <div ref={tableContainerRef} className="overflow-x-auto max-w-full border border-[#141414]/8 rounded-xl bg-white">
                     <table className="w-full min-w-[1240px] text-xs text-left border-collapse">
                       <thead>
                         <tr className="bg-[#141414]/5 text-[#141414] font-black uppercase border-b border-[#141414]/10">

@@ -702,16 +702,16 @@ export default function AdminExpiryCheck() {
       item.itemCode,
       item.systemItemName,
       item.systemQoh,
-      [item.systemExp1, item.systemExp2, item.systemExp3].filter(f => f && f !== '-').join(", ") || '-',
+      [item.systemExp1, item.systemExp2, item.systemExp3].filter(f => f && f !== '-').map(f => formatExpirationDate(f) || f).join(", ") || '-',
       item.totalDeliveredQty,
-      item.deliveredDates.slice(0, 5).join(", ") || '-'
+      item.deliveredDates.slice(0, 5).map(d => formatExpirationDate(d) || d).join(", ") || '-'
     ]);
 
     const csvContent = [
       ["Report Name", "Pharmacy Expiration Date Discrepancy & Verification Report"],
       ["The Selected Location Names", locDisplayName],
-      ["Time Stamp", new Date().toLocaleString()],
-      ["Number of items should be checked", `${itemsToExport.length} items to checked`],
+      ["Time Stamp", format(new Date(), 'dd-MM-yyyy hh:mm a')],
+      ["Number of items should be checked", `${itemsToExport.length} items to be checked`],
       ["Please check physically the expiry date for these items"],
       [],
       headers,
@@ -737,8 +737,8 @@ export default function AdminExpiryCheck() {
     const aoa: any[][] = [
       ["Report Name", "Pharmacy Expiration Date Discrepancy & Verification Report"],
       ["The Selected Location Names", locDisplayName],
-      ["Time Stamp", new Date().toLocaleString()],
-      ["Number of items should be checked", `${itemsToExport.length} items to checked`],
+      ["Time Stamp", format(new Date(), 'dd-MM-yyyy hh:mm a')],
+      ["Number of items should be checked", `${itemsToExport.length} items to be checked`],
       ["Please check physically the expiry date for these items"],
       [],
       [
@@ -758,9 +758,9 @@ export default function AdminExpiryCheck() {
         item.itemCode,
         item.systemItemName,
         item.systemQoh,
-        [item.systemExp1, item.systemExp2, item.systemExp3].filter(f => f && f !== '-').join(", ") || '-',
+        [item.systemExp1, item.systemExp2, item.systemExp3].filter(f => f && f !== '-').map(f => formatExpirationDate(f) || f).join(", ") || '-',
         item.totalDeliveredQty,
-        item.deliveredDates.slice(0, 5).join(", ") || '-'
+        item.deliveredDates.slice(0, 5).map(d => formatExpirationDate(d) || d).join(", ") || '-'
       ]);
     });
 
@@ -876,17 +876,17 @@ export default function AdminExpiryCheck() {
 
     doc.text("The Selected Location Names:", 14, 26);
     doc.setFont("Helvetica", "normal");
-    doc.text(locDisplayName, 68, 26);
+    doc.text(locDisplayName, 85, 26);
 
     doc.setFont("Helvetica", "bold");
     doc.text("Time Stamp:", 14, 31);
     doc.setFont("Helvetica", "normal");
-    doc.text(new Date().toLocaleString(), 68, 31);
+    doc.text(format(new Date(), 'dd-MM-yyyy hh:mm a'), 85, 31);
 
     doc.setFont("Helvetica", "bold");
     doc.text("Number of items should be checked:", 14, 36);
     doc.setFont("Helvetica", "normal");
-    doc.text(`${itemsToExport.length} items to checked`, 68, 36);
+    doc.text(`${itemsToExport.length} items to be checked`, 85, 36);
 
     doc.setFont("Helvetica", "bold");
     doc.setTextColor(220, 38, 38); // Strict red
@@ -907,9 +907,9 @@ export default function AdminExpiryCheck() {
       item.itemCode,
       item.systemItemName,
       item.systemQoh,
-      [item.systemExp1, item.systemExp2, item.systemExp3].filter(f => f && f !== '-').join(", ") || '-',
+      [item.systemExp1, item.systemExp2, item.systemExp3].filter(f => f && f !== '-').map(f => formatExpirationDate(f) || f).join(", ") || '-',
       item.totalDeliveredQty,
-      item.deliveredDates.slice(0, 5).join(", ") || '-'
+      item.deliveredDates.slice(0, 5).map(d => formatExpirationDate(d) || d).join(", ") || '-'
     ]);
 
     autoTable(doc, {
@@ -941,6 +941,17 @@ export default function AdminExpiryCheck() {
         overflow: 'linebreak'
       },
       didParseCell: (data) => {
+        if (data.section === 'head') {
+          if (data.column.index === 3 || data.column.index === 4) {
+            // green columns
+            data.cell.styles.fillColor = [38, 115, 77]; // beautiful rich green
+            data.cell.styles.textColor = [255, 255, 255]; // white text
+          } else if (data.column.index === 5 || data.column.index === 6) {
+            // yellow columns
+            data.cell.styles.fillColor = [242, 201, 76]; // beautiful bright warm yellow
+            data.cell.styles.textColor = [20, 20, 20]; // dark grey text for high contrast
+          }
+        }
         if (data.section === 'body') {
           const item = itemsToExport[data.row.index];
           if (item && item.isCrossLocation) {

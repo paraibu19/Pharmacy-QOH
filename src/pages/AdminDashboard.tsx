@@ -38,6 +38,7 @@ const DRAFT_STORAGE_KEY = 'admin_medication_draft';
 
 export default function AdminDashboard() {
   const { lastUpdate, isMesaieedHidden, setMesaieedHidden } = useSystemMetadata();
+  const hasInitializedExpirationReport = useRef(false);
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
 
@@ -1275,7 +1276,8 @@ export default function AdminDashboard() {
   }, [fetchError]);
 
   useEffect(() => {
-    if (allMedications && allMedications.length > 0) {
+    if (allMedications && allMedications.length > 0 && !hasInitializedExpirationReport.current) {
+      hasInitializedExpirationReport.current = true;
       handleRefreshExpirationReport();
     }
   }, [allMedications]);

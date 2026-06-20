@@ -19,6 +19,8 @@ import {
   Inbox,
   UserCheck
 } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 interface StoredMistake {
   id: string;
@@ -50,6 +52,17 @@ export default function ApplicationStorage() {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 25;
 
+  const tableContainerRef = React.useRef<HTMLDivElement>(null);
+  const scrollTable = (direction: 'left' | 'right') => {
+    if (tableContainerRef.current) {
+      const scrollAmount = 350;
+      tableContainerRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   // Security Verification Modal
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [modalActionType, setModalActionType] = useState<'delete' | 'reset'>('delete');
@@ -59,7 +72,54 @@ export default function ApplicationStorage() {
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
   useEffect(() => {
-    fetchStoredItems();
+    let unsubscribe: (() => void) | undefined = undefined;
+
+    if (db) {
+      setLoading(true);
+      try {
+        const colRef = collection(db, 'application_storage');
+        unsubscribe = onSnapshot(colRef, (snapshot) => {
+          const loaded: StoredMistake[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            loaded.push({
+              id: doc.id,
+              actionDateTime: data.actionDateTime || '',
+              mrnOrganization: data.mrnOrganization || '',
+              personNameFull: data.personNameFull || '',
+              sex: data.sex || '',
+              nationality: data.nationality || '',
+              pharmacyLocation: data.pharmacyLocation || '',
+              actionType: data.actionType || '',
+              itemNumber: data.itemNumber || '',
+              labelDescription: data.labelDescription || '',
+              dispenseQuantity: data.dispenseQuantity || '',
+              actionPersonnelPharmacy: data.actionPersonnelPharmacy || '',
+              reasons: data.reasons || [],
+              savedAt: data.savedAt || ''
+            });
+          });
+          // Sort items by savedAt descending
+          loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+          setItems(loaded);
+          setLoading(false);
+        }, (error) => {
+          console.warn("Firestore onSnapshot error on application_storage, falling back to REST API:", error);
+          fetchStoredItems();
+        });
+      } catch (err) {
+        console.warn("Firestore subscription failed, falling back to REST API:", err);
+        fetchStoredItems();
+      }
+    } else {
+      fetchStoredItems();
+    }
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
   }, []);
 
   const fetchStoredItems = async () => {
@@ -501,8 +561,34 @@ export default function ApplicationStorage() {
           </div>
         </div>
 
+        {/* Horizontal Scroll Helpers */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-50/50 border border-indigo-100 px-4 py-3 rounded-xl shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-extrabold text-[#141414]/70">
+            <span className="text-indigo-600 text-sm animate-pulse">↔</span>
+            <span>Horizontal Scroll Assistant: Swipe or slide table to view full columns. Use controls for fast navigation:</span>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => scrollTable('left')}
+              className="px-3 py-1.5 bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-sm"
+              title="Scroll Left"
+            >
+              ← Scroll Left
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollTable('right')}
+              className="px-3 py-1.5 bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-sm"
+              title="Scroll Right"
+            >
+              Scroll Right →
+            </button>
+          </div>
+        </div>
+
         {/* List Table with Desktop Friendly View */}
-        <div className="overflow-x-auto border border-[#141414]/8 rounded-xl bg-white">
+        <div ref={tableContainerRef} className="overflow-x-auto border border-[#141414]/8 rounded-xl bg-white">
           <table className="w-full min-w-[1240px] text-xs text-left border-collapse">
             <thead>
               <tr className="bg-[#141414]/5 text-[#141414] font-black uppercase border-b border-[#141414]/10">
