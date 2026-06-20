@@ -10,12 +10,8 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 dotenv.config();
 
-// Robustly derive project root path from the location of server file.
-// In dev, __dirname is the root directory.
-// In prod, bundled code is inside dist/, so the root is __dirname's parent directory.
-const PROJECT_ROOT = fs.existsSync(path.join(__dirname, 'firebase-applet-config.json'))
-  ? __dirname
-  : path.join(__dirname, '..');
+// Robustly use process.cwd() as the project root directory
+const PROJECT_ROOT = process.cwd();
 
 // Initialize Firebase Admin for persistent Firestore synchronization
 let adminDb: any = null;
