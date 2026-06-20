@@ -10,13 +10,20 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 dotenv.config();
 
+// Robustly derive project root path from the location of server file.
+// In dev, __dirname is the root directory.
+// In prod, bundled code is inside dist/, so the root is __dirname's parent directory.
+const PROJECT_ROOT = fs.existsSync(path.join(__dirname, 'firebase-applet-config.json'))
+  ? __dirname
+  : path.join(__dirname, '..');
+
 // Initialize Firebase Admin for persistent Firestore synchronization
 let adminDb: any = null;
 try {
   let projectId: string | undefined = undefined;
   let databaseId: string | undefined = undefined;
   
-  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  const configPath = path.join(PROJECT_ROOT, 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     projectId = config.projectId;
@@ -66,7 +73,7 @@ function getGeminiClient() {
 
 const app = express();
 const PORT = 3000;
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 const MEDS_FILE = path.join(DATA_DIR, 'medications.json');
 const AUDITS_FILE = path.join(DATA_DIR, 'audits.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
@@ -1222,7 +1229,7 @@ app.post('/api/translate', async (req, res) => {
 });
 
 // Static assets from public folder (fallback)
-app.use(express.static(path.join(process.cwd(), 'public'), {
+app.use(express.static(path.join(PROJECT_ROOT, 'public'), {
   setHeaders: (res, path) => {
     if (path.endsWith('.svg') || path.endsWith('.webmanifest')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -1231,7 +1238,7 @@ app.use(express.static(path.join(process.cwd(), 'public'), {
 }));
 
 async function startServer() {
-  const isProd = process.env.NODE_ENV === "production" && fs.existsSync(path.join(process.cwd(), 'dist/index.html'));
+  const isProd = process.env.NODE_ENV === "production" && fs.existsSync(path.join(PROJECT_ROOT, 'dist/index.html'));
 
   // Run startup sync to fetch persistent Firestore state down into local cache
   await syncAllFromFirestoreAtStartup().catch(err => {
@@ -1246,7 +1253,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(PROJECT_ROOT, 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

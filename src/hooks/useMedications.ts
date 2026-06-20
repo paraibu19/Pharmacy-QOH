@@ -58,18 +58,19 @@ export function useMedications(locationId?: PharmacyLocation) {
 
     setLoading(true);
     const medsRef = collection(db, 'medications');
-    let q = query(medsRef, orderBy('itemName', 'asc'));
-
-    if (locationId) {
-      q = query(medsRef, where('locationId', '==', locationId), orderBy('itemName', 'asc'));
-    }
+    // Fetch all medications sorted by itemName (single-field index, no composite index needed)
+    const q = query(medsRef, orderBy('itemName', 'asc'));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const items: Medication[] = [];
         snapshot.forEach((doc) => {
-          items.push({ id: doc.id, ...doc.data() } as Medication);
+          const data = doc.data() as Medication;
+          // Filter client-side if locationId is specified to prevent composite index errors
+          if (!locationId || data.locationId === locationId) {
+            items.push({ id: doc.id, ...data });
+          }
         });
         
         setMedications(items);
