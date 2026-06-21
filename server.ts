@@ -306,6 +306,7 @@ async function saveMedicationToFirestore(item: any): Promise<void> {
       lastUpdatedAt: lastUpdatedAt || new Date().toISOString(),
       updatedBy: rest.updatedBy || 'system'
     }, { merge: true });
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
   } catch (err: any) {
     handleAdminDbError(err, 'save medication');
   }
@@ -342,6 +343,7 @@ async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
     if (count > 0) {
       await batch.commit();
     }
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
   } catch (err: any) {
     handleAdminDbError(err, 'bulk-save medications');
   }
@@ -351,6 +353,7 @@ async function deleteMedicationFromFirestore(id: string): Promise<void> {
   if (!adminDb) return;
   try {
     await adminDb.collection('medications').doc(id).delete();
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
   } catch (err: any) {
     handleAdminDbError(err, 'delete medication');
   }
@@ -435,6 +438,7 @@ async function saveAuditToFirestore(item: any): Promise<void> {
       auditedAt: auditedAt ? Timestamp.fromDate(new Date(auditedAt)) : FieldValue.serverTimestamp(),
       auditedBy: rest.auditedBy || 'system'
     });
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
   } catch (err: any) {
     handleAdminDbError(err, 'save audit');
   }
@@ -568,6 +572,7 @@ async function saveEntryMistakesDbToFirestore(dbState: any): Promise<void> {
       pharmacistCount: pharmacists.length,
       parameterCount: parameters.length
     });
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
     console.log(`[Firebase Sync] Successfully synced chunked parameters database to Firestore!`);
   } catch (err: any) {
     handleAdminDbError(err, 'save parameters DB');
@@ -592,6 +597,7 @@ async function deleteEntryMistakesDbFromFirestore(): Promise<void> {
     if (count > 0) {
       await batch.commit();
     }
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
     console.log(`[Firebase Sync] Parameters database deleted from Firestore. Purged ${count} chunks.`);
   } catch (err: any) {
     handleAdminDbError(err, 'delete parameters DB');
@@ -631,6 +637,7 @@ async function saveSettingsToFirestore(settings: any): Promise<void> {
   if (!adminDb) return;
   try {
     await adminDb.collection('app_settings').doc('global').set(settings);
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
     console.log('[Firebase Sync] Saved settings successfully to Firestore.');
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to save settings to Firestore:', err.message);
@@ -711,6 +718,7 @@ async function saveTranslationsBulkToFirestore(entries: Record<string, any>): Pr
     if (count > 0) {
       await batch.commit();
     }
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
     console.log(`[Firebase Sync] Saved ${Object.keys(entries).length} translations in bulk.`);
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to save translations in bulk:', err.message);
@@ -804,6 +812,7 @@ async function saveMismatchesBulkToFirestore(items: any[]): Promise<void> {
     if (count > 0) {
       await batch.commit();
     }
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
   } catch (err: any) {
     console.error('[Firebase Sync] Failed bulk-save mismatches to Firestore:', err.message);
   }
@@ -814,6 +823,7 @@ async function deleteMismatchFromFirestore(item: any): Promise<void> {
   try {
     const id = item.id || `${item.mrnOrganization || ''}_${item.actionDateTime || ''}_${item.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
     await adminDb.collection('application_storage').doc(id).delete();
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to delete mismatch from Firestore:', err.message);
   }
@@ -837,8 +847,91 @@ async function resetApplicationStorageInFirestore(): Promise<void> {
     if (count > 0) {
       await batch.commit();
     }
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error]', err));
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to reset application storage in Firestore:', err.message);
+  }
+}
+
+// --- TWO-WAY REAL-TIME INSTANCE SYNCHRONIZATION ---
+const SERVER_INSTANCE_ID = crypto.randomBytes(8).toString('hex');
+let realtimeSyncTimeout: NodeJS.Timeout | null = null;
+let realtimeSyncInProgress = false;
+
+async function updateServerMetadataFirestore(): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const metaRef = adminDb.collection('system').doc('metadata');
+    await metaRef.set({
+      lastDataUpdate: FieldValue.serverTimestamp(),
+      updatedBy: `server_${SERVER_INSTANCE_ID}`
+    }, { merge: true });
+    console.log(`[Firebase Realtime Sync] Metadata updated by server instance: ${SERVER_INSTANCE_ID}`);
+  } catch (err: any) {
+    console.error('[Firebase Realtime Sync] Failed to update global metadata:', err.message);
+  }
+}
+
+function setupRealtimeMetadataListener() {
+  if (!adminDb) return;
+  try {
+    console.log('[Firebase Realtime Sync] Initializing server-side listener on metadata changes...');
+    
+    const metadataRef = adminDb.collection('system').doc('metadata');
+    
+    metadataRef.onSnapshot((docSnap: any) => {
+      if (docSnap && docSnap.exists) {
+        const data = docSnap.data();
+        const serverUpdate = data.lastDataUpdate;
+        const updatedBy = data.updatedBy;
+        
+        // Skip self-updates to avoid endless feedback fetch loops
+        if (updatedBy === `server_${SERVER_INSTANCE_ID}`) {
+          console.log(`[Firebase Realtime Sync] Ignored metadata signal from self-instance: ${SERVER_INSTANCE_ID}`);
+          return;
+        }
+
+        console.log(`[Firebase Realtime Sync] Received real-time update signal. Triggered by: ${updatedBy}`);
+        
+        // Debounce fetching to group multiple fast changes together
+        if (realtimeSyncTimeout) {
+          clearTimeout(realtimeSyncTimeout);
+        }
+        
+        realtimeSyncTimeout = setTimeout(async () => {
+          if (realtimeSyncInProgress) {
+            console.log('[Firebase Realtime Sync] Sync already in progress, deferred.');
+            return;
+          }
+          
+          realtimeSyncInProgress = true;
+          console.log('[Firebase Realtime Sync] Loading cloud changes in the background...');
+          
+          try {
+            await Promise.all([
+              syncMedicationsFromFirestore().catch(e => console.error('BG medications sync failed:', e.message)),
+              syncAuditsFromFirestore().catch(e => console.error('BG audits sync failed:', e.message)),
+              syncEntryMistakesDbFromFirestore().catch(e => console.error('BG parameters DB sync failed:', e.message)),
+              syncApplicationStorageFromFirestore().catch(e => console.error('BG application storage sync failed:', e.message)),
+              syncSettingsFromFirestore().catch(e => console.error('BG settings sync failed:', e.message)),
+              syncTranslationCacheFromFirestore().catch(e => console.error('BG translation cache sync failed:', e.message))
+            ]);
+            console.log('[Firebase Realtime Sync] Successfully synced background state with Firestore!');
+          } catch (syncErr: any) {
+            console.error('[Firebase Realtime Sync] Secondary error during background synchronization:', syncErr.message);
+          } finally {
+            realtimeSyncInProgress = false;
+          }
+        }, 1000); // 1-second debounce
+      }
+    }, (err: any) => {
+      console.warn('[Firebase Realtime Sync] Metadata listener failed on Firestore, scheduling retry in 10s:', err.message);
+      setTimeout(() => {
+        setupRealtimeMetadataListener();
+      }, 10000);
+    });
+  } catch (err: any) {
+    console.warn('[Firebase Realtime Sync] Failed to register real-time listener:', err.message);
   }
 }
 
@@ -1571,6 +1664,9 @@ async function startServer() {
   await syncAllFromFirestoreAtStartup().catch(err => {
     console.error('[Firebase Startup Sync Init] Failed to run startup fetch:', err.message);
   });
+
+  // Start server-side real-time listener to keep separate instances synchronized
+  setupRealtimeMetadataListener();
 
   // Vite middleware for development
   if (!isProd) {
