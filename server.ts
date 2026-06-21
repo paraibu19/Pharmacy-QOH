@@ -124,8 +124,11 @@ if (!fs.existsSync(SETTINGS_FILE)) {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-app.post('/api/auth/admin', (req, res) => {
+app.post('/api/auth/admin', async (req, res) => {
   const { password } = req.body;
+  if (adminDb) {
+    await syncSettingsFromFirestore().catch(err => console.error(err));
+  }
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
   if (password === settings.adminPassword) {
     res.json({ success: true });
@@ -134,8 +137,11 @@ app.post('/api/auth/admin', (req, res) => {
   }
 });
 
-app.post('/api/auth/change-password', (req, res) => {
+app.post('/api/auth/change-password', async (req, res) => {
   const { currentPassword, newPassword, role } = req.body;
+  if (adminDb) {
+    await syncSettingsFromFirestore().catch(err => console.error(err));
+  }
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
   
   // To change any password, you must provide the current ADMIN password
@@ -160,8 +166,11 @@ app.post('/api/auth/change-password', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/auth/verify-admin', (req, res) => {
+app.post('/api/auth/verify-admin', async (req, res) => {
   const { password } = req.body;
+  if (adminDb) {
+    await syncSettingsFromFirestore().catch(err => console.error(err));
+  }
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
   if (password === settings.adminPassword) {
     res.json({ success: true });
@@ -170,7 +179,10 @@ app.post('/api/auth/verify-admin', (req, res) => {
   }
 });
 
-app.get('/api/auth/settings', (req, res) => {
+app.get('/api/auth/settings', async (req, res) => {
+  if (adminDb) {
+    await syncSettingsFromFirestore().catch(err => console.error(err));
+  }
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
   res.json({ 
     adminEmail: settings.adminEmail 
@@ -1242,8 +1254,11 @@ app.post('/api/audits', async (req, res) => {
   }
 });
 
-app.get('/api/translation_cache', (req, res) => {
+app.get('/api/translation_cache', async (req, res) => {
   try {
+    if (adminDb) {
+      await syncTranslationCacheFromFirestore().catch(err => console.error(err));
+    }
     const data = fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8');
     res.json(JSON.parse(data));
   } catch (err) {
