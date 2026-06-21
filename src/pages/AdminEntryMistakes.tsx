@@ -919,11 +919,113 @@ export default function AdminEntryMistakes() {
           throw new Error(`The worksheet "${targetSheetName}" is empty or has no readable tabular records.`);
         }
 
+        // Define criteria keys list to identify cancels / alternate fills representing identical order parameters
+        const CRITERIA_KEYS = [
+          "Action Date & Time",
+          "Facility - Order",
+          "Nursing Location - Order",
+          "Encounter Type",
+          "Order Date & Time - Physician",
+          "Last Update Provider",
+          "MRN- Organization",
+          "Person Name- Full",
+          "Sex",
+          "Nationality",
+          "Age- Years (Visit)",
+          "Parent Order ID",
+          "Order Entry Mode",
+          "Mnemonic Name",
+          "Ordered As Mnemonic",
+          "Order Display Line",
+          "PRN",
+          "OCI",
+          "Order Comments",
+          "Physician - Ordering",
+          "Pharmacy Location",
+          "Action Type",
+          "Child Order ID",
+          "Item Id",
+          "Item Number",
+          "Label Description",
+          "Pharmacy Display Line",
+          "Pharmacy SIG",
+          "Pharmacy Expanded SIG",
+          "Dispense Unit",
+          "Bill Quantity",
+          "Action Personnel - Pharmacy",
+          "Department Order Status",
+          "Order Status"
+        ];
+
+        const normalizeVal = (val: any): string => {
+          if (val === undefined || val === null) return '';
+          return String(val).toLowerCase().replace(/[\s\u00A0]+/g, ' ').trim();
+        };
+
+        // Pre-process rawJson into structured items for pairing check
+        const rawItemsConfig = rawJson.map((rawRow, idx) => {
+          const itemNumber = extractFuzzyValue(rawRow, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']);
+          const personNameFull = extractFuzzyValue(rawRow, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']);
+          const actionPersonnelPharmacy = extractFuzzyValue(rawRow, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']);
+
+          if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) return null;
+
+          const dispenseQuantity = extractFuzzyValue(rawRow, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
+
+          const criteriaValues: { [key: string]: string } = {};
+          CRITERIA_KEYS.forEach(key => {
+            criteriaValues[key] = normalizeVal(extractFuzzyValue(rawRow, [key]));
+          });
+
+          return {
+            idx,
+            dispenseQuantity,
+            criteriaValues
+          };
+        }).filter(Boolean) as { idx: number; dispenseQuantity: string; criteriaValues: { [key: string]: string } }[];
+
+        const excludedIndices = new Set<number>();
+
+        for (let i = 0; i < rawItemsConfig.length; i++) {
+          if (excludedIndices.has(rawItemsConfig[i].idx)) continue;
+
+          const itemI = rawItemsConfig[i];
+          const dQtyI = parseFloat(String(itemI.dispenseQuantity).trim());
+
+          for (let j = i + 1; j < rawItemsConfig.length; j++) {
+            if (excludedIndices.has(rawItemsConfig[j].idx)) continue;
+
+            const itemJ = rawItemsConfig[j];
+
+            let criteriaEqual = true;
+            for (const key of CRITERIA_KEYS) {
+              if (itemI.criteriaValues[key] !== itemJ.criteriaValues[key]) {
+                criteriaEqual = false;
+                break;
+              }
+            }
+
+            if (!criteriaEqual) continue;
+
+            const dQtyJ = parseFloat(String(itemJ.dispenseQuantity).trim());
+            const isQtyMatch = 
+              (!isNaN(dQtyI) && !isNaN(dQtyJ) && Math.abs(dQtyI) === Math.abs(dQtyJ)) ||
+              (String(itemI.dispenseQuantity).trim() === String(itemJ.dispenseQuantity).trim());
+
+            if (isQtyMatch) {
+              excludedIndices.add(itemI.idx);
+              excludedIndices.add(itemJ.idx);
+              break;
+            }
+          }
+        }
+
         // Parse each row and run evaluations
         const evaluated: WorkloadRecord[] = [];
         let recordCounter = 0;
         
-        for (const rawRow of rawJson) {
+        for (let rawIdx = 0; rawIdx < rawJson.length; rawIdx++) {
+          const rawRow = rawJson[rawIdx];
           recordCounter++;
           const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime']);
           const actionDateTime = formatActionDateTime(actionDateTimeRaw);
@@ -940,6 +1042,11 @@ export default function AdminEntryMistakes() {
 
           // If the row is totally empty or missing critical columns, skip
           if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) continue;
+
+          // Skip if row was excluded by duplicate criteria variance comparison list
+          if (excludedIndices.has(rawIdx)) {
+            continue;
+          }
 
           // Ignore rows representing negative (minus) dispensed QTY
           const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
