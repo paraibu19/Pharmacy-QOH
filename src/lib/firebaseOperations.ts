@@ -448,8 +448,15 @@ export const systemOps = {
       return sharedDb.reset();
     }
 
-    // Reset Firestore Collections
-    const collections = ['medications', 'inventory_audits', 'translation_cache'];
+    // Reset All Firestore Collections in client credential context (bypasses admin permission limits)
+    const collections = [
+      'medications',
+      'inventory_audits',
+      'translation_cache',
+      'entry_mistakes_configs',
+      'entry_mistakes_parameters',
+      'application_storage'
+    ];
     
     try {
       for (const colName of collections) {
@@ -477,7 +484,14 @@ export const systemOps = {
           await batch.commit();
         }
       }
+      
+      // Update global metadata in Firestore
       await systemOps.syncGlobalMetadata();
+      
+      // ALWAYS invoke the backend reset to ensure local JSON files on both dev and pre environments are cleanly wiped too
+      await sharedDb.reset().catch(err => {
+        console.warn('Backend server-side local cache reset failed or bypassed:', err.message);
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'system/reset');
     }

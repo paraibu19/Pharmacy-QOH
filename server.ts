@@ -6,7 +6,152 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from "@google/genai";
 import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue as AdminFieldValue, Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
+
+import { initializeApp as initClientApp, getApps as getClientApps } from 'firebase/app';
+import { 
+  getFirestore as getClientFirestore, 
+  collection as clientCollection, 
+  doc as clientDoc, 
+  getDocs as clientGetDocs, 
+  getDoc as clientGetDoc, 
+  setDoc as clientSetDoc, 
+  deleteDoc as clientDeleteDoc, 
+  writeBatch as clientWriteBatch,
+  onSnapshot as clientOnSnapshot,
+  Timestamp as ClientTimestamp,
+  serverTimestamp as clientServerTimestamp,
+  setLogLevel
+} from 'firebase/firestore';
+
+let FieldValue: any = AdminFieldValue;
+let Timestamp: any = AdminTimestamp;
+
+class ClientDocRef {
+  private colName: string;
+  private docId: string;
+  private clientDb: any;
+  
+  constructor(clientDb: any, colName: string, docId: string) {
+    this.clientDb = clientDb;
+    this.colName = colName;
+    this.docId = docId || '';
+  }
+
+  get id() {
+    return this.docId;
+  }
+
+  get _ref() {
+    return clientDoc(this.clientDb, this.colName, this.docId);
+  }
+
+  async get() {
+    const snap = await clientGetDoc(this._ref);
+    return {
+      id: snap.id,
+      exists: snap.exists(),
+      data: () => snap.data()
+    };
+  }
+
+  async set(data: any, options?: any) {
+    const merge = options && options.merge !== undefined ? options.merge : true;
+    await clientSetDoc(this._ref, data, { merge });
+    return {};
+  }
+
+  async delete() {
+    await clientDeleteDoc(this._ref);
+    return {};
+  }
+
+  async update(data: any) {
+    await clientSetDoc(this._ref, data, { merge: true });
+    return {};
+  }
+
+  onSnapshot(onNext: any, onError: any) {
+    return clientOnSnapshot(this._ref, (snap: any) => {
+      onNext({
+        id: snap.id,
+        exists: snap.exists(),
+        data: () => snap.data()
+      });
+    }, onError);
+  }
+}
+
+class ClientCollectionRef {
+  private colName: string;
+  private clientDb: any;
+
+  constructor(clientDb: any, colName: string) {
+    this.clientDb = clientDb;
+    this.colName = colName;
+  }
+
+  doc(id?: string) {
+    let actualId = id;
+    if (!actualId) {
+      actualId = clientDoc(clientCollection(this.clientDb, this.colName)).id;
+    }
+    return new ClientDocRef(this.clientDb, this.colName, actualId);
+  }
+
+  async get() {
+    const snap = await clientGetDocs(clientCollection(this.clientDb, this.colName));
+    const docs = snap.docs.map(docSnap => ({
+      id: docSnap.id,
+      exists: docSnap.exists(),
+      data: () => docSnap.data(),
+      ref: new ClientDocRef(this.clientDb, this.colName, docSnap.id)
+    }));
+    return {
+      docs,
+      forEach: (callback: any) => docs.forEach(callback)
+    };
+  }
+}
+
+class ClientBatchRef {
+  private batch: any;
+  constructor(clientDb: any) {
+    this.batch = clientWriteBatch(clientDb);
+  }
+
+  set(docRef: ClientDocRef, data: any, options?: any) {
+    const merge = options && options.merge !== undefined ? options.merge : true;
+    this.batch.set(docRef._ref, data, { merge });
+  }
+
+  delete(docRef: ClientDocRef) {
+    this.batch.delete(docRef._ref);
+  }
+
+  update(docRef: ClientDocRef, data: any) {
+    this.batch.update(docRef._ref, data);
+  }
+
+  async commit() {
+    await this.batch.commit();
+  }
+}
+
+class ClientDbWrapper {
+  private clientDb: any;
+  constructor(clientDb: any) {
+    this.clientDb = clientDb;
+  }
+
+  collection(colName: string) {
+    return new ClientCollectionRef(this.clientDb, colName);
+  }
+
+  batch() {
+    return new ClientBatchRef(this.clientDb);
+  }
+}
 
 dotenv.config();
 
@@ -76,6 +221,24 @@ const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const TRANSLATION_CACHE_FILE = path.join(DATA_DIR, 'translation_cache.json');
 const ENTRY_MISTAKES_DB_FILE = path.join(DATA_DIR, 'entry_mistakes_db.json');
 const APPLICATION_STORAGE_FILE = path.join(DATA_DIR, 'application_storage.json');
+const LAST_RESET_FILE = path.join(DATA_DIR, 'last_reset.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR);
+}
+
+if (!fs.existsSync(LAST_RESET_FILE)) {
+  fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: "" }));
+}
+
+let localLastResetTime = "";
+try {
+  const resetData = JSON.parse(fs.readFileSync(LAST_RESET_FILE, 'utf8'));
+  localLastResetTime = resetData.lastResetTime || "";
+} catch (e: any) {
+  console.warn('[Firebase Sync Init] Failed to read last_reset.json:', e.message);
+}
 
 function getTranslationHashSync(text: string): string {
   const clean = (text || '').trim().toLowerCase();
@@ -93,11 +256,6 @@ function getTranslationHashSync(text: string): string {
     }
     return 'tcfb_' + Math.abs(h1).toString(36) + '_' + Math.abs(h2).toString(36);
   }
-}
-
-// Ensure data directory exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR);
 }
 
 // Ensure translation cache file exists
@@ -180,6 +338,7 @@ app.post('/api/auth/verify-admin', async (req, res) => {
 });
 
 app.get('/api/auth/settings', async (req, res) => {
+  await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
   if (adminDb) {
     await syncSettingsFromFirestore().catch(err => console.error(err));
   }
@@ -211,6 +370,66 @@ function parseFirestoreDoc(doc: any): any {
   return res;
 }
 
+function switchToClientSdkFallback() {
+  try {
+    const configPath = path.join(PROJECT_ROOT, 'firebase-applet-config.json');
+    if (!fs.existsSync(configPath)) {
+      console.error('[Firebase Sync Fallback] Cannot fallback to Web Client SDK - config file missing.');
+      adminDb = null;
+      return;
+    }
+    
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (!config.apiKey || !config.projectId) {
+      console.error('[Firebase Sync Fallback] Cannot fallback to Web Client SDK - invalid config.');
+      adminDb = null;
+      return;
+    }
+
+    let clientApp;
+    const existingApps = getClientApps();
+    if (existingApps.length === 0) {
+      clientApp = initClientApp(config);
+    } else {
+      clientApp = existingApps[0];
+    }
+
+    try {
+      setLogLevel('error');
+    } catch (e) {
+      // Ignore if setLogLevel isn't allowed to call again
+    }
+
+    const clientFirestore = config.firestoreDatabaseId 
+      ? getClientFirestore(clientApp, config.firestoreDatabaseId) 
+      : getClientFirestore(clientApp);
+
+    adminDb = new ClientDbWrapper(clientFirestore);
+    
+    // Override FieldValue and Timestamp helpers to use client equivalents
+    FieldValue = {
+      serverTimestamp: () => clientServerTimestamp()
+    };
+    Timestamp = {
+      fromDate: (date: Date) => ClientTimestamp.fromDate(date)
+    };
+
+    console.log('[Firebase Sync Fallback] SUCCESSFULLY initialized Web Client SDK as fallback Firestore client (uses API key rules). Continuing sync.');
+    
+    // Proactively load files from cloud
+    syncAllFromFirestoreAtStartup().catch(err => {
+      console.error('[Firebase Sync Fallback] Startup fetch after fallback failed:', err.message);
+    });
+    
+    // Start real-time metadata sync
+    setupRealtimeMetadataListener();
+
+  } catch (err: any) {
+    console.error('[Firebase Sync Fallback] Failed to initialize Web Client SDK fallback:', err.message);
+    adminDb = null;
+  }
+}
+
 function handleAdminDbError(err: any, context: string) {
   const errMsg = err.message || String(err);
   const isPermissionDenied = errMsg.includes('PERMISSION_DENIED') || 
@@ -220,17 +439,28 @@ function handleAdminDbError(err: any, context: string) {
                              errMsg.includes(': 7') ||
                              errMsg.includes('Status code: 7');
   
-  if (isPermissionDenied) {
+  const isQuotaExceeded = errMsg.toLowerCase().includes('quota') || 
+                          errMsg.toLowerCase().includes('limit exceeded') || 
+                          errMsg.toLowerCase().includes('resource_exhausted') ||
+                          errMsg.toLowerCase().includes('exceeded') ||
+                          errMsg.toLowerCase().includes('too many requests');
+
+  if (isQuotaExceeded) {
     if (adminDb) {
-      console.warn(`[Firebase Sync Fallback] Server credentials do not have permission to sync (${context}). Gracefully disabling live server-side Firestore sync and using local filesystem storage fallback.`);
+      console.warn(`[Firebase Sync Fallback] Firestore quota exceeded (${context})! Gracefully disabling live server-side Firestore sync and operating 100% in local server file mode to protect the ecosystem. Error: ${errMsg}`);
       adminDb = null;
+    }
+  } else if (isPermissionDenied) {
+    if (adminDb && !(adminDb instanceof ClientDbWrapper)) {
+      console.warn(`[Firebase Sync Fallback] Server credentials do not have permission to sync (${context}). Instantiating API-key-powered Web Client SDK client-wrapper work-around...`);
+      switchToClientSdkFallback();
     }
   } else {
     console.error(`[Firebase Sync] Failed: ${context}:`, errMsg);
   }
 }
 
-async function syncMedicationsFromFirestore(): Promise<any[]> {
+async function syncMedicationsFromFirestore(enableSeeding: boolean = false): Promise<any[]> {
   if (!adminDb) return JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
   try {
     const snapshot = await adminDb.collection('medications').get();
@@ -263,35 +493,40 @@ async function syncMedicationsFromFirestore(): Promise<any[]> {
       meds.sort((a, b) => (a.itemName || '').localeCompare(b.itemName || ''));
       fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
     } else {
-      // If Firestore is empty but our local JSON has medications, seed Firestore!
-      const localDataStr = fs.readFileSync(MEDS_FILE, 'utf8');
-      const localMeds = JSON.parse(localDataStr);
-      if (localMeds && localMeds.length > 0) {
-        console.log(`[Firebase Seed] Firestore 'medications' is empty. Seeding Firestore with ${localMeds.length} items from local medications.json...`);
-        let batch = adminDb.batch();
-        let count = 0;
-        for (const med of localMeds) {
-          const { id, addedAt, lastUpdatedAt, ...rest } = med;
-          const docRef = adminDb.collection('medications').doc(id);
-          batch.set(docRef, {
-            ...rest,
-            id: id,
-            addedAt: addedAt || new Date().toISOString(),
-            lastUpdatedAt: lastUpdatedAt || new Date().toISOString(),
-            updatedBy: rest.updatedBy || 'system'
-          }, { merge: true });
-          count++;
-          if (count >= 400) {
-            await batch.commit();
-            batch = adminDb.batch();
-            count = 0;
+      if (enableSeeding) {
+        // If Firestore is empty but our local JSON has medications, seed Firestore!
+        const localDataStr = fs.readFileSync(MEDS_FILE, 'utf8');
+        const localMeds = JSON.parse(localDataStr);
+        if (localMeds && localMeds.length > 0) {
+          console.log(`[Firebase Seed] Firestore 'medications' is empty. Seeding Firestore with ${localMeds.length} items from local medications.json...`);
+          let batch = adminDb.batch();
+          let count = 0;
+          for (const med of localMeds) {
+            const { id, addedAt, lastUpdatedAt, ...rest } = med;
+            const docRef = adminDb.collection('medications').doc(id);
+            batch.set(docRef, {
+              ...rest,
+              id: id,
+              addedAt: addedAt || new Date().toISOString(),
+              lastUpdatedAt: lastUpdatedAt || new Date().toISOString(),
+              updatedBy: rest.updatedBy || 'system'
+            }, { merge: true });
+            count++;
+            if (count >= 400) {
+              await batch.commit();
+              batch = adminDb.batch();
+              count = 0;
+            }
           }
+          if (count > 0) {
+            await batch.commit();
+          }
+          console.log(`[Firebase Seed] Seeding completed for ${localMeds.length} medications.`);
+          return localMeds;
         }
-        if (count > 0) {
-          await batch.commit();
-        }
-        console.log(`[Firebase Seed] Seeding completed for ${localMeds.length} medications.`);
-        return localMeds;
+      } else {
+        // Otherwise, Firestore is genuinely empty, so reset local cache
+        fs.writeFileSync(MEDS_FILE, '[]');
       }
     }
     return meds;
@@ -371,7 +606,7 @@ async function deleteMedicationFromFirestore(id: string): Promise<void> {
   }
 }
 
-async function syncAuditsFromFirestore(): Promise<any[]> {
+async function syncAuditsFromFirestore(enableSeeding: boolean = false): Promise<any[]> {
   if (!adminDb) return JSON.parse(fs.readFileSync(AUDITS_FILE, 'utf8'));
   try {
     const snapshot = await adminDb.collection('inventory_audits').get();
@@ -403,34 +638,39 @@ async function syncAuditsFromFirestore(): Promise<any[]> {
       audits.sort((a, b) => new Date(b.auditedAt || 0).getTime() - new Date(a.auditedAt || 0).getTime());
       fs.writeFileSync(AUDITS_FILE, JSON.stringify(audits, null, 2));
     } else {
-      // Seed audits from local JSON
-      const localDataStr = fs.readFileSync(AUDITS_FILE, 'utf8');
-      const localAudits = JSON.parse(localDataStr);
-      if (localAudits && localAudits.length > 0) {
-        console.log(`[Firebase Seed] Firestore 'inventory_audits' is empty. Seeding Firestore with ${localAudits.length} items...`);
-        let batch = adminDb.batch();
-        let count = 0;
-        for (const item of localAudits) {
-          const { id, auditedAt, ...rest } = item;
-          const docRef = adminDb.collection('inventory_audits').doc(id);
-          batch.set(docRef, {
-            ...rest,
-            id: id,
-            auditedAt: auditedAt ? Timestamp.fromDate(new Date(auditedAt)) : FieldValue.serverTimestamp(),
-            auditedBy: rest.auditedBy || 'system'
-          }, { merge: true });
-          count++;
-          if (count >= 400) {
-            await batch.commit();
-            batch = adminDb.batch();
-            count = 0;
+      if (enableSeeding) {
+        // Seed audits from local JSON
+        const localDataStr = fs.readFileSync(AUDITS_FILE, 'utf8');
+        const localAudits = JSON.parse(localDataStr);
+        if (localAudits && localAudits.length > 0) {
+          console.log(`[Firebase Seed] Firestore 'inventory_audits' is empty. Seeding Firestore with ${localAudits.length} items...`);
+          let batch = adminDb.batch();
+          let count = 0;
+          for (const item of localAudits) {
+            const { id, auditedAt, ...rest } = item;
+            const docRef = adminDb.collection('inventory_audits').doc(id);
+            batch.set(docRef, {
+              ...rest,
+              id: id,
+              auditedAt: auditedAt ? Timestamp.fromDate(new Date(auditedAt)) : FieldValue.serverTimestamp(),
+              auditedBy: rest.auditedBy || 'system'
+            }, { merge: true });
+            count++;
+            if (count >= 400) {
+              await batch.commit();
+              batch = adminDb.batch();
+              count = 0;
+            }
           }
+          if (count > 0) {
+            await batch.commit();
+          }
+          console.log(`[Firebase Seed] Seeding completed for ${localAudits.length} audits.`);
+          return localAudits;
         }
-        if (count > 0) {
-          await batch.commit();
-        }
-        console.log(`[Firebase Seed] Seeding completed for ${localAudits.length} audits.`);
-        return localAudits;
+      } else {
+        // Otherwise, Firestore is empty, so wipe local file
+        fs.writeFileSync(AUDITS_FILE, '[]');
       }
     }
     return audits;
@@ -456,7 +696,7 @@ async function saveAuditToFirestore(item: any): Promise<void> {
   }
 }
 
-async function syncEntryMistakesDbFromFirestore(): Promise<any> {
+async function syncEntryMistakesDbFromFirestore(enableSeeding: boolean = false): Promise<any> {
   if (!adminDb) {
     if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
       return JSON.parse(fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8'));
@@ -510,18 +750,25 @@ async function syncEntryMistakesDbFromFirestore(): Promise<any> {
         return meta;
       }
     } else {
-      // Seed entry_mistakes_configs if local exists
-      if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
-        const localDataStr = fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8');
-        try {
-          const localData = JSON.parse(localDataStr);
-          if (localData && localData.configured) {
-            console.log(`[Firebase Seed] Firestore 'entry_mistakes_configs/global' is empty. Seeding Firestore with chunked local parameters...`);
-            await saveEntryMistakesDbToFirestore(localData);
-            return localData;
+      if (enableSeeding) {
+        // Seed entry_mistakes_configs if local exists
+        if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+          const localDataStr = fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8');
+          try {
+            const localData = JSON.parse(localDataStr);
+            if (localData && localData.configured) {
+              console.log(`[Firebase Seed] Firestore 'entry_mistakes_configs/global' is empty. Seeding Firestore with chunked local parameters...`);
+              await saveEntryMistakesDbToFirestore(localData);
+              return localData;
+            }
+          } catch (e: any) {
+            console.warn("Error parsing local entry mistakes JSON file during seeding:", e.message);
           }
-        } catch (e: any) {
-          console.warn("Error parsing local entry mistakes JSON file during seeding:", e.message);
+        }
+      } else {
+        // Otherwise, Firestore is empty (cleared on reset), so delete local config file
+        if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+          fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
         }
       }
     }
@@ -656,7 +903,7 @@ async function saveSettingsToFirestore(settings: any): Promise<void> {
   }
 }
 
-async function syncTranslationCacheFromFirestore(): Promise<Record<string, any>> {
+async function syncTranslationCacheFromFirestore(enableSeeding: boolean = false): Promise<Record<string, any>> {
   if (!adminDb) {
     if (fs.existsSync(TRANSLATION_CACHE_FILE)) {
       return JSON.parse(fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8'));
@@ -673,33 +920,38 @@ async function syncTranslationCacheFromFirestore(): Promise<Record<string, any>>
       fs.writeFileSync(TRANSLATION_CACHE_FILE, JSON.stringify(cache, null, 2));
       console.log(`[Firebase Sync] Synchronized ${Object.keys(cache).length} cached translations from Firestore.`);
     } else {
-      // Seed Firestore from local translation_cache if it exists and has records
-      if (fs.existsSync(TRANSLATION_CACHE_FILE)) {
-        try {
-          const localCache = JSON.parse(fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8'));
-          const localKeys = Object.keys(localCache);
-          if (localKeys.length > 0) {
-            console.log(`[Firebase Seed] Firestore 'translation_cache' is empty. Seeding ${localKeys.length} records...`);
-            let batch = adminDb.batch();
-            let count = 0;
-            for (const [hash, entry] of Object.entries(localCache)) {
-              const docRef = adminDb.collection('translation_cache').doc(hash);
-              batch.set(docRef, entry);
-              count++;
-              if (count >= 400) {
-                await batch.commit();
-                batch = adminDb.batch();
-                count = 0;
+      if (enableSeeding) {
+        // Seed Firestore from local translation_cache if it exists and has records
+        if (fs.existsSync(TRANSLATION_CACHE_FILE)) {
+          try {
+            const localCache = JSON.parse(fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8'));
+            const localKeys = Object.keys(localCache);
+            if (localKeys.length > 0) {
+              console.log(`[Firebase Seed] Firestore 'translation_cache' is empty. Seeding ${localKeys.length} records...`);
+              let batch = adminDb.batch();
+              let count = 0;
+              for (const [hash, entry] of Object.entries(localCache)) {
+                const docRef = adminDb.collection('translation_cache').doc(hash);
+                batch.set(docRef, entry);
+                count++;
+                if (count >= 400) {
+                  await batch.commit();
+                  batch = adminDb.batch();
+                  count = 0;
+                }
               }
+              if (count > 0) {
+                await batch.commit();
+              }
+              console.log(`[Firebase Seed] Loaded ${localKeys.length} translation records to cloud.`);
             }
-            if (count > 0) {
-              await batch.commit();
-            }
-            console.log(`[Firebase Seed] Loaded ${localKeys.length} translation records to cloud.`);
+          } catch (e: any) {
+            console.warn('[Firebase Seed] Failed to parse or seed local translation cache:', e.message);
           }
-        } catch (e: any) {
-          console.warn('[Firebase Seed] Failed to parse or seed local translation cache:', e.message);
         }
+      } else {
+        // Otherwise, Firestore is genuinely empty, so reset local cache
+        fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
       }
     }
     return cache;
@@ -737,7 +989,7 @@ async function saveTranslationsBulkToFirestore(entries: Record<string, any>): Pr
   }
 }
 
-async function syncApplicationStorageFromFirestore(): Promise<any[]> {
+async function syncApplicationStorageFromFirestore(enableSeeding: boolean = false): Promise<any[]> {
   if (!adminDb) {
     if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
       return JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
@@ -752,42 +1004,47 @@ async function syncApplicationStorageFromFirestore(): Promise<any[]> {
     });
     
     if (items.length > 0) {
-      items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+      items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.auditedAt || 0).getTime());
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
     } else {
-      // Seed application storage from local JSON file if exists and has records
-      if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
-        try {
-          const localDataStr = fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8');
-          const localItems = JSON.parse(localDataStr);
-          if (localItems && localItems.length > 0) {
-            console.log(`[Firebase Seed] Firestore 'application_storage' is empty. Seeding Firestore with ${localItems.length} items...`);
-            let batch = adminDb.batch();
-            let count = 0;
-            for (const item of localItems) {
-              const { id, savedAt, ...rest } = item;
-              const docRef = adminDb.collection('application_storage').doc(id);
-              batch.set(docRef, {
-                ...rest,
-                id: id,
-                savedAt: savedAt || new Date().toISOString()
-              }, { merge: true });
-              count++;
-              if (count >= 400) {
-                await batch.commit();
-                batch = adminDb.batch();
-                count = 0;
+      if (enableSeeding) {
+        // Seed application storage from local JSON file if exists and has records
+        if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
+          try {
+            const localDataStr = fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8');
+            const localItems = JSON.parse(localDataStr);
+            if (localItems && localItems.length > 0) {
+              console.log(`[Firebase Seed] Firestore 'application_storage' is empty. Seeding Firestore with ${localItems.length} items...`);
+              let batch = adminDb.batch();
+              let count = 0;
+              for (const item of localItems) {
+                const { id, savedAt, ...rest } = item;
+                const docRef = adminDb.collection('application_storage').doc(id);
+                batch.set(docRef, {
+                  ...rest,
+                  id: id,
+                  savedAt: savedAt || new Date().toISOString()
+                }, { merge: true });
+                count++;
+                if (count >= 400) {
+                  await batch.commit();
+                  batch = adminDb.batch();
+                  count = 0;
+                }
               }
+              if (count > 0) {
+                await batch.commit();
+              }
+              console.log(`[Firebase Seed] Seeding completed for ${localItems.length} application storage records.`);
+              return localItems;
             }
-            if (count > 0) {
-              await batch.commit();
-            }
-            console.log(`[Firebase Seed] Seeding completed for ${localItems.length} application storage records.`);
-            return localItems;
+          } catch (e: any) {
+            console.warn("Error parsing or seeding application_storage from local JSON file:", e.message);
           }
-        } catch (e: any) {
-          console.warn("Error parsing or seeding application_storage from local JSON file:", e.message);
         }
+      } else {
+        // Otherwise, Firestore is empty (reset), so clear local application_storage cache
+        fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
       }
     }
     return items;
@@ -870,17 +1127,86 @@ const SERVER_INSTANCE_ID = crypto.randomBytes(8).toString('hex');
 let realtimeSyncTimeout: NodeJS.Timeout | null = null;
 let realtimeSyncInProgress = false;
 
-async function updateServerMetadataFirestore(): Promise<void> {
+// Cached metadata checking variables for on-demand HTTP polling sync
+let lastMetadataCheckTime = 0;
+const METADATA_CHECK_INTERVAL_MS = 2500; // Check at most once every 2.5 seconds to guard write limits
+let onDemandSyncPromise: Promise<void> | null = null;
+
+async function checkAndSyncFromFirestoreOnDemand(): Promise<void> {
+  if (!adminDb) return;
+  const now = Date.now();
+  if (now - lastMetadataCheckTime < METADATA_CHECK_INTERVAL_MS) {
+    return;
+  }
+  if (onDemandSyncPromise) {
+    return onDemandSyncPromise;
+  }
+  onDemandSyncPromise = (async () => {
+    try {
+      const metaSnap = await adminDb.collection('system').doc('metadata').get();
+      lastMetadataCheckTime = Date.now();
+      if (metaSnap.exists) {
+        const data = metaSnap.data();
+        const firestoreLastResetTime = data.lastResetTime;
+        const updatedBy = data.updatedBy;
+        
+        // Handle reset signal in local cache if we didn't receive/trigger it yet
+        if (firestoreLastResetTime && firestoreLastResetTime !== localLastResetTime) {
+          console.log(`[Firebase Sync On-Demand] Reset detected (${firestoreLastResetTime}). Resetting local files...`);
+          fs.writeFileSync(MEDS_FILE, '[]');
+          fs.writeFileSync(AUDITS_FILE, '[]');
+          fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
+          if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+            fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
+          }
+          fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+          
+          localLastResetTime = firestoreLastResetTime;
+          fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: firestoreLastResetTime }));
+        }
+        
+        // Skip background sync if changes were updated by this server instance
+        if (updatedBy === `server_${SERVER_INSTANCE_ID}`) {
+          return;
+        }
+        
+        console.log(`[Firebase Sync On-Demand] Detected newer cloud metadata by ${updatedBy}. Syncing background files...`);
+        await Promise.all([
+          syncMedicationsFromFirestore(false).catch(e => console.error('On-demand medications sync failed:', e.message)),
+          syncAuditsFromFirestore(false).catch(e => console.error('On-demand audits sync failed:', e.message)),
+          syncEntryMistakesDbFromFirestore(false).catch(e => console.error('On-demand parameters DB sync failed:', e.message)),
+          syncApplicationStorageFromFirestore(false).catch(e => console.error('On-demand application storage sync failed:', e.message)),
+          syncSettingsFromFirestore().catch(e => console.error('On-demand settings sync failed:', e.message)),
+          syncTranslationCacheFromFirestore(false).catch(e => console.error('On-demand translation cache sync failed:', e.message))
+        ]);
+        console.log('[Firebase Sync On-Demand] Finished syncing cloud data!');
+      }
+    } catch (err: any) {
+      console.warn('[Firebase Sync On-Demand] Graceful error checking metadata:', err.message);
+      handleAdminDbError(err, 'on-demand metadata');
+    } finally {
+      onDemandSyncPromise = null;
+    }
+  })();
+  return onDemandSyncPromise;
+}
+
+async function updateServerMetadataFirestore(resetTime?: string): Promise<void> {
   if (!adminDb) return;
   try {
     const metaRef = adminDb.collection('system').doc('metadata');
-    await metaRef.set({
+    const updateData: any = {
       lastDataUpdate: FieldValue.serverTimestamp(),
       updatedBy: `server_${SERVER_INSTANCE_ID}`
-    }, { merge: true });
-    console.log(`[Firebase Realtime Sync] Metadata updated by server instance: ${SERVER_INSTANCE_ID}`);
+    };
+    if (resetTime) {
+      updateData.lastResetTime = resetTime;
+    }
+    await metaRef.set(updateData, { merge: true });
+    console.log(`[Firebase Realtime Sync] Metadata updated by server instance: ${SERVER_INSTANCE_ID} (reset: ${resetTime || 'no'})`);
   } catch (err: any) {
     console.error('[Firebase Realtime Sync] Failed to update global metadata:', err.message);
+    handleAdminDbError(err, 'write metadata');
   }
 }
 
@@ -896,6 +1222,7 @@ function setupRealtimeMetadataListener() {
         const data = docSnap.data();
         const serverUpdate = data.lastDataUpdate;
         const updatedBy = data.updatedBy;
+        const firestoreLastResetTime = data.lastResetTime;
         
         // Skip self-updates to avoid endless feedback fetch loops
         if (updatedBy === `server_${SERVER_INSTANCE_ID}`) {
@@ -904,6 +1231,21 @@ function setupRealtimeMetadataListener() {
         }
 
         console.log(`[Firebase Realtime Sync] Received real-time update signal. Triggered by: ${updatedBy}`);
+        
+        // Check if a reset occurred
+        if (firestoreLastResetTime && firestoreLastResetTime !== localLastResetTime) {
+          console.log(`[Firebase Realtime Sync] Realtime reset signal detected (${firestoreLastResetTime}). Clearing local files to match...`);
+          fs.writeFileSync(MEDS_FILE, '[]');
+          fs.writeFileSync(AUDITS_FILE, '[]');
+          fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
+          if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+            fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
+          }
+          fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+          
+          localLastResetTime = firestoreLastResetTime;
+          fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: firestoreLastResetTime }));
+        }
         
         // Debounce fetching to group multiple fast changes together
         if (realtimeSyncTimeout) {
@@ -921,12 +1263,12 @@ function setupRealtimeMetadataListener() {
           
           try {
             await Promise.all([
-              syncMedicationsFromFirestore().catch(e => console.error('BG medications sync failed:', e.message)),
-              syncAuditsFromFirestore().catch(e => console.error('BG audits sync failed:', e.message)),
-              syncEntryMistakesDbFromFirestore().catch(e => console.error('BG parameters DB sync failed:', e.message)),
-              syncApplicationStorageFromFirestore().catch(e => console.error('BG application storage sync failed:', e.message)),
+              syncMedicationsFromFirestore(false).catch(e => console.error('BG medications sync failed:', e.message)),
+              syncAuditsFromFirestore(false).catch(e => console.error('BG audits sync failed:', e.message)),
+              syncEntryMistakesDbFromFirestore(false).catch(e => console.error('BG parameters DB sync failed:', e.message)),
+              syncApplicationStorageFromFirestore(false).catch(e => console.error('BG application storage sync failed:', e.message)),
               syncSettingsFromFirestore().catch(e => console.error('BG settings sync failed:', e.message)),
-              syncTranslationCacheFromFirestore().catch(e => console.error('BG translation cache sync failed:', e.message))
+              syncTranslationCacheFromFirestore(false).catch(e => console.error('BG translation cache sync failed:', e.message))
             ]);
             console.log('[Firebase Realtime Sync] Successfully synced background state with Firestore!');
           } catch (syncErr: any) {
@@ -937,10 +1279,25 @@ function setupRealtimeMetadataListener() {
         }, 1000); // 1-second debounce
       }
     }, (err: any) => {
-      console.warn('[Firebase Realtime Sync] Metadata listener failed on Firestore, scheduling retry in 10s:', err.message);
-      setTimeout(() => {
-        setupRealtimeMetadataListener();
-      }, 10000);
+      const errMsg = err?.message || String(err);
+      const isBenign = errMsg.includes('CANCELLED') || 
+                       errMsg.includes('Disconnecting idle stream') || 
+                       err?.code === 'cancelled' || 
+                       String(err?.code) === '1';
+      if (isBenign) {
+        console.log('[Firebase Realtime Sync] Idle listener connection disconnected or timed out; Firestore client will automatically reconnect.');
+        return;
+      }
+
+      handleAdminDbError(err, 'metadata listener');
+      if (adminDb) {
+        console.warn('[Firebase Realtime Sync] Metadata listener failed on Firestore, scheduling retry in 10s:', errMsg);
+        setTimeout(() => {
+          setupRealtimeMetadataListener();
+        }, 10000);
+      } else {
+        console.warn('[Firebase Realtime Sync] Real-time listener disabled gracefully due to permission/initialization failure.');
+      }
     });
   } catch (err: any) {
     console.warn('[Firebase Realtime Sync] Failed to register real-time listener:', err.message);
@@ -954,17 +1311,48 @@ async function syncAllFromFirestoreAtStartup() {
   }
   console.log('[Firebase Startup Sync] Loading persistent data from Firestore...');
   try {
+    const metaSnap = await adminDb.collection('system').doc('metadata').get();
+    if (metaSnap.exists) {
+      const metaData = metaSnap.data();
+      const firestoreLastResetTime = metaData.lastResetTime;
+      if (firestoreLastResetTime && firestoreLastResetTime !== localLastResetTime) {
+        console.log(`[Firebase Startup Sync] Firestore reset signal found (${firestoreLastResetTime}). Clearing local files to match...`);
+        fs.writeFileSync(MEDS_FILE, '[]');
+        fs.writeFileSync(AUDITS_FILE, '[]');
+        fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
+        if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
+          fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
+        }
+        fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+        
+        localLastResetTime = firestoreLastResetTime;
+        fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: firestoreLastResetTime }));
+      }
+    }
+
     await Promise.all([
-      syncMedicationsFromFirestore().catch(e => console.error('Startup medications sync failed:', e.message)),
-      syncAuditsFromFirestore().catch(e => console.error('Startup audits sync failed:', e.message)),
-      syncEntryMistakesDbFromFirestore().catch(e => console.error('Startup parameters DB sync failed:', e.message)),
-      syncApplicationStorageFromFirestore().catch(e => console.error('Startup application storage sync failed:', e.message)),
+      syncMedicationsFromFirestore(true).catch(e => console.error('Startup medications sync failed:', e.message)),
+      syncAuditsFromFirestore(true).catch(e => console.error('Startup audits sync failed:', e.message)),
+      syncEntryMistakesDbFromFirestore(true).catch(e => console.error('Startup parameters DB sync failed:', e.message)),
+      syncApplicationStorageFromFirestore(true).catch(e => console.error('Startup application storage sync failed:', e.message)),
       syncSettingsFromFirestore().catch(e => console.error('Startup settings sync failed:', e.message)),
-      syncTranslationCacheFromFirestore().catch(e => console.error('Startup translation cache sync failed:', e.message))
+      syncTranslationCacheFromFirestore(true).catch(e => console.error('Startup translation cache sync failed:', e.message))
     ]);
     console.log('[Firebase Startup Sync] All persistent data loaded successfully!');
   } catch (err: any) {
     console.error('[Firebase Startup Sync] Error during startup fetch:', err.message);
+    const errMsg = err.message || String(err);
+    const isPermissionDenied = errMsg.includes('PERMISSION_DENIED') || 
+                               errMsg.includes('insufficient permissions') || 
+                               errMsg.includes('  7  ') ||
+                               errMsg.startsWith('7 ') ||
+                               errMsg.includes(': 7') ||
+                               errMsg.includes('Status code: 7');
+    
+    if (isPermissionDenied && adminDb && !(adminDb instanceof ClientDbWrapper)) {
+      console.warn('[Firebase Startup Sync] Proactively switching to Web Client SDK fallback due to startup PERMISSION_DENIED...');
+      switchToClientSdkFallback();
+    }
   }
 }
 
@@ -1056,6 +1444,7 @@ async function resetAllInFirestore(): Promise<void> {
 
 // API Routes
 app.get('/api/medications', async (req, res) => {
+  await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
   if (adminDb) {
     await syncMedicationsFromFirestore().catch(err => console.error(err));
   }
@@ -1226,6 +1615,7 @@ app.post('/api/medications/bulk', async (req, res) => {
 });
 
 app.get('/api/audits', async (req, res) => {
+  await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
   if (adminDb) {
     await syncAuditsFromFirestore().catch(err => console.error(err));
   }
@@ -1256,6 +1646,7 @@ app.post('/api/audits', async (req, res) => {
 
 app.get('/api/translation_cache', async (req, res) => {
   try {
+    await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
     if (adminDb) {
       await syncTranslationCacheFromFirestore().catch(err => console.error(err));
     }
@@ -1286,9 +1677,15 @@ app.post('/api/system/reset', async (req, res) => {
     if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
       fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
     }
+    fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+
+    const resetStr = new Date().toISOString();
+    localLastResetTime = resetStr;
+    fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: resetStr }));
 
     if (adminDb) {
       await resetAllInFirestore().catch(err => console.error(err));
+      await updateServerMetadataFirestore(resetStr).catch(err => console.error(err));
     }
 
     res.json({ success: true });
@@ -1299,6 +1696,7 @@ app.post('/api/system/reset', async (req, res) => {
 
 app.get('/api/entry-mistakes/db', async (req, res) => {
   try {
+    await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
     if (adminDb) {
       await syncEntryMistakesDbFromFirestore().catch(err => console.error(err));
     }
@@ -1359,6 +1757,7 @@ app.delete('/api/entry-mistakes/db', async (req, res) => {
 // GET all stored application mistakes
 app.get('/api/application-storage', async (req, res) => {
   try {
+    await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
     if (adminDb) {
       await syncApplicationStorageFromFirestore().catch(err => console.error(err));
     }
@@ -1466,8 +1865,13 @@ app.post('/api/application-storage/reset', async (req, res) => {
     
     fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
 
+    const resetStr = new Date().toISOString();
+    localLastResetTime = resetStr;
+    fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: resetStr }));
+
     if (adminDb) {
       await resetApplicationStorageInFirestore().catch(err => console.error(err));
+      await updateServerMetadataFirestore(resetStr).catch(err => console.error(err));
     }
 
     res.json({ success: true });
