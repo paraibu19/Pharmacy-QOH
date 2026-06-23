@@ -451,11 +451,7 @@ export const systemOps = {
     // Reset All Firestore Collections in client credential context (bypasses admin permission limits)
     const collections = [
       'medications',
-      'inventory_audits',
-      'translation_cache',
-      'entry_mistakes_configs',
-      'entry_mistakes_parameters',
-      'application_storage'
+      'inventory_audits'
     ];
     
     try {

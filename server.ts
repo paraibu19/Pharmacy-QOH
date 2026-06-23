@@ -222,10 +222,15 @@ const TRANSLATION_CACHE_FILE = path.join(DATA_DIR, 'translation_cache.json');
 const ENTRY_MISTAKES_DB_FILE = path.join(DATA_DIR, 'entry_mistakes_db.json');
 const APPLICATION_STORAGE_FILE = path.join(DATA_DIR, 'application_storage.json');
 const LAST_RESET_FILE = path.join(DATA_DIR, 'last_reset.json');
+const ITEM_REGISTRY_FILE = path.join(DATA_DIR, 'item_reference_registry.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR);
+}
+
+if (!fs.existsSync(ITEM_REGISTRY_FILE)) {
+  fs.writeFileSync(ITEM_REGISTRY_FILE, '{}');
 }
 
 if (!fs.existsSync(LAST_RESET_FILE)) {
@@ -430,6 +435,8 @@ function switchToClientSdkFallback() {
   }
 }
 
+let firestoreFailureBackoffUntil = 0;
+
 function handleAdminDbError(err: any, context: string) {
   const errMsg = err.message || String(err);
   const isPermissionDenied = errMsg.includes('PERMISSION_DENIED') || 
@@ -450,10 +457,20 @@ function handleAdminDbError(err: any, context: string) {
       console.warn(`[Firebase Sync Fallback] Firestore quota exceeded (${context})! Gracefully disabling live server-side Firestore sync and operating 100% in local server file mode to protect the ecosystem. Error: ${errMsg}`);
       adminDb = null;
     }
+    // Set 4-hour backoff to prevent any further reconnect attempts during quota exhaustion
+    firestoreFailureBackoffUntil = Date.now() + 4 * 60 * 60 * 1000;
   } else if (isPermissionDenied) {
-    if (adminDb && !(adminDb instanceof ClientDbWrapper)) {
-      console.warn(`[Firebase Sync Fallback] Server credentials do not have permission to sync (${context}). Instantiating API-key-powered Web Client SDK client-wrapper work-around...`);
-      switchToClientSdkFallback();
+    if (adminDb) {
+      if (!(adminDb instanceof ClientDbWrapper)) {
+        console.warn(`[Firebase Sync Fallback] Server credentials do not have permission to sync (${context}). Instantiating API-key-powered Web Client SDK client-wrapper work-around...`);
+        switchToClientSdkFallback();
+      } else {
+        // Even the client fallback wrapper with API Key rules failed! This is a permanent rules or project restriction issue.
+        console.warn(`[Firebase Sync Fallback] Web Client SDK work-around also lacks permissions to sync (${context}). Operating in 100% offline local server file mode.`);
+        adminDb = null;
+        // Backoff for 4 hours to silence permission logs
+        firestoreFailureBackoffUntil = Date.now() + 4 * 60 * 60 * 1000;
+      }
     }
   } else {
     console.error(`[Firebase Sync] Failed: ${context}:`, errMsg);
@@ -529,10 +546,106 @@ async function syncMedicationsFromFirestore(enableSeeding: boolean = false): Pro
         fs.writeFileSync(MEDS_FILE, '[]');
       }
     }
+    if (meds.length > 0) {
+      await updateItemReferenceRegistry(meds).catch(err => handleAdminDbError(err, 'background item_reference_registry sync'));
+    }
     return meds;
   } catch (err: any) {
     handleAdminDbError(err, 'sync medications');
     return JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+  }
+}
+
+async function updateItemReferenceRegistry(medsToUpdate: any[]): Promise<void> {
+  const fileContent = fs.readFileSync(ITEM_REGISTRY_FILE, 'utf8');
+  const registry = JSON.parse(fileContent);
+  const updatedEntries: Record<string, any> = {};
+
+  for (const item of medsToUpdate) {
+    const code = (item.itemCode || '').trim();
+    if (!code) continue;
+
+    const hasPhoto = !!item.imageUrl;
+    const hasTranslations = !!(
+      item.arIndications ||
+      item.hiIndications ||
+      item.urIndications ||
+      item.mlIndications ||
+      item.bnIndications ||
+      item.tlIndications
+    );
+
+    if (hasPhoto || hasTranslations) {
+      const existing = registry[code] || {};
+      const updated = {
+        itemCode: code,
+        itemName: item.itemName || existing.itemName || '',
+        imageUrl: item.imageUrl || existing.imageUrl || null,
+        enIndications: item.enIndications || existing.enIndications || '',
+        arIndications: item.arIndications || existing.arIndications || '',
+        hiIndications: item.hiIndications || existing.hiIndications || '',
+        urIndications: item.urIndications || existing.urIndications || '',
+        mlIndications: item.mlIndications || existing.mlIndications || '',
+        bnIndications: item.bnIndications || existing.bnIndications || '',
+        tlIndications: item.tlIndications || existing.tlIndications || '',
+        lastUpdatedAt: new Date().toISOString()
+      };
+      registry[code] = updated;
+      updatedEntries[code] = updated;
+    }
+  }
+
+  if (Object.keys(updatedEntries).length > 0) {
+    fs.writeFileSync(ITEM_REGISTRY_FILE, JSON.stringify(registry, null, 2));
+
+    if (adminDb) {
+      try {
+        let batch = adminDb.batch();
+        let count = 0;
+        for (const [code, data] of Object.entries(updatedEntries)) {
+          const docRef = adminDb.collection('item_reference_registry').doc(code);
+          batch.set(docRef, data, { merge: true });
+          count++;
+          if (count >= 400) {
+            await batch.commit();
+            batch = adminDb.batch();
+            count = 0;
+          }
+        }
+        if (count > 0) {
+          await batch.commit();
+        }
+      } catch (err: any) {
+        handleAdminDbError(err, 'write item_reference_registry');
+      }
+    }
+  }
+}
+
+async function syncItemReferenceRegistryFromFirestore(): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const snapshot = await adminDb.collection('item_reference_registry').get();
+    const registry: Record<string, any> = {};
+    snapshot.forEach(doc => {
+      const parsed = parseFirestoreDoc(doc);
+      if (parsed.itemCode) {
+        registry[parsed.itemCode] = parsed;
+      }
+    });
+    if (Object.keys(registry).length > 0) {
+      let localRegistry: Record<string, any> = {};
+      if (fs.existsSync(ITEM_REGISTRY_FILE)) {
+        try {
+          localRegistry = JSON.parse(fs.readFileSync(ITEM_REGISTRY_FILE, 'utf8'));
+        } catch (e) {}
+      }
+      const finalRegistry = { ...localRegistry, ...registry };
+      fs.writeFileSync(ITEM_REGISTRY_FILE, JSON.stringify(finalRegistry, null, 2));
+      console.log(`[Firebase Startup Sync] Synchronized ${Object.keys(registry).length} item reference entries from Firestore.`);
+    }
+  } catch (err: any) {
+    handleAdminDbError(err, 'startup registry sync');
   }
 }
 
@@ -1127,13 +1240,111 @@ const SERVER_INSTANCE_ID = crypto.randomBytes(8).toString('hex');
 let realtimeSyncTimeout: NodeJS.Timeout | null = null;
 let realtimeSyncInProgress = false;
 
+let lastFirestoreReconnectAttempt = 0;
+const RECONNECT_COOLDOWN_MS = 60000; // Prevent hammering on quota-exceeded with a 1-minute retry gate
+
+function reconnectFirestore(): boolean {
+  const now = Date.now();
+  if (now < firestoreFailureBackoffUntil) {
+    return false;
+  }
+  if (now - lastFirestoreReconnectAttempt < RECONNECT_COOLDOWN_MS) {
+    return false;
+  }
+  lastFirestoreReconnectAttempt = now;
+  console.log('[Firebase Sync] Realtime fallback state detected. Attempting to restore server connection to Firestore cloud database...');
+  
+  try {
+    let projectId: string | undefined = undefined;
+    let databaseId: string | undefined = undefined;
+    
+    const configPath = path.join(PROJECT_ROOT, 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      projectId = config.projectId;
+      databaseId = config.firestoreDatabaseId;
+    }
+    
+    if (!projectId) {
+      projectId = process.env.GOOGLE_CLOUD_PROJECT;
+    }
+    
+    if (projectId) {
+      let adminApp;
+      if (getApps().length === 0) {
+        adminApp = initializeApp({ projectId });
+      } else {
+        adminApp = getApps()[0];
+      }
+      
+      adminDb = databaseId ? getFirestore(adminApp, databaseId) : getFirestore(adminApp);
+      console.log(`[Firebase Sync] Re-initialized Firestore via Admin SDK.`);
+      
+      // Proactively pull startup sync once re-established
+      syncAllFromFirestoreAtStartup().catch(err => {
+        console.warn('[Firebase Sync] Startup sync validation failed after Admin SDK reconnect:', err.message);
+      });
+      setupRealtimeMetadataListener();
+      return true;
+    }
+  } catch (err: any) {
+    console.warn('[Firebase Sync] Admin SDK reconnect failed, trying Web Client SDK fallback...', err.message);
+    try {
+      const configPath = path.join(PROJECT_ROOT, 'firebase-applet-config.json');
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (config.apiKey && config.projectId) {
+          let clientApp;
+          const existingApps = getClientApps();
+          if (existingApps.length === 0) {
+            clientApp = initClientApp(config);
+          } else {
+            clientApp = existingApps[0];
+          }
+          
+          try {
+            setLogLevel('error');
+          } catch (e) {}
+
+          const clientFirestore = config.firestoreDatabaseId 
+            ? getClientFirestore(clientApp, config.firestoreDatabaseId) 
+            : getClientFirestore(clientApp);
+
+          adminDb = new ClientDbWrapper(clientFirestore);
+          FieldValue = {
+            serverTimestamp: () => clientServerTimestamp()
+          };
+          Timestamp = {
+            fromDate: (date: Date) => ClientTimestamp.fromDate(date)
+          };
+          console.log('[Firebase Sync] Re-initialized Firestore via Web Client SDK fallback (uses API Key Rules).');
+          
+          syncAllFromFirestoreAtStartup().catch(err => {
+            console.warn('[Firebase Sync] Startup sync validation failed after Client SDK reconnect:', err.message);
+          });
+          setupRealtimeMetadataListener();
+          return true;
+        }
+      }
+    } catch (clientErr: any) {
+      console.error('[Firebase Sync] Web Client SDK fallback reconnect failed too:', clientErr.message);
+    }
+  }
+  return false;
+}
+
 // Cached metadata checking variables for on-demand HTTP polling sync
 let lastMetadataCheckTime = 0;
-const METADATA_CHECK_INTERVAL_MS = 2500; // Check at most once every 2.5 seconds to guard write limits
+const METADATA_CHECK_INTERVAL_MS = 15000; // Check at most once every 15 seconds to safely conserve daily read limit
 let onDemandSyncPromise: Promise<void> | null = null;
 
 async function checkAndSyncFromFirestoreOnDemand(): Promise<void> {
-  if (!adminDb) return;
+  if (!adminDb) {
+    const success = reconnectFirestore();
+    if (!success) {
+      return;
+    }
+  }
   const now = Date.now();
   if (now - lastMetadataCheckTime < METADATA_CHECK_INTERVAL_MS) {
     return;
@@ -1316,14 +1527,9 @@ async function syncAllFromFirestoreAtStartup() {
       const metaData = metaSnap.data();
       const firestoreLastResetTime = metaData.lastResetTime;
       if (firestoreLastResetTime && firestoreLastResetTime !== localLastResetTime) {
-        console.log(`[Firebase Startup Sync] Firestore reset signal found (${firestoreLastResetTime}). Clearing local files to match...`);
+        console.log(`[Firebase Startup Sync] Firestore reset signal found (${firestoreLastResetTime}). Clearing medications and audits to match...`);
         fs.writeFileSync(MEDS_FILE, '[]');
         fs.writeFileSync(AUDITS_FILE, '[]');
-        fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
-        if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
-          fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
-        }
-        fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
         
         localLastResetTime = firestoreLastResetTime;
         fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: firestoreLastResetTime }));
@@ -1336,23 +1542,13 @@ async function syncAllFromFirestoreAtStartup() {
       syncEntryMistakesDbFromFirestore(true).catch(e => console.error('Startup parameters DB sync failed:', e.message)),
       syncApplicationStorageFromFirestore(true).catch(e => console.error('Startup application storage sync failed:', e.message)),
       syncSettingsFromFirestore().catch(e => console.error('Startup settings sync failed:', e.message)),
-      syncTranslationCacheFromFirestore(true).catch(e => console.error('Startup translation cache sync failed:', e.message))
+      syncTranslationCacheFromFirestore(true).catch(e => console.error('Startup translation cache sync failed:', e.message)),
+      syncItemReferenceRegistryFromFirestore().catch(e => console.error('Startup reference registry sync failed:', e.message))
     ]);
     console.log('[Firebase Startup Sync] All persistent data loaded successfully!');
   } catch (err: any) {
-    console.error('[Firebase Startup Sync] Error during startup fetch:', err.message);
-    const errMsg = err.message || String(err);
-    const isPermissionDenied = errMsg.includes('PERMISSION_DENIED') || 
-                               errMsg.includes('insufficient permissions') || 
-                               errMsg.includes('  7  ') ||
-                               errMsg.startsWith('7 ') ||
-                               errMsg.includes(': 7') ||
-                               errMsg.includes('Status code: 7');
-    
-    if (isPermissionDenied && adminDb && !(adminDb instanceof ClientDbWrapper)) {
-      console.warn('[Firebase Startup Sync] Proactively switching to Web Client SDK fallback due to startup PERMISSION_DENIED...');
-      switchToClientSdkFallback();
-    }
+    console.error('[Firebase Startup Sync] Error during startup fetch:', err.message || err);
+    handleAdminDbError(err, 'startup sync');
   }
 }
 
@@ -1388,55 +1584,6 @@ async function resetAllInFirestore(): Promise<void> {
       }
     }
     if (count > 0) await batch.commit();
-
-    // Delete entry mistakes metadata and pharmacists documents
-    await adminDb.collection('entry_mistakes_configs').doc('global').delete();
-    await adminDb.collection('entry_mistakes_configs').doc('pharmacists').delete();
-
-    // Delete parameter chunk documents
-    const paramsSnap = await adminDb.collection('entry_mistakes_parameters').get();
-    batch = adminDb.batch();
-    count = 0;
-    for (const doc of paramsSnap.docs) {
-      batch.delete(doc.ref);
-      count++;
-      if (count >= 500) {
-        await batch.commit();
-        batch = adminDb.batch();
-        count = 0;
-      }
-    }
-    if (count > 0) await batch.commit();
-
-    // Delete translation cache documents
-    const transSnap = await adminDb.collection('translation_cache').get();
-    batch = adminDb.batch();
-    count = 0;
-    for (const doc of transSnap.docs) {
-      batch.delete(doc.ref);
-      count++;
-      if (count >= 500) {
-        await batch.commit();
-        batch = adminDb.batch();
-        count = 0;
-      }
-    }
-    if (count > 0) await batch.commit();
-
-    // Delete application storage documents
-    const storageSnap = await adminDb.collection('application_storage').get();
-    batch = adminDb.batch();
-    count = 0;
-    for (const doc of storageSnap.docs) {
-      batch.delete(doc.ref);
-      count++;
-      if (count >= 500) {
-        await batch.commit();
-        batch = adminDb.batch();
-        count = 0;
-      }
-    }
-    if (count > 0) await batch.commit();
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to clear Firestore collections during system reset:', err.message);
   }
@@ -1455,14 +1602,40 @@ app.get('/api/medications', async (req, res) => {
 app.post('/api/medications', async (req, res) => {
   try {
     const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+    const item = req.body;
+    const code = (item.itemCode || '').trim();
+
+    // Auto-fill from registry if exists
+    let registryData: any = null;
+    if (code && fs.existsSync(ITEM_REGISTRY_FILE)) {
+      try {
+        const registry = JSON.parse(fs.readFileSync(ITEM_REGISTRY_FILE, 'utf8'));
+        if (registry[code]) registryData = registry[code];
+      } catch (e) {}
+    }
+
+    const filledItem = { ...item };
+    if (registryData) {
+      if (!filledItem.imageUrl) filledItem.imageUrl = registryData.imageUrl || null;
+      
+      const transFields = ['arIndications', 'hiIndications', 'urIndications', 'mlIndications', 'bnIndications', 'tlIndications'];
+      transFields.forEach(field => {
+        if (!filledItem[field]) {
+          filledItem[field] = registryData[field] || '';
+        }
+      });
+    }
+
     const newMed = {
-      ...req.body,
+      ...filledItem,
       id: Math.random().toString(36).substring(2, 15),
       addedAt: new Date().toISOString(),
       lastUpdatedAt: new Date().toISOString()
     };
     meds.push(newMed);
     fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+
+    await updateItemReferenceRegistry([newMed]).catch(err => console.error(err));
 
     if (adminDb) {
       await saveMedicationToFirestore(newMed).catch(err => console.error(err));
@@ -1480,8 +1653,33 @@ app.put('/api/medications/:id', async (req, res) => {
     const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
     const index = meds.findIndex((m: any) => m.id === id);
     if (index !== -1) {
-      meds[index] = { ...meds[index], ...req.body, lastUpdatedAt: new Date().toISOString() };
+      const code = (req.body.itemCode || meds[index].itemCode || '').trim();
+
+      // Auto-fill from registry if exists
+      let registryData: any = null;
+      if (code && fs.existsSync(ITEM_REGISTRY_FILE)) {
+        try {
+          const registry = JSON.parse(fs.readFileSync(ITEM_REGISTRY_FILE, 'utf8'));
+          if (registry[code]) registryData = registry[code];
+        } catch (e) {}
+      }
+
+      const filledBody = { ...req.body };
+      if (registryData) {
+        if (!filledBody.imageUrl) filledBody.imageUrl = registryData.imageUrl || null;
+        
+        const transFields = ['arIndications', 'hiIndications', 'urIndications', 'mlIndications', 'bnIndications', 'tlIndications'];
+        transFields.forEach(field => {
+          if (!filledBody[field]) {
+            filledBody[field] = registryData[field] || '';
+          }
+        });
+      }
+
+      meds[index] = { ...meds[index], ...filledBody, lastUpdatedAt: new Date().toISOString() };
       fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+
+      await updateItemReferenceRegistry([meds[index]]).catch(err => console.error(err));
 
       if (adminDb) {
         await saveMedicationToFirestore(meds[index]).catch(err => console.error(err));
@@ -1524,11 +1722,25 @@ app.post('/api/medications/bulk', async (req, res) => {
       return res.status(400).json({ error: 'Body must contain an array of medications' });
     }
 
+    // Load reference registry
+    let referenceRegistry: Record<string, any> = {};
+    if (fs.existsSync(ITEM_REGISTRY_FILE)) {
+      try {
+        referenceRegistry = JSON.parse(fs.readFileSync(ITEM_REGISTRY_FILE, 'utf8'));
+      } catch (e) {}
+    }
+
     // Pre-calculate photo map for efficiency
     const globalPhotoMap: Record<string, string> = {};
     if (options?.photoStrategy === 'keep') {
       meds.forEach((m: any) => {
         if (m.imageUrl) globalPhotoMap[m.itemCode] = m.imageUrl;
+      });
+      // Also merge in photos from the reference registry!
+      Object.entries(referenceRegistry).forEach(([code, data]: any) => {
+        if (data.imageUrl && !globalPhotoMap[code]) {
+          globalPhotoMap[code] = data.imageUrl;
+        }
       });
     }
 
@@ -1543,13 +1755,14 @@ app.post('/api/medications/bulk', async (req, res) => {
     }
 
     const newMeds = itemsToProcess.map((m: any) => {
-      const existingIndex = meds.findIndex((em: any) => em.locationId === m.locationId && em.itemCode === m.itemCode);
+      const code = (m.itemCode || '').trim();
+      const existingIndex = meds.findIndex((em: any) => em.locationId === m.locationId && em.itemCode === code);
       const existing = existingIndex !== -1 ? meds[existingIndex] : null;
       
       let imageUrl = m.imageUrl;
       if (options?.photoStrategy === 'keep') {
         if (!imageUrl) {
-          imageUrl = globalPhotoMap[m.itemCode];
+          imageUrl = globalPhotoMap[code] || referenceRegistry[code]?.imageUrl || null;
         }
       } else if (options?.photoStrategy === 'remove') {
         imageUrl = null;
@@ -1571,11 +1784,11 @@ app.post('/api/medications/bulk', async (req, res) => {
       };
 
       const transFields = {
-        hiIndications: m.hiIndications || existing?.hiIndications || getCachedField('hiIndications', 'hi') || '',
-        urIndications: m.urIndications || existing?.urIndications || getCachedField('urIndications', 'ur') || '',
-        mlIndications: m.mlIndications || existing?.mlIndications || getCachedField('mlIndications', 'ml') || '',
-        bnIndications: m.bnIndications || existing?.bnIndications || getCachedField('bnIndications', 'bn') || '',
-        tlIndications: m.tlIndications || existing?.tlIndications || getCachedField('tlIndications', 'tl') || ''
+        hiIndications: m.hiIndications || existing?.hiIndications || referenceRegistry[code]?.hiIndications || getCachedField('hiIndications', 'hi') || '',
+        urIndications: m.urIndications || existing?.urIndications || referenceRegistry[code]?.urIndications || getCachedField('urIndications', 'ur') || '',
+        mlIndications: m.mlIndications || existing?.mlIndications || referenceRegistry[code]?.mlIndications || getCachedField('mlIndications', 'ml') || '',
+        bnIndications: m.bnIndications || existing?.bnIndications || referenceRegistry[code]?.bnIndications || getCachedField('bnIndications', 'bn') || '',
+        tlIndications: m.tlIndications || existing?.tlIndications || referenceRegistry[code]?.tlIndications || getCachedField('tlIndications', 'tl') || ''
       };
 
       if (existingIndex !== -1) {
@@ -1603,8 +1816,10 @@ app.post('/api/medications/bulk', async (req, res) => {
 
     fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
 
+    await updateItemReferenceRegistry(newMeds).catch(err => console.error(err));
+
     if (adminDb) {
-      await saveMedicationsBulkToFirestore(meds).catch(err => console.error(err));
+      await saveMedicationsBulkToFirestore(newMeds).catch(err => console.error(err));
     }
 
     res.json({ count: newMeds.length });
@@ -1673,15 +1888,15 @@ app.post('/api/system/reset', async (req, res) => {
   try {
     fs.writeFileSync(MEDS_FILE, '[]');
     fs.writeFileSync(AUDITS_FILE, '[]');
-    fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
-    if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
-      fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
-    }
-    fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
 
     const resetStr = new Date().toISOString();
     localLastResetTime = resetStr;
     fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: resetStr }));
+
+    if (!adminDb) {
+      // Force an attempt of reconnection to Firestore
+      reconnectFirestore();
+    }
 
     if (adminDb) {
       await resetAllInFirestore().catch(err => console.error(err));
@@ -1868,6 +2083,11 @@ app.post('/api/application-storage/reset', async (req, res) => {
     const resetStr = new Date().toISOString();
     localLastResetTime = resetStr;
     fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: resetStr }));
+
+    if (!adminDb) {
+      // Force an attempt of reconnection to Firestore
+      reconnectFirestore();
+    }
 
     if (adminDb) {
       await resetApplicationStorageInFirestore().catch(err => console.error(err));

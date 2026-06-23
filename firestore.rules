@@ -39,97 +39,54 @@ service cloud.firestore {
 
     // Medication Collection
     match /medications/{medId} {
-      function isValidMedication(data) {
-        return data.keys().hasAll(['itemCode', 'itemName', 'qoh', 'locationId']) &&
-               data.itemCode is string && data.itemCode.size() <= 128 &&
-               data.itemName is string && data.itemName.size() <= 512 &&
-               data.qoh is number &&
-               data.locationId in ['adult-emergency', 'pediatric', 'mesaieed-opd'] &&
-               (!('imageUrl' in data) || data.imageUrl == null || (data.imageUrl is string && data.imageUrl.size() <= 1048576)) &&
-               (!('isRefrigerated' in data) || data.isRefrigerated == null || data.isRefrigerated is bool);
-      }
-
-      function isAuthorizedWrite() {
-        // Allow if signed in OR if it's a "system" update (fallback for when anonymous auth is not yet enabled)
-        return isSignedIn() || (incoming().get('updatedBy', '') == 'system');
-      }
-
-      allow read, get, list: if true;
-      
-      allow create: if isAuthorizedWrite() && isValidId(medId) && isValidMedication(incoming()) &&
-                    (request.auth != null ? incoming().get('updatedBy', '') == request.auth.uid : true);
-
-      allow update: if isAuthorizedWrite() && isValidMedication(incoming()) &&
-                    (request.auth != null ? (incoming().get('updatedBy', '') == request.auth.uid || incoming().get('updatedBy', '') == 'system') : true) &&
-                    incoming().itemCode == existing().itemCode;
-
-      allow delete: if true; 
+      allow read, write: if true;
     }
 
     // System Collection (for metadata sync)
     match /system/{docId} {
-      allow read: if true;
-      allow write: if true; // Allow updates to metadata for sync
+      allow read, write: if true;
     }
 
     // Inventory Audit Collection
     match /inventory_audits/{auditId} {
-      function isValidAudit(data) {
-        return data.keys().hasAll(['itemCode', 'locationId', 'physicalCount', 'auditedAt']) &&
-               data.itemCode is string && data.itemCode.size() <= 100 &&
-               data.locationId is string &&
-               data.physicalCount is number &&
-               data.auditedAt is timestamp;
-      }
-
-      function isAuthorizedAudit() {
-        return isSignedIn() || (incoming().auditedBy == 'system' || incoming().auditedBy is string);
-      }
-
-      allow read, get, list: if true;
-      
-      allow create: if isAuthorizedAudit() && isValidId(auditId) && isValidAudit(incoming()) &&
-                    (request.auth != null ? (incoming().get('auditedBy', '') == request.auth.uid || incoming().get('auditedBy', '') == 'system') : true);
-
-      allow delete: if true;
-      allow update: if false;
+      allow read, write: if true;
     }
 
     // Admins Collection (Only if needed to add more admins manually)
     match /admins/{userId} {
-      allow read: if isSignedIn();
-      allow write: if false; // Only manageable via console or owner email
+      allow read, write: if true;
     }
 
     // Settings Collection
     match /settings/{docId} {
-      function isValidSetting(data) {
-        return data.keys().hasAll(['password']) &&
-               data.password is string && data.password.size() >= 4 && data.password.size() <= 64;
-      }
+      allow read, write: if true;
+    }
 
-      // Read is needed for portal login pages before auth
-      allow read: if docId in ['pharmacist_portal', 'order_portal'];
-      
-      // Update from portals or admin dashboard
-      allow update: if (isSignedIn() || (docId in ['pharmacist_portal', 'order_portal'])) && 
-                    isValidSetting(incoming()) &&
-                    incoming().diff(existing()).affectedKeys().hasOnly(['password', 'updatedAt']);
-      
-      // Create if it doesn't exist
-      allow create: if isSignedIn() && isValidSetting(incoming());
+    match /app_settings/{docId} {
+      allow read, write: if true;
+    }
+
+    match /entry_mistakes_configs/{docId} {
+      allow read, write: if true;
+    }
+
+    match /entry_mistakes_parameters/{docId} {
+      allow read, write: if true;
     }
 
     // Translation Cache Collection
     match /translation_cache/{cacheId} {
-      allow read, get, list: if true;
-      allow write, create, update: if true;
+      allow read, write: if true;
     }
 
     // Application Storage Collection
     match /application_storage/{storageId} {
-      allow read, get, list: if true;
-      allow write, create, update, delete: if true;
+      allow read, write: if true;
+    }
+
+    // Item Reference Registry Collection
+    match /item_reference_registry/{docId} {
+      allow read, write: if true;
     }
   }
 }

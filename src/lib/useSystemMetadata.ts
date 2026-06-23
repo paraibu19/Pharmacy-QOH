@@ -43,6 +43,19 @@ export function useSystemMetadata() {
     const unsubscribe = onSnapshot(metaRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data({ serverTimestamps: 'estimate' });
+        
+        if (data.lastResetTime) {
+          const storedResetTime = storage.getItem('aw_pharmacy_last_reset');
+          if (storedResetTime && storedResetTime !== data.lastResetTime) {
+            console.log('[useSystemMetadata] System reset detected from cloud, reloading...');
+            storage.setItem('aw_pharmacy_last_reset', data.lastResetTime);
+            window.location.reload();
+            return;
+          } else if (!storedResetTime) {
+            storage.setItem('aw_pharmacy_last_reset', data.lastResetTime);
+          }
+        }
+
         if (data.lastDataUpdate) {
           try {
             const dateObj = (data.lastDataUpdate as any).toDate ? data.lastDataUpdate.toDate() : new Date(data.lastDataUpdate);
