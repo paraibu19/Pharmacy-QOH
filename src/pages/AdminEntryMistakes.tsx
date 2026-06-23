@@ -414,7 +414,9 @@ export default function AdminEntryMistakes() {
 
   const fetchSavedStorageItems = async (force: boolean = false) => {
     try {
-      const url = force ? '/api/application-storage?force=true' : '/api/application-storage';
+      const url = force 
+        ? `/api/application-storage?force=true&t=${Date.now()}` 
+        : `/api/application-storage?t=${Date.now()}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
