@@ -234,13 +234,16 @@ if (!fs.existsSync(ITEM_REGISTRY_FILE)) {
 }
 
 if (!fs.existsSync(LAST_RESET_FILE)) {
-  fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: "" }));
+  fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: "", lastStorageResetTime: "" }));
 }
 
 let localLastResetTime = "";
+let localLastStorageResetTime = "";
+let isDbSeedingSuspended = false;
 try {
   const resetData = JSON.parse(fs.readFileSync(LAST_RESET_FILE, 'utf8'));
   localLastResetTime = resetData.lastResetTime || "";
+  localLastStorageResetTime = resetData.lastStorageResetTime || "";
 } catch (e: any) {
   console.warn('[Firebase Sync Init] Failed to read last_reset.json:', e.message);
 }
@@ -343,7 +346,8 @@ app.post('/api/auth/verify-admin', async (req, res) => {
 });
 
 app.get('/api/auth/settings', async (req, res) => {
-  await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
+  const force = req.query.force === 'true';
+  await checkAndSyncFromFirestoreOnDemand(force).catch(err => console.error(err));
   if (adminDb) {
     await syncSettingsFromFirestore().catch(err => console.error(err));
   }
@@ -510,7 +514,7 @@ async function syncMedicationsFromFirestore(enableSeeding: boolean = false): Pro
       meds.sort((a, b) => (a.itemName || '').localeCompare(b.itemName || ''));
       fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
     } else {
-      if (enableSeeding) {
+      if (enableSeeding && !isDbSeedingSuspended) {
         // If Firestore is empty but our local JSON has medications, seed Firestore!
         const localDataStr = fs.readFileSync(MEDS_FILE, 'utf8');
         const localMeds = JSON.parse(localDataStr);
@@ -751,7 +755,7 @@ async function syncAuditsFromFirestore(enableSeeding: boolean = false): Promise<
       audits.sort((a, b) => new Date(b.auditedAt || 0).getTime() - new Date(a.auditedAt || 0).getTime());
       fs.writeFileSync(AUDITS_FILE, JSON.stringify(audits, null, 2));
     } else {
-      if (enableSeeding) {
+      if (enableSeeding && !isDbSeedingSuspended) {
         // Seed audits from local JSON
         const localDataStr = fs.readFileSync(AUDITS_FILE, 'utf8');
         const localAudits = JSON.parse(localDataStr);
@@ -863,7 +867,7 @@ async function syncEntryMistakesDbFromFirestore(enableSeeding: boolean = false):
         return meta;
       }
     } else {
-      if (enableSeeding) {
+      if (enableSeeding && !isDbSeedingSuspended) {
         // Seed entry_mistakes_configs if local exists
         if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
           const localDataStr = fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8');
@@ -1033,7 +1037,7 @@ async function syncTranslationCacheFromFirestore(enableSeeding: boolean = false)
       fs.writeFileSync(TRANSLATION_CACHE_FILE, JSON.stringify(cache, null, 2));
       console.log(`[Firebase Sync] Synchronized ${Object.keys(cache).length} cached translations from Firestore.`);
     } else {
-      if (enableSeeding) {
+      if (enableSeeding && !isDbSeedingSuspended) {
         // Seed Firestore from local translation_cache if it exists and has records
         if (fs.existsSync(TRANSLATION_CACHE_FILE)) {
           try {
@@ -1117,10 +1121,10 @@ async function syncApplicationStorageFromFirestore(enableSeeding: boolean = fals
     });
     
     if (items.length > 0) {
-      items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.auditedAt || 0).getTime());
+      items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
     } else {
-      if (enableSeeding) {
+      if (enableSeeding && !isDbSeedingSuspended) {
         // Seed application storage from local JSON file if exists and has records
         if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
           try {
@@ -1335,10 +1339,10 @@ function reconnectFirestore(): boolean {
 
 // Cached metadata checking variables for on-demand HTTP polling sync
 let lastMetadataCheckTime = 0;
-const METADATA_CHECK_INTERVAL_MS = 15000; // Check at most once every 15 seconds to safely conserve daily read limit
+const METADATA_CHECK_INTERVAL_MS = 2000; // Check at most once every 2 seconds to safely conserve daily read limit and ensure high-speed sync
 let onDemandSyncPromise: Promise<void> | null = null;
 
-async function checkAndSyncFromFirestoreOnDemand(): Promise<void> {
+async function checkAndSyncFromFirestoreOnDemand(force: boolean = false): Promise<void> {
   if (!adminDb) {
     const success = reconnectFirestore();
     if (!success) {
@@ -1346,7 +1350,7 @@ async function checkAndSyncFromFirestoreOnDemand(): Promise<void> {
     }
   }
   const now = Date.now();
-  if (now - lastMetadataCheckTime < METADATA_CHECK_INTERVAL_MS) {
+  if (!force && (now - lastMetadataCheckTime < METADATA_CHECK_INTERVAL_MS)) {
     return;
   }
   if (onDemandSyncPromise) {
@@ -1359,21 +1363,32 @@ async function checkAndSyncFromFirestoreOnDemand(): Promise<void> {
       if (metaSnap.exists) {
         const data = metaSnap.data();
         const firestoreLastResetTime = data.lastResetTime;
+        const firestoreLastStorageResetTime = data.lastStorageResetTime;
         const updatedBy = data.updatedBy;
         
-        // Handle reset signal in local cache if we didn't receive/trigger it yet
+        // Handle physical reset of medications and audits
         if (firestoreLastResetTime && firestoreLastResetTime !== localLastResetTime) {
-          console.log(`[Firebase Sync On-Demand] Reset detected (${firestoreLastResetTime}). Resetting local files...`);
+          console.log(`[Firebase Sync On-Demand] Reset detected (${firestoreLastResetTime}). Resetting local medications and audits...`);
           fs.writeFileSync(MEDS_FILE, '[]');
           fs.writeFileSync(AUDITS_FILE, '[]');
-          fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
-          if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
-            fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
-          }
-          fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
           
           localLastResetTime = firestoreLastResetTime;
-          fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: firestoreLastResetTime }));
+          fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ 
+            lastResetTime: localLastResetTime,
+            lastStorageResetTime: localLastStorageResetTime
+          }));
+        }
+
+        // Handle physical reset of application storage
+        if (firestoreLastStorageResetTime && firestoreLastStorageResetTime !== localLastStorageResetTime) {
+          console.log(`[Firebase Sync On-Demand] Storage reset detected (${firestoreLastStorageResetTime}). Resetting local application storage...`);
+          fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+          
+          localLastStorageResetTime = firestoreLastStorageResetTime;
+          fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ 
+            lastResetTime: localLastResetTime,
+            lastStorageResetTime: localLastStorageResetTime
+          }));
         }
         
         // Skip background sync if changes were updated by this server instance
@@ -1402,7 +1417,7 @@ async function checkAndSyncFromFirestoreOnDemand(): Promise<void> {
   return onDemandSyncPromise;
 }
 
-async function updateServerMetadataFirestore(resetTime?: string): Promise<void> {
+async function updateServerMetadataFirestore(resetTime?: string, storageResetTime?: string): Promise<void> {
   if (!adminDb) return;
   try {
     const metaRef = adminDb.collection('system').doc('metadata');
@@ -1413,8 +1428,12 @@ async function updateServerMetadataFirestore(resetTime?: string): Promise<void> 
     if (resetTime) {
       updateData.lastResetTime = resetTime;
     }
+    if (storageResetTime) {
+      updateData.lastStorageResetTime = storageResetTime;
+    }
     await metaRef.set(updateData, { merge: true });
-    console.log(`[Firebase Realtime Sync] Metadata updated by server instance: ${SERVER_INSTANCE_ID} (reset: ${resetTime || 'no'})`);
+    lastMetadataCheckTime = Date.now();
+    console.log(`[Firebase Realtime Sync] Metadata updated by server instance: ${SERVER_INSTANCE_ID} (reset: ${resetTime || 'no'}, storageReset: ${storageResetTime || 'no'})`);
   } catch (err: any) {
     console.error('[Firebase Realtime Sync] Failed to update global metadata:', err.message);
     handleAdminDbError(err, 'write metadata');
@@ -1444,18 +1463,31 @@ function setupRealtimeMetadataListener() {
         console.log(`[Firebase Realtime Sync] Received real-time update signal. Triggered by: ${updatedBy}`);
         
         // Check if a reset occurred
+        const firestoreLastStorageResetTime = data.lastStorageResetTime;
+        
+        // Handle physical reset of medications and audits
         if (firestoreLastResetTime && firestoreLastResetTime !== localLastResetTime) {
-          console.log(`[Firebase Realtime Sync] Realtime reset signal detected (${firestoreLastResetTime}). Clearing local files to match...`);
+          console.log(`[Firebase Realtime Sync] Realtime reset signal detected (${firestoreLastResetTime}). Clearing local medications and audits...`);
           fs.writeFileSync(MEDS_FILE, '[]');
           fs.writeFileSync(AUDITS_FILE, '[]');
-          fs.writeFileSync(TRANSLATION_CACHE_FILE, '{}');
-          if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
-            fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
-          }
-          fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
           
           localLastResetTime = firestoreLastResetTime;
-          fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: firestoreLastResetTime }));
+          fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ 
+            lastResetTime: localLastResetTime,
+            lastStorageResetTime: localLastStorageResetTime
+          }));
+        }
+
+        // Handle physical reset of application storage
+        if (firestoreLastStorageResetTime && firestoreLastStorageResetTime !== localLastStorageResetTime) {
+          console.log(`[Firebase Realtime Sync] Realtime storage reset signal detected (${firestoreLastStorageResetTime}). Clearing local application storage...`);
+          fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+          
+          localLastStorageResetTime = firestoreLastStorageResetTime;
+          fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ 
+            lastResetTime: localLastResetTime,
+            lastStorageResetTime: localLastStorageResetTime
+          }));
         }
         
         // Debounce fetching to group multiple fast changes together
@@ -1524,15 +1556,33 @@ async function syncAllFromFirestoreAtStartup() {
   try {
     const metaSnap = await adminDb.collection('system').doc('metadata').get();
     if (metaSnap.exists) {
+      isDbSeedingSuspended = true;
+      console.log('[Firebase Startup Sync] Firestore metadata block exists. Seeding has been safely suspended for legacy databases.');
       const metaData = metaSnap.data();
       const firestoreLastResetTime = metaData.lastResetTime;
+      const firestoreLastStorageResetTime = metaData.lastStorageResetTime;
+      
       if (firestoreLastResetTime && firestoreLastResetTime !== localLastResetTime) {
         console.log(`[Firebase Startup Sync] Firestore reset signal found (${firestoreLastResetTime}). Clearing medications and audits to match...`);
         fs.writeFileSync(MEDS_FILE, '[]');
         fs.writeFileSync(AUDITS_FILE, '[]');
         
         localLastResetTime = firestoreLastResetTime;
-        fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: firestoreLastResetTime }));
+        fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ 
+          lastResetTime: localLastResetTime,
+          lastStorageResetTime: localLastStorageResetTime
+        }));
+      }
+
+      if (firestoreLastStorageResetTime && firestoreLastStorageResetTime !== localLastStorageResetTime) {
+        console.log(`[Firebase Startup Sync] Firestore storage reset signal found (${firestoreLastStorageResetTime}). Clearing application storage to match...`);
+        fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
+        
+        localLastStorageResetTime = firestoreLastStorageResetTime;
+        fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ 
+          lastResetTime: localLastResetTime,
+          lastStorageResetTime: localLastStorageResetTime
+        }));
       }
     }
 
@@ -1591,7 +1641,8 @@ async function resetAllInFirestore(): Promise<void> {
 
 // API Routes
 app.get('/api/medications', async (req, res) => {
-  await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
+  const force = req.query.force === 'true';
+  await checkAndSyncFromFirestoreOnDemand(force).catch(err => console.error(err));
   if (adminDb) {
     await syncMedicationsFromFirestore().catch(err => console.error(err));
   }
@@ -1830,7 +1881,8 @@ app.post('/api/medications/bulk', async (req, res) => {
 });
 
 app.get('/api/audits', async (req, res) => {
-  await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
+  const force = req.query.force === 'true';
+  await checkAndSyncFromFirestoreOnDemand(force).catch(err => console.error(err));
   if (adminDb) {
     await syncAuditsFromFirestore().catch(err => console.error(err));
   }
@@ -1861,7 +1913,8 @@ app.post('/api/audits', async (req, res) => {
 
 app.get('/api/translation_cache', async (req, res) => {
   try {
-    await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
+    const force = req.query.force === 'true';
+    await checkAndSyncFromFirestoreOnDemand(force).catch(err => console.error(err));
     if (adminDb) {
       await syncTranslationCacheFromFirestore().catch(err => console.error(err));
     }
@@ -1891,7 +1944,10 @@ app.post('/api/system/reset', async (req, res) => {
 
     const resetStr = new Date().toISOString();
     localLastResetTime = resetStr;
-    fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: resetStr }));
+    fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ 
+      lastResetTime: localLastResetTime,
+      lastStorageResetTime: localLastStorageResetTime
+    }));
 
     if (!adminDb) {
       // Force an attempt of reconnection to Firestore
@@ -1900,7 +1956,7 @@ app.post('/api/system/reset', async (req, res) => {
 
     if (adminDb) {
       await resetAllInFirestore().catch(err => console.error(err));
-      await updateServerMetadataFirestore(resetStr).catch(err => console.error(err));
+      await updateServerMetadataFirestore(resetStr, undefined).catch(err => console.error(err));
     }
 
     res.json({ success: true });
@@ -1911,7 +1967,8 @@ app.post('/api/system/reset', async (req, res) => {
 
 app.get('/api/entry-mistakes/db', async (req, res) => {
   try {
-    await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
+    const force = req.query.force === 'true';
+    await checkAndSyncFromFirestoreOnDemand(force).catch(err => console.error(err));
     if (adminDb) {
       await syncEntryMistakesDbFromFirestore().catch(err => console.error(err));
     }
@@ -1972,10 +2029,18 @@ app.delete('/api/entry-mistakes/db', async (req, res) => {
 // GET all stored application mistakes
 app.get('/api/application-storage', async (req, res) => {
   try {
-    await checkAndSyncFromFirestoreOnDemand().catch(err => console.error(err));
+    const force = req.query.force === 'true';
+    await checkAndSyncFromFirestoreOnDemand(force).catch(err => console.error(err));
     if (adminDb) {
-      await syncApplicationStorageFromFirestore().catch(err => console.error(err));
+      const items = await syncApplicationStorageFromFirestore().catch(err => {
+        console.error('Failed to sync application storage from Firestore:', err);
+        return null;
+      });
+      if (items !== null) {
+        return res.json(items);
+      }
     }
+    // Fallback if adminDb is not active or failed
     if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
       const data = fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8');
       res.json(JSON.parse(data));
@@ -1994,7 +2059,9 @@ app.post('/api/application-storage', async (req, res) => {
     const itemsToSave = Array.isArray(body) ? body : [body];
     
     let items = [];
-    if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
+    if (adminDb) {
+      items = await syncApplicationStorageFromFirestore().catch(() => []);
+    } else if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
       items = JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
     }
     
@@ -2041,11 +2108,13 @@ app.post('/api/application-storage/delete', async (req, res) => {
       return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
     }
     
-    if (!fs.existsSync(APPLICATION_STORAGE_FILE)) {
-      return res.status(400).json({ error: 'Storage file does not exist.' });
+    let items = [];
+    if (adminDb) {
+      items = await syncApplicationStorageFromFirestore().catch(() => []);
+    } else if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
+      items = JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
     }
     
-    let items = JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
     const itemToDelete = items.find((x: any) => {
       if (id && x.id === id) return true;
       if (x.mrnOrganization === mrnOrganization && x.actionDateTime === actionDateTime && x.itemNumber === itemNumber) {
@@ -2060,6 +2129,12 @@ app.post('/api/application-storage/delete', async (req, res) => {
       
       if (adminDb) {
         await deleteMismatchFromFirestore(itemToDelete).catch(err => console.error(err));
+      }
+    } else {
+      // Direct deletion from Firestore as robust primary fallback
+      if (adminDb) {
+        const fallbackItem = { id, mrnOrganization, actionDateTime, itemNumber };
+        await deleteMismatchFromFirestore(fallbackItem).catch(err => console.error(err));
       }
     }
     
@@ -2081,8 +2156,11 @@ app.post('/api/application-storage/reset', async (req, res) => {
     fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
 
     const resetStr = new Date().toISOString();
-    localLastResetTime = resetStr;
-    fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ lastResetTime: resetStr }));
+    localLastStorageResetTime = resetStr;
+    fs.writeFileSync(LAST_RESET_FILE, JSON.stringify({ 
+      lastResetTime: localLastResetTime,
+      lastStorageResetTime: localLastStorageResetTime
+    }));
 
     if (!adminDb) {
       // Force an attempt of reconnection to Firestore
@@ -2091,7 +2169,7 @@ app.post('/api/application-storage/reset', async (req, res) => {
 
     if (adminDb) {
       await resetApplicationStorageInFirestore().catch(err => console.error(err));
-      await updateServerMetadataFirestore(resetStr).catch(err => console.error(err));
+      await updateServerMetadataFirestore(undefined, resetStr).catch(err => console.error(err));
     }
 
     res.json({ success: true });

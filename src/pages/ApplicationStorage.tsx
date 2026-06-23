@@ -105,27 +105,39 @@ export default function ApplicationStorage() {
           setLoading(false);
         }, (error) => {
           console.warn("Firestore onSnapshot error on application_storage, falling back to REST API:", error);
-          fetchStoredItems();
+          fetchStoredItems(false);
         });
       } catch (err) {
         console.warn("Firestore subscription failed, falling back to REST API:", err);
-        fetchStoredItems();
+        fetchStoredItems(false);
       }
     } else {
-      fetchStoredItems();
+      fetchStoredItems(false);
     }
+
+    // Set up background polling (unconditionally) as a robust fallback for sandboxed iframe environments
+    const pollInterval = setInterval(() => {
+      fetchStoredItems(true);
+    }, 6000);
 
     return () => {
       if (unsubscribe) {
         unsubscribe();
       }
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
     };
   }, []);
 
-  const fetchStoredItems = async () => {
-    setLoading(true);
+  const fetchStoredItems = async (isBackground: any = false) => {
+    const isBg = isBackground === true;
+    if (!isBg) {
+      setLoading(true);
+    }
     try {
-      const res = await fetch('/api/application-storage');
+      const url = isBg ? '/api/application-storage' : '/api/application-storage?force=true';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setItems(data);
@@ -133,7 +145,9 @@ export default function ApplicationStorage() {
     } catch (err) {
       console.error('Failed to load storage items:', err);
     } finally {
-      setLoading(false);
+      if (!isBg) {
+        setLoading(false);
+      }
     }
   };
 
@@ -433,7 +447,7 @@ export default function ApplicationStorage() {
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={fetchStoredItems}
+            onClick={() => fetchStoredItems(false)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-[#141414]/70 bg-[#141414]/5 hover:bg-[#141414]/10 transition-colors"
             title="Refresh database entries"
           >

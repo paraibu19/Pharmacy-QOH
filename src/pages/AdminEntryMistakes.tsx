@@ -387,26 +387,35 @@ export default function AdminEntryMistakes() {
           setSavedStorageItems(loaded);
         }, (error) => {
           console.warn("Firestore onSnapshot error on application_storage mapping:", error);
-          fetchSavedStorageItems();
+          fetchSavedStorageItems(true);
         });
       } catch (err) {
         console.warn("Firestore subscription failed in AdminEntryMistakes, fallback:", err);
-        fetchSavedStorageItems();
+        fetchSavedStorageItems(true);
       }
     } else {
-      fetchSavedStorageItems();
+      fetchSavedStorageItems(true);
     }
+
+    // Set up background polling (unconditionally) as a robust fallback for sandboxed iframe environments
+    const pollInterval = setInterval(() => {
+      fetchSavedStorageItems(false); // poll with fake background false (safe server local read)
+    }, 6000);
 
     return () => {
       if (unsubscribe) {
         unsubscribe();
       }
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
     };
   }, []);
 
-  const fetchSavedStorageItems = async () => {
+  const fetchSavedStorageItems = async (force: boolean = false) => {
     try {
-      const res = await fetch('/api/application-storage');
+      const url = force ? '/api/application-storage?force=true' : '/api/application-storage';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setSavedStorageItems(data);
@@ -424,7 +433,7 @@ export default function AdminEntryMistakes() {
         body: JSON.stringify(record)
       });
       if (res.ok) {
-        fetchSavedStorageItems();
+        fetchSavedStorageItems(true);
       } else {
         const errData = await res.json();
         alert(errData.error || 'Failed to save to Application Storage');
@@ -456,7 +465,7 @@ export default function AdminEntryMistakes() {
         setPasswordModalOpen(false);
         setPasswordTargetItem(null);
         setAdminPasswordInput('');
-        fetchSavedStorageItems();
+        fetchSavedStorageItems(true);
       } else {
         setPasswordError(data.error || 'Incorrect admin password. Action unauthorized.');
       }
