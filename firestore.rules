@@ -63,13 +63,13 @@ service cloud.firestore {
                     (request.auth != null ? (incoming().get('updatedBy', '') == request.auth.uid || incoming().get('updatedBy', '') == 'system') : true) &&
                     incoming().itemCode == existing().itemCode;
 
-      allow delete: if true; 
+      allow delete: if isSignedIn(); 
     }
 
     // System Collection (for metadata sync)
     match /system/{docId} {
       allow read: if true;
-      allow write: if true; // Allow updates to metadata for sync
+      allow write: if isSignedIn(); // Allow updates to metadata for sync only for signed-in users or system admins
     }
 
     // Inventory Audit Collection
@@ -91,7 +91,7 @@ service cloud.firestore {
       allow create: if isAuthorizedAudit() && isValidId(auditId) && isValidAudit(incoming()) &&
                     (request.auth != null ? (incoming().get('auditedBy', '') == request.auth.uid || incoming().get('auditedBy', '') == 'system') : true);
 
-      allow delete: if true;
+      allow delete: if isSignedIn();
       allow update: if false;
     }
 
@@ -123,13 +123,13 @@ service cloud.firestore {
     // Translation Cache Collection
     match /translation_cache/{cacheId} {
       allow read, get, list: if true;
-      allow write, create, update: if true;
+      allow write, create, update: if isSignedIn();
     }
 
     // Application Storage Collection
     match /application_storage/{storageId} {
       allow read, get, list: if true;
-      allow write, create, update, delete: if true;
+      allow write, create, update, delete: if isSignedIn();
     }
   }
 }
