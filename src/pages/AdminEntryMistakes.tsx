@@ -27,7 +27,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMedications } from '../hooks/useMedications';
 import { Medication } from '../types';
-import { storage, sessionStorage } from '../lib/storage';
+import { sessionStorage } from '../lib/storage';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 
@@ -387,55 +387,26 @@ export default function AdminEntryMistakes() {
           setSavedStorageItems(loaded);
         }, (error) => {
           console.warn("Firestore onSnapshot error on application_storage mapping:", error);
-          const errMsg = error instanceof Error ? error.message : String(error);
-          const isQuotaOrDenied = (
-            errMsg.toLowerCase().includes('quota') || 
-            errMsg.toLowerCase().includes('limit') || 
-            errMsg.toLowerCase().includes('exceeded') || 
-            errMsg.toLowerCase().includes('permission-denied') ||
-            errMsg.toLowerCase().includes('resource_exhausted')
-          );
-          if (isQuotaOrDenied && typeof window !== 'undefined') {
-            if (storage.getItem('firestore_fallback')) {
-              storage.removeItem('firestore_fallback');
-            }
-            sessionStorage.setItem('firestore_fallback', 'true');
-            console.warn('Auto-switching AdminEntryMistakes page to Local Server database mode due to quota/denied error.');
-            setTimeout(() => {
-              window.location.reload();
-            }, 500);
-          }
-          fetchSavedStorageItems(true);
+          fetchSavedStorageItems();
         });
       } catch (err) {
         console.warn("Firestore subscription failed in AdminEntryMistakes, fallback:", err);
-        fetchSavedStorageItems(true);
+        fetchSavedStorageItems();
       }
     } else {
-      fetchSavedStorageItems(true);
+      fetchSavedStorageItems();
     }
-
-    // Set up background polling (unconditionally) as a robust fallback for sandboxed iframe environments
-    const pollInterval = setInterval(() => {
-      fetchSavedStorageItems(false); // poll with fake background false (safe server local read)
-    }, 6000);
 
     return () => {
       if (unsubscribe) {
         unsubscribe();
       }
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
     };
   }, []);
 
-  const fetchSavedStorageItems = async (force: boolean = false) => {
+  const fetchSavedStorageItems = async () => {
     try {
-      const url = force 
-        ? `/api/application-storage?force=true&t=${Date.now()}` 
-        : `/api/application-storage?t=${Date.now()}`;
-      const res = await fetch(url);
+      const res = await fetch('/api/application-storage');
       if (res.ok) {
         const data = await res.json();
         setSavedStorageItems(data);
@@ -453,7 +424,7 @@ export default function AdminEntryMistakes() {
         body: JSON.stringify(record)
       });
       if (res.ok) {
-        fetchSavedStorageItems(true);
+        fetchSavedStorageItems();
       } else {
         const errData = await res.json();
         alert(errData.error || 'Failed to save to Application Storage');
@@ -485,7 +456,7 @@ export default function AdminEntryMistakes() {
         setPasswordModalOpen(false);
         setPasswordTargetItem(null);
         setAdminPasswordInput('');
-        fetchSavedStorageItems(true);
+        fetchSavedStorageItems();
       } else {
         setPasswordError(data.error || 'Incorrect admin password. Action unauthorized.');
       }

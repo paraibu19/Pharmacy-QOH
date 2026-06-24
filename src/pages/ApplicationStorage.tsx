@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { storage, sessionStorage } from '../lib/storage';
 
 interface StoredMistake {
   id: string;
@@ -106,59 +105,27 @@ export default function ApplicationStorage() {
           setLoading(false);
         }, (error) => {
           console.warn("Firestore onSnapshot error on application_storage, falling back to REST API:", error);
-          const errMsg = error instanceof Error ? error.message : String(error);
-          const isQuotaOrDenied = (
-            errMsg.toLowerCase().includes('quota') || 
-            errMsg.toLowerCase().includes('limit') || 
-            errMsg.toLowerCase().includes('exceeded') || 
-            errMsg.toLowerCase().includes('permission-denied') ||
-            errMsg.toLowerCase().includes('resource_exhausted')
-          );
-          if (isQuotaOrDenied && typeof window !== 'undefined') {
-            if (storage.getItem('firestore_fallback')) {
-              storage.removeItem('firestore_fallback');
-            }
-            sessionStorage.setItem('firestore_fallback', 'true');
-            console.warn('Auto-switching ApplicationStorage page to Local Server database mode due to quota/denied error.');
-            setTimeout(() => {
-              window.location.reload();
-            }, 500);
-          }
-          fetchStoredItems(false);
+          fetchStoredItems();
         });
       } catch (err) {
         console.warn("Firestore subscription failed, falling back to REST API:", err);
-        fetchStoredItems(false);
+        fetchStoredItems();
       }
     } else {
-      fetchStoredItems(false);
+      fetchStoredItems();
     }
-
-    // Set up background polling (unconditionally) as a robust fallback for sandboxed iframe environments
-    const pollInterval = setInterval(() => {
-      fetchStoredItems(true);
-    }, 6000);
 
     return () => {
       if (unsubscribe) {
         unsubscribe();
       }
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
     };
   }, []);
 
-  const fetchStoredItems = async (isBackground: any = false) => {
-    const isBg = isBackground === true;
-    if (!isBg) {
-      setLoading(true);
-    }
+  const fetchStoredItems = async () => {
+    setLoading(true);
     try {
-      const url = isBg 
-        ? `/api/application-storage?t=${Date.now()}` 
-        : `/api/application-storage?force=true&t=${Date.now()}`;
-      const res = await fetch(url);
+      const res = await fetch('/api/application-storage');
       if (res.ok) {
         const data = await res.json();
         setItems(data);
@@ -166,9 +133,7 @@ export default function ApplicationStorage() {
     } catch (err) {
       console.error('Failed to load storage items:', err);
     } finally {
-      if (!isBg) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   };
 
@@ -468,7 +433,7 @@ export default function ApplicationStorage() {
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={() => fetchStoredItems(false)}
+            onClick={fetchStoredItems}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-[#141414]/70 bg-[#141414]/5 hover:bg-[#141414]/10 transition-colors"
             title="Refresh database entries"
           >

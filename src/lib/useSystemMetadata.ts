@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { localDb } from './localStorageDb';
-import { storage, sessionStorage } from './storage';
+import { storage } from './storage';
 
 export function useSystemMetadata() {
   const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
@@ -43,19 +43,6 @@ export function useSystemMetadata() {
     const unsubscribe = onSnapshot(metaRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data({ serverTimestamps: 'estimate' });
-        
-        if (data.lastResetTime) {
-          const storedResetTime = storage.getItem('aw_pharmacy_last_reset');
-          if (storedResetTime && storedResetTime !== data.lastResetTime) {
-            console.log('[useSystemMetadata] System reset detected from cloud, reloading...');
-            storage.setItem('aw_pharmacy_last_reset', data.lastResetTime);
-            window.location.reload();
-            return;
-          } else if (!storedResetTime) {
-            storage.setItem('aw_pharmacy_last_reset', data.lastResetTime);
-          }
-        }
-
         if (data.lastDataUpdate) {
           try {
             const dateObj = (data.lastDataUpdate as any).toDate ? data.lastDataUpdate.toDate() : new Date(data.lastDataUpdate);
@@ -82,24 +69,6 @@ export function useSystemMetadata() {
       }
     }, (error) => {
       console.warn('Metadata listener error:', error);
-      const errMsg = error instanceof Error ? error.message : String(error);
-      const isQuotaOrDenied = (
-        errMsg.toLowerCase().includes('quota') || 
-        errMsg.toLowerCase().includes('limit') || 
-        errMsg.toLowerCase().includes('exceeded') || 
-        errMsg.toLowerCase().includes('permission-denied') ||
-        errMsg.toLowerCase().includes('resource_exhausted')
-      );
-      if (isQuotaOrDenied && typeof window !== 'undefined') {
-        if (storage.getItem('firestore_fallback')) {
-          storage.removeItem('firestore_fallback');
-        }
-        sessionStorage.setItem('firestore_fallback', 'true');
-        console.warn('Auto-switching useSystemMetadata to Local Server database mode due to quota/denied error.');
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
-      }
     });
 
     return () => {
