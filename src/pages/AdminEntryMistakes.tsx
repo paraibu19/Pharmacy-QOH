@@ -27,7 +27,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMedications } from '../hooks/useMedications';
 import { Medication } from '../types';
-import { sessionStorage } from '../lib/storage';
+import { storage, sessionStorage } from '../lib/storage';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 
@@ -387,6 +387,24 @@ export default function AdminEntryMistakes() {
           setSavedStorageItems(loaded);
         }, (error) => {
           console.warn("Firestore onSnapshot error on application_storage mapping:", error);
+          const errMsg = error instanceof Error ? error.message : String(error);
+          const isQuotaOrDenied = (
+            errMsg.toLowerCase().includes('quota') || 
+            errMsg.toLowerCase().includes('limit') || 
+            errMsg.toLowerCase().includes('exceeded') || 
+            errMsg.toLowerCase().includes('permission-denied') ||
+            errMsg.toLowerCase().includes('resource_exhausted')
+          );
+          if (isQuotaOrDenied && typeof window !== 'undefined') {
+            if (storage.getItem('firestore_fallback')) {
+              storage.removeItem('firestore_fallback');
+            }
+            sessionStorage.setItem('firestore_fallback', 'true');
+            console.warn('Auto-switching AdminEntryMistakes page to Local Server database mode due to quota/denied error.');
+            setTimeout(() => {
+              window.location.reload();
+            }, 500);
+          }
           fetchSavedStorageItems(true);
         });
       } catch (err) {

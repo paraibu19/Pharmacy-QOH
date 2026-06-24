@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { localDb } from './localStorageDb';
-import { storage } from './storage';
+import { storage, sessionStorage } from './storage';
 
 export function useSystemMetadata() {
   const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
@@ -82,6 +82,24 @@ export function useSystemMetadata() {
       }
     }, (error) => {
       console.warn('Metadata listener error:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const isQuotaOrDenied = (
+        errMsg.toLowerCase().includes('quota') || 
+        errMsg.toLowerCase().includes('limit') || 
+        errMsg.toLowerCase().includes('exceeded') || 
+        errMsg.toLowerCase().includes('permission-denied') ||
+        errMsg.toLowerCase().includes('resource_exhausted')
+      );
+      if (isQuotaOrDenied && typeof window !== 'undefined') {
+        if (storage.getItem('firestore_fallback')) {
+          storage.removeItem('firestore_fallback');
+        }
+        sessionStorage.setItem('firestore_fallback', 'true');
+        console.warn('Auto-switching useSystemMetadata to Local Server database mode due to quota/denied error.');
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      }
     });
 
     return () => {

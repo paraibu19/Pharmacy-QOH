@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { storage, sessionStorage } from '../lib/storage';
 
 interface StoredMistake {
   id: string;
@@ -105,6 +106,24 @@ export default function ApplicationStorage() {
           setLoading(false);
         }, (error) => {
           console.warn("Firestore onSnapshot error on application_storage, falling back to REST API:", error);
+          const errMsg = error instanceof Error ? error.message : String(error);
+          const isQuotaOrDenied = (
+            errMsg.toLowerCase().includes('quota') || 
+            errMsg.toLowerCase().includes('limit') || 
+            errMsg.toLowerCase().includes('exceeded') || 
+            errMsg.toLowerCase().includes('permission-denied') ||
+            errMsg.toLowerCase().includes('resource_exhausted')
+          );
+          if (isQuotaOrDenied && typeof window !== 'undefined') {
+            if (storage.getItem('firestore_fallback')) {
+              storage.removeItem('firestore_fallback');
+            }
+            sessionStorage.setItem('firestore_fallback', 'true');
+            console.warn('Auto-switching ApplicationStorage page to Local Server database mode due to quota/denied error.');
+            setTimeout(() => {
+              window.location.reload();
+            }, 500);
+          }
           fetchStoredItems(false);
         });
       } catch (err) {
