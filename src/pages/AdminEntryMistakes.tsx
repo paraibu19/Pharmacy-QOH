@@ -30,6 +30,7 @@ import { Medication } from '../types';
 import { sessionStorage } from '../lib/storage';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 // Types representing the database schema
 interface ParameterRow {
@@ -239,6 +240,7 @@ const isNonQatariBrandMistake = (
 
 export default function AdminEntryMistakes() {
   const { medications } = useMedications();
+  const { lastUpdate } = useSystemMetadata();
   const [activeReportType, setActiveReportType] = useState<'standard' | 'brand-vs-generic'>(() => {
     try {
       const saved = sessionStorage.getItem('daily_workload_report_type');
@@ -402,7 +404,7 @@ export default function AdminEntryMistakes() {
         unsubscribe();
       }
     };
-  }, []);
+  }, [lastUpdate]);
 
   const fetchSavedStorageItems = async () => {
     try {
@@ -1138,6 +1140,25 @@ export default function AdminEntryMistakes() {
           }
           return null;
         }).filter(Boolean) as WorkloadRecord[];
+
+        const allAutoSaveItems = [...standardMismatches, ...brandVsGenericMismatches];
+        if (allAutoSaveItems.length > 0) {
+          try {
+            const saveRes = await fetch('/api/application-storage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(allAutoSaveItems)
+            });
+            if (saveRes.ok) {
+              fetchSavedStorageItems();
+              console.log(`[Auto-Save] Successfully saved ${allAutoSaveItems.length} entry mismatches to cloud Application Storage.`);
+            } else {
+              console.error('[Auto-Save] Failed to auto-save mismatches to storage');
+            }
+          } catch (saveErr) {
+            console.error('[Auto-Save] Error during auto-save request:', saveErr);
+          }
+        }
 
       } catch (err: any) {
         alert(`Error parsing workload Excel: ${err.message}`);
