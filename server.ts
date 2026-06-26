@@ -1049,6 +1049,7 @@ async function resetAllInFirestore(): Promise<void> {
       }
     }
     if (count > 0) await batch.commit();
+    await updateServerMetadataFirestore().catch(err => console.error('[Realtime Sync Update Error during reset]', err));
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to clear Firestore collections during system reset:', err.message);
   }
@@ -1286,6 +1287,7 @@ app.post('/api/system/reset', async (req, res) => {
     if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
       fs.unlinkSync(ENTRY_MISTAKES_DB_FILE);
     }
+    fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
 
     if (adminDb) {
       await resetAllInFirestore().catch(err => console.error(err));

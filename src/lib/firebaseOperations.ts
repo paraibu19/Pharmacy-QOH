@@ -6,6 +6,7 @@ import { db, auth, handleFirestoreError, OperationType } from './firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from './sharedDb';
 import { localDb } from './localStorageDb';
+import { storage, sessionStorage } from './storage';
 
 function cleanUndefined<T>(obj: T): T {
   if (obj === null || obj === undefined) return obj;
@@ -444,42 +445,30 @@ export const systemOps = {
   },
 
   async resetAll() {
-    if (!db) {
-      return sharedDb.reset();
-    }
-
-    // Reset Firestore Collections
-    const collections = ['medications', 'inventory_audits', 'translation_cache'];
-    
     try {
-      for (const colName of collections) {
-        const colRef = collection(db, colName);
-        const snapshot = await getDocs(colRef);
-        
-        if (snapshot.empty) continue;
-
-        // Delete in batches of 500 (Firestore limit)
-        let batch = writeBatch(db);
-        let count = 0;
-
-        for (const d of snapshot.docs) {
-          batch.delete(d.ref);
-          count++;
-          
-          if (count >= 500) {
-            await batch.commit();
-            batch = writeBatch(db);
-            count = 0;
-          }
-        }
-
-        if (count > 0) {
-          await batch.commit();
-        }
+      const response = await fetch('/api/system/reset', { method: 'POST' });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Reset request failed with status ${response.status}`);
       }
-      await systemOps.syncGlobalMetadata();
+      
+      // Clear client-side offline storage caches completely
+      storage.removeItem('aw_pharmacy_medications');
+      storage.removeItem('aw_pharmacy_audits');
+      storage.removeItem('aw_pharmacy_draft_meds');
+      storage.removeItem('rearranged_report_last_upload');
+      storage.removeItem('aw_pharmacy_last_update');
+      sessionStorage.removeItem('firestore_fallback');
+
+      // Update local storage update time for immediate visual feedback
+      localDb.updateLastUpdateTime();
+      
+      if (db) {
+        await systemOps.syncGlobalMetadata();
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'system/reset');
+      throw error;
     }
   }
 };

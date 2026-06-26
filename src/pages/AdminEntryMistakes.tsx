@@ -29,7 +29,7 @@ import { useMedications } from '../hooks/useMedications';
 import { Medication } from '../types';
 import { sessionStorage } from '../lib/storage';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, getDocs, setDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
 // Types representing the database schema
@@ -473,6 +473,55 @@ export default function AdminEntryMistakes() {
   const fetchDb = async () => {
     setDbLoading(true);
     try {
+      if (db) {
+        try {
+          const globalRef = doc(db, 'entry_mistakes_configs', 'global');
+          const globalSnap = await getDoc(globalRef);
+          if (globalSnap.exists()) {
+            const meta = globalSnap.data();
+            if (meta.isChunked) {
+              // Fetch pharmacists
+              let pharmacists: any[] = [];
+              const pharmSnap = await getDoc(doc(db, 'entry_mistakes_configs', 'pharmacists'));
+              if (pharmSnap.exists()) {
+                pharmacists = pharmSnap.data().pharmacists || [];
+              }
+
+              // Fetch all parameter chunks
+              const paramsSnap = await getDocs(collection(db, 'entry_mistakes_parameters'));
+              let parameters: any[] = [];
+              const chunkDocs: any[] = [];
+              paramsSnap.forEach((doc) => {
+                chunkDocs.push(doc.data());
+              });
+              chunkDocs.sort((a, b) => (a.index || 0) - (b.index || 0));
+              chunkDocs.forEach((chunk) => {
+                if (chunk && Array.isArray(chunk.items)) {
+                  parameters = parameters.concat(chunk.items);
+                }
+              });
+
+              const dbState = {
+                configured: meta.configured,
+                lastUpdated: meta.lastUpdated,
+                parameters,
+                pharmacists
+              };
+              setDbState(dbState);
+              setDbLoading(false);
+              return;
+            } else {
+              setDbState(meta as any);
+              setDbLoading(false);
+              return;
+            }
+          }
+        } catch (fsErr) {
+          console.warn('[Firestore Sync Client] Failed to load parameters from Firestore, falling back to REST API:', fsErr);
+        }
+      }
+
+      // Fallback to REST API
       const res = await fetch('/api/entry-mistakes/db');
       if (res.ok) {
         const data = await res.json();
@@ -504,6 +553,29 @@ export default function AdminEntryMistakes() {
       });
       const data = await res.json();
       if (res.ok) {
+        if (db) {
+          try {
+            await deleteDoc(doc(db, 'entry_mistakes_configs', 'global'));
+            await deleteDoc(doc(db, 'entry_mistakes_configs', 'pharmacists'));
+            
+            const paramsSnap = await getDocs(collection(db, 'entry_mistakes_parameters'));
+            const deleteBatch = writeBatch(db);
+            paramsSnap.forEach((doc) => {
+              deleteBatch.delete(doc.ref);
+            });
+            await deleteBatch.commit();
+
+            const metaRef = doc(db, 'system', 'metadata');
+            await setDoc(metaRef, {
+              lastDataUpdate: serverTimestamp()
+            }, { merge: true });
+
+            console.log('[Firestore Sync Client] Successfully deleted parameters and configs from Firestore.');
+          } catch (fsErr) {
+            console.error('[Firestore Sync Client] Failed to delete from Firestore:', fsErr);
+          }
+        }
+
         setDbState({ configured: false, parameters: [], pharmacists: [] });
         setWorkloadRecords([]);
         setWorkloadUploaded(false);
@@ -661,6 +733,59 @@ export default function AdminEntryMistakes() {
         if (res.ok) {
           const resData = await res.json();
           setDbState(resData.dbState);
+
+          if (db) {
+            try {
+              const { parameters = [], pharmacists = [] } = resData.dbState;
+              
+              // 1. Delete old chunks
+              const paramsCol = collection(db, 'entry_mistakes_parameters');
+              const paramsSnap = await getDocs(paramsCol);
+              const deleteBatch = writeBatch(db);
+              paramsSnap.forEach((doc) => {
+                deleteBatch.delete(doc.ref);
+              });
+              await deleteBatch.commit();
+
+              // 2. Write new chunks
+              const CHUNK_SIZE = 250;
+              for (let i = 0; i < parameters.length; i += CHUNK_SIZE) {
+                const idx = Math.floor(i / CHUNK_SIZE);
+                const chunkItems = parameters.slice(i, i + CHUNK_SIZE);
+                await setDoc(doc(db, 'entry_mistakes_parameters', `chunk_${idx}`), {
+                  index: idx,
+                  items: chunkItems,
+                  savedAt: new Date().toISOString()
+                });
+              }
+
+              // 3. Write pharmacists
+              await setDoc(doc(db, 'entry_mistakes_configs', 'pharmacists'), {
+                pharmacists: pharmacists,
+                savedAt: new Date().toISOString()
+              });
+
+              // 4. Write global config
+              await setDoc(doc(db, 'entry_mistakes_configs', 'global'), {
+                configured: true,
+                lastUpdated: resData.dbState.lastUpdated || new Date().toISOString(),
+                isChunked: true,
+                chunkCount: Math.ceil(parameters.length / CHUNK_SIZE),
+                pharmacistCount: pharmacists.length,
+                parameterCount: parameters.length
+              });
+
+              // 5. Update global metadata to sync other instances
+              const metaRef = doc(db, 'system', 'metadata');
+              await setDoc(metaRef, {
+                lastDataUpdate: serverTimestamp()
+              }, { merge: true });
+
+              console.log('[Firestore Sync Client] Successfully saved chunked parameters directly to Firestore!');
+            } catch (fsErr) {
+              console.error('[Firestore Sync Client] Failed to save chunked parameters to Firestore:', fsErr);
+            }
+          }
         } else {
           throw new Error('Backend failed to persist database parameters.');
         }
@@ -1150,6 +1275,24 @@ export default function AdminEntryMistakes() {
               body: JSON.stringify(allAutoSaveItems)
             });
             if (saveRes.ok) {
+              if (db) {
+                try {
+                  const batch = writeBatch(db);
+                  for (const item of allAutoSaveItems) {
+                    const id = item.id || `mistake_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    const docRef = doc(db, 'application_storage', id);
+                    batch.set(docRef, {
+                      ...item,
+                      id,
+                      savedAt: new Date().toISOString()
+                    });
+                  }
+                  await batch.commit();
+                  console.log('[Firestore Sync Client] Successfully saved auto-save items directly to Firestore.');
+                } catch (fsErr) {
+                  console.error('[Firestore Sync Client] Failed to save auto-save items to Firestore:', fsErr);
+                }
+              }
               fetchSavedStorageItems();
               console.log(`[Auto-Save] Successfully saved ${allAutoSaveItems.length} entry mismatches to cloud Application Storage.`);
             } else {

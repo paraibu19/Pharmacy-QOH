@@ -69,7 +69,7 @@ service cloud.firestore {
     // System Collection (for metadata sync)
     match /system/{docId} {
       allow read: if true;
-      allow write: if isSignedIn(); // Allow updates to metadata for sync only for signed-in users or system admins
+      allow write: if isSignedIn() || (incoming().get('updatedBy', '') == 'system'); // Allow updates to metadata for sync for signed-in users or system-level updates
     }
 
     // Inventory Audit Collection
@@ -128,6 +128,24 @@ service cloud.firestore {
 
     // Application Storage Collection
     match /application_storage/{storageId} {
+      allow read, get, list: if true;
+      allow write, create, update, delete: if isSignedIn();
+    }
+
+    // Entry Mistakes Configs Collection
+    match /entry_mistakes_configs/{docId} {
+      allow read, get, list: if true;
+      allow write, create, update, delete: if isSignedIn();
+    }
+
+    // Entry Mistakes Parameters Collection
+    match /entry_mistakes_parameters/{docId} {
+      allow read, get, list: if true;
+      allow write, create, update, delete: if isSignedIn();
+    }
+
+    // App Settings Collection
+    match /app_settings/{docId} {
       allow read, get, list: if true;
       allow write, create, update, delete: if isSignedIn();
     }
