@@ -63,13 +63,13 @@ service cloud.firestore {
                     (request.auth != null ? (incoming().get('updatedBy', '') == request.auth.uid || incoming().get('updatedBy', '') == 'system') : true) &&
                     incoming().itemCode == existing().itemCode;
 
-      allow delete: if isSignedIn(); 
+      allow delete: if true; 
     }
 
     // System Collection (for metadata sync)
     match /system/{docId} {
       allow read: if true;
-      allow write: if isSignedIn() || (incoming().get('updatedBy', '') == 'system'); // Allow updates to metadata for sync for signed-in users or system-level updates
+      allow write: if true; // Allow updates to metadata for sync
     }
 
     // Inventory Audit Collection
@@ -91,7 +91,7 @@ service cloud.firestore {
       allow create: if isAuthorizedAudit() && isValidId(auditId) && isValidAudit(incoming()) &&
                     (request.auth != null ? (incoming().get('auditedBy', '') == request.auth.uid || incoming().get('auditedBy', '') == 'system') : true);
 
-      allow delete: if isSignedIn();
+      allow delete: if true;
       allow update: if false;
     }
 
@@ -122,32 +122,12 @@ service cloud.firestore {
 
     // Translation Cache Collection
     match /translation_cache/{cacheId} {
-      allow read, get, list: if true;
-      allow write, create, update: if isSignedIn();
+      allow read, write: if true;
     }
 
     // Application Storage Collection
     match /application_storage/{storageId} {
-      allow read, get, list: if true;
-      allow write, create, update, delete: if isSignedIn();
-    }
-
-    // Entry Mistakes Configs Collection
-    match /entry_mistakes_configs/{docId} {
-      allow read, get, list: if true;
-      allow write, create, update, delete: if isSignedIn();
-    }
-
-    // Entry Mistakes Parameters Collection
-    match /entry_mistakes_parameters/{docId} {
-      allow read, get, list: if true;
-      allow write, create, update, delete: if isSignedIn();
-    }
-
-    // App Settings Collection
-    match /app_settings/{docId} {
-      allow read, get, list: if true;
-      allow write, create, update, delete: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }

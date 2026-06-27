@@ -29,8 +29,7 @@ import { useMedications } from '../hooks/useMedications';
 import { Medication } from '../types';
 import { sessionStorage } from '../lib/storage';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, doc, getDoc, getDocs, setDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
-import { useSystemMetadata } from '../lib/useSystemMetadata';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 // Types representing the database schema
 interface ParameterRow {
@@ -240,7 +239,6 @@ const isNonQatariBrandMistake = (
 
 export default function AdminEntryMistakes() {
   const { medications } = useMedications();
-  const { lastUpdate } = useSystemMetadata();
   const [activeReportType, setActiveReportType] = useState<'standard' | 'brand-vs-generic'>(() => {
     try {
       const saved = sessionStorage.getItem('daily_workload_report_type');
@@ -404,7 +402,7 @@ export default function AdminEntryMistakes() {
         unsubscribe();
       }
     };
-  }, [lastUpdate]);
+  }, []);
 
   const fetchSavedStorageItems = async () => {
     try {
@@ -473,55 +471,6 @@ export default function AdminEntryMistakes() {
   const fetchDb = async () => {
     setDbLoading(true);
     try {
-      if (db) {
-        try {
-          const globalRef = doc(db, 'entry_mistakes_configs', 'global');
-          const globalSnap = await getDoc(globalRef);
-          if (globalSnap.exists()) {
-            const meta = globalSnap.data();
-            if (meta.isChunked) {
-              // Fetch pharmacists
-              let pharmacists: any[] = [];
-              const pharmSnap = await getDoc(doc(db, 'entry_mistakes_configs', 'pharmacists'));
-              if (pharmSnap.exists()) {
-                pharmacists = pharmSnap.data().pharmacists || [];
-              }
-
-              // Fetch all parameter chunks
-              const paramsSnap = await getDocs(collection(db, 'entry_mistakes_parameters'));
-              let parameters: any[] = [];
-              const chunkDocs: any[] = [];
-              paramsSnap.forEach((doc) => {
-                chunkDocs.push(doc.data());
-              });
-              chunkDocs.sort((a, b) => (a.index || 0) - (b.index || 0));
-              chunkDocs.forEach((chunk) => {
-                if (chunk && Array.isArray(chunk.items)) {
-                  parameters = parameters.concat(chunk.items);
-                }
-              });
-
-              const dbState = {
-                configured: meta.configured,
-                lastUpdated: meta.lastUpdated,
-                parameters,
-                pharmacists
-              };
-              setDbState(dbState);
-              setDbLoading(false);
-              return;
-            } else {
-              setDbState(meta as any);
-              setDbLoading(false);
-              return;
-            }
-          }
-        } catch (fsErr) {
-          console.warn('[Firestore Sync Client] Failed to load parameters from Firestore, falling back to REST API:', fsErr);
-        }
-      }
-
-      // Fallback to REST API
       const res = await fetch('/api/entry-mistakes/db');
       if (res.ok) {
         const data = await res.json();
@@ -553,29 +502,6 @@ export default function AdminEntryMistakes() {
       });
       const data = await res.json();
       if (res.ok) {
-        if (db) {
-          try {
-            await deleteDoc(doc(db, 'entry_mistakes_configs', 'global'));
-            await deleteDoc(doc(db, 'entry_mistakes_configs', 'pharmacists'));
-            
-            const paramsSnap = await getDocs(collection(db, 'entry_mistakes_parameters'));
-            const deleteBatch = writeBatch(db);
-            paramsSnap.forEach((doc) => {
-              deleteBatch.delete(doc.ref);
-            });
-            await deleteBatch.commit();
-
-            const metaRef = doc(db, 'system', 'metadata');
-            await setDoc(metaRef, {
-              lastDataUpdate: serverTimestamp()
-            }, { merge: true });
-
-            console.log('[Firestore Sync Client] Successfully deleted parameters and configs from Firestore.');
-          } catch (fsErr) {
-            console.error('[Firestore Sync Client] Failed to delete from Firestore:', fsErr);
-          }
-        }
-
         setDbState({ configured: false, parameters: [], pharmacists: [] });
         setWorkloadRecords([]);
         setWorkloadUploaded(false);
@@ -733,59 +659,6 @@ export default function AdminEntryMistakes() {
         if (res.ok) {
           const resData = await res.json();
           setDbState(resData.dbState);
-
-          if (db) {
-            try {
-              const { parameters = [], pharmacists = [] } = resData.dbState;
-              
-              // 1. Delete old chunks
-              const paramsCol = collection(db, 'entry_mistakes_parameters');
-              const paramsSnap = await getDocs(paramsCol);
-              const deleteBatch = writeBatch(db);
-              paramsSnap.forEach((doc) => {
-                deleteBatch.delete(doc.ref);
-              });
-              await deleteBatch.commit();
-
-              // 2. Write new chunks
-              const CHUNK_SIZE = 250;
-              for (let i = 0; i < parameters.length; i += CHUNK_SIZE) {
-                const idx = Math.floor(i / CHUNK_SIZE);
-                const chunkItems = parameters.slice(i, i + CHUNK_SIZE);
-                await setDoc(doc(db, 'entry_mistakes_parameters', `chunk_${idx}`), {
-                  index: idx,
-                  items: chunkItems,
-                  savedAt: new Date().toISOString()
-                });
-              }
-
-              // 3. Write pharmacists
-              await setDoc(doc(db, 'entry_mistakes_configs', 'pharmacists'), {
-                pharmacists: pharmacists,
-                savedAt: new Date().toISOString()
-              });
-
-              // 4. Write global config
-              await setDoc(doc(db, 'entry_mistakes_configs', 'global'), {
-                configured: true,
-                lastUpdated: resData.dbState.lastUpdated || new Date().toISOString(),
-                isChunked: true,
-                chunkCount: Math.ceil(parameters.length / CHUNK_SIZE),
-                pharmacistCount: pharmacists.length,
-                parameterCount: parameters.length
-              });
-
-              // 5. Update global metadata to sync other instances
-              const metaRef = doc(db, 'system', 'metadata');
-              await setDoc(metaRef, {
-                lastDataUpdate: serverTimestamp()
-              }, { merge: true });
-
-              console.log('[Firestore Sync Client] Successfully saved chunked parameters directly to Firestore!');
-            } catch (fsErr) {
-              console.error('[Firestore Sync Client] Failed to save chunked parameters to Firestore:', fsErr);
-            }
-          }
         } else {
           throw new Error('Backend failed to persist database parameters.');
         }
@@ -1046,113 +919,11 @@ export default function AdminEntryMistakes() {
           throw new Error(`The worksheet "${targetSheetName}" is empty or has no readable tabular records.`);
         }
 
-        // Define criteria keys list to identify cancels / alternate fills representing identical order parameters
-        const CRITERIA_KEYS = [
-          "Action Date & Time",
-          "Facility - Order",
-          "Nursing Location - Order",
-          "Encounter Type",
-          "Order Date & Time - Physician",
-          "Last Update Provider",
-          "MRN- Organization",
-          "Person Name- Full",
-          "Sex",
-          "Nationality",
-          "Age- Years (Visit)",
-          "Parent Order ID",
-          "Order Entry Mode",
-          "Mnemonic Name",
-          "Ordered As Mnemonic",
-          "Order Display Line",
-          "PRN",
-          "OCI",
-          "Order Comments",
-          "Physician - Ordering",
-          "Pharmacy Location",
-          "Action Type",
-          "Child Order ID",
-          "Item Id",
-          "Item Number",
-          "Label Description",
-          "Pharmacy Display Line",
-          "Pharmacy SIG",
-          "Pharmacy Expanded SIG",
-          "Dispense Unit",
-          "Bill Quantity",
-          "Action Personnel - Pharmacy",
-          "Department Order Status",
-          "Order Status"
-        ];
-
-        const normalizeVal = (val: any): string => {
-          if (val === undefined || val === null) return '';
-          return String(val).toLowerCase().replace(/[\s\u00A0]+/g, ' ').trim();
-        };
-
-        // Pre-process rawJson into structured items for pairing check
-        const rawItemsConfig = rawJson.map((rawRow, idx) => {
-          const itemNumber = extractFuzzyValue(rawRow, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']);
-          const personNameFull = extractFuzzyValue(rawRow, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']);
-          const actionPersonnelPharmacy = extractFuzzyValue(rawRow, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']);
-
-          if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) return null;
-
-          const dispenseQuantity = extractFuzzyValue(rawRow, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
-
-          const criteriaValues: { [key: string]: string } = {};
-          CRITERIA_KEYS.forEach(key => {
-            criteriaValues[key] = normalizeVal(extractFuzzyValue(rawRow, [key]));
-          });
-
-          return {
-            idx,
-            dispenseQuantity,
-            criteriaValues
-          };
-        }).filter(Boolean) as { idx: number; dispenseQuantity: string; criteriaValues: { [key: string]: string } }[];
-
-        const excludedIndices = new Set<number>();
-
-        for (let i = 0; i < rawItemsConfig.length; i++) {
-          if (excludedIndices.has(rawItemsConfig[i].idx)) continue;
-
-          const itemI = rawItemsConfig[i];
-          const dQtyI = parseFloat(String(itemI.dispenseQuantity).trim());
-
-          for (let j = i + 1; j < rawItemsConfig.length; j++) {
-            if (excludedIndices.has(rawItemsConfig[j].idx)) continue;
-
-            const itemJ = rawItemsConfig[j];
-
-            let criteriaEqual = true;
-            for (const key of CRITERIA_KEYS) {
-              if (itemI.criteriaValues[key] !== itemJ.criteriaValues[key]) {
-                criteriaEqual = false;
-                break;
-              }
-            }
-
-            if (!criteriaEqual) continue;
-
-            const dQtyJ = parseFloat(String(itemJ.dispenseQuantity).trim());
-            const isQtyMatch = 
-              (!isNaN(dQtyI) && !isNaN(dQtyJ) && Math.abs(dQtyI) === Math.abs(dQtyJ)) ||
-              (String(itemI.dispenseQuantity).trim() === String(itemJ.dispenseQuantity).trim());
-
-            if (isQtyMatch) {
-              excludedIndices.add(itemI.idx);
-              excludedIndices.add(itemJ.idx);
-              break;
-            }
-          }
-        }
-
         // Parse each row and run evaluations
         const evaluated: WorkloadRecord[] = [];
         let recordCounter = 0;
         
-        for (let rawIdx = 0; rawIdx < rawJson.length; rawIdx++) {
-          const rawRow = rawJson[rawIdx];
+        for (const rawRow of rawJson) {
           recordCounter++;
           const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime']);
           const actionDateTime = formatActionDateTime(actionDateTimeRaw);
@@ -1169,11 +940,6 @@ export default function AdminEntryMistakes() {
 
           // If the row is totally empty or missing critical columns, skip
           if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) continue;
-
-          // Skip if row was excluded by duplicate criteria variance comparison list
-          if (excludedIndices.has(rawIdx)) {
-            continue;
-          }
 
           // Ignore rows representing negative (minus) dispensed QTY
           const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
@@ -1265,43 +1031,6 @@ export default function AdminEntryMistakes() {
           }
           return null;
         }).filter(Boolean) as WorkloadRecord[];
-
-        const allAutoSaveItems = [...standardMismatches, ...brandVsGenericMismatches];
-        if (allAutoSaveItems.length > 0) {
-          try {
-            const saveRes = await fetch('/api/application-storage', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(allAutoSaveItems)
-            });
-            if (saveRes.ok) {
-              if (db) {
-                try {
-                  const batch = writeBatch(db);
-                  for (const item of allAutoSaveItems) {
-                    const id = item.id || `mistake_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    const docRef = doc(db, 'application_storage', id);
-                    batch.set(docRef, {
-                      ...item,
-                      id,
-                      savedAt: new Date().toISOString()
-                    });
-                  }
-                  await batch.commit();
-                  console.log('[Firestore Sync Client] Successfully saved auto-save items directly to Firestore.');
-                } catch (fsErr) {
-                  console.error('[Firestore Sync Client] Failed to save auto-save items to Firestore:', fsErr);
-                }
-              }
-              fetchSavedStorageItems();
-              console.log(`[Auto-Save] Successfully saved ${allAutoSaveItems.length} entry mismatches to cloud Application Storage.`);
-            } else {
-              console.error('[Auto-Save] Failed to auto-save mismatches to storage');
-            }
-          } catch (saveErr) {
-            console.error('[Auto-Save] Error during auto-save request:', saveErr);
-          }
-        }
 
       } catch (err: any) {
         alert(`Error parsing workload Excel: ${err.message}`);

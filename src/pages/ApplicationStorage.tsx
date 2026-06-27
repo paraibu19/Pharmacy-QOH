@@ -20,7 +20,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, doc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 interface StoredMistake {
   id: string;
@@ -237,14 +237,6 @@ export default function ApplicationStorage() {
         
         const data = await res.json();
         if (res.ok && data.success) {
-          if (db) {
-            try {
-              await deleteDoc(doc(db, 'application_storage', targetItem.id));
-              console.log('[Firestore Sync Client] Successfully deleted from Firestore:', targetItem.id);
-            } catch (fsErr) {
-              console.error('[Firestore Sync Client] Failed to delete from Firestore:', fsErr);
-            }
-          }
           setPasswordModalOpen(false);
           setTargetItem(null);
           setAdminPasswordInput('');
@@ -261,19 +253,6 @@ export default function ApplicationStorage() {
         
         const data = await res.json();
         if (res.ok && data.success) {
-          if (db) {
-            try {
-              const snap = await getDocs(collection(db, 'application_storage'));
-              const batch = writeBatch(db);
-              snap.forEach((doc) => {
-                batch.delete(doc.ref);
-              });
-              await batch.commit();
-              console.log('[Firestore Sync Client] Successfully reset all application storage items in Firestore.');
-            } catch (fsErr) {
-              console.error('[Firestore Sync Client] Failed to reset in Firestore:', fsErr);
-            }
-          }
           setPasswordModalOpen(false);
           setAdminPasswordInput('');
           fetchStoredItems();
