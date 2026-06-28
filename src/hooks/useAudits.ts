@@ -47,8 +47,35 @@ export function useAudits(maxItems: number = 50) {
       };
       
       loadSharedAudits();
+      
+      const handleSyncUpdate = (e: Event) => {
+        const customEvent = e as CustomEvent;
+        if (customEvent.detail && customEvent.detail.type === 'audits') {
+          if (customEvent.detail.data) {
+            const data = customEvent.detail.data;
+            const mapped: AuditLog[] = data.map((d: any) => ({
+              ...d,
+              auditedAt: d.auditedAt ? { toDate: () => new Date(d.auditedAt), seconds: Math.floor(new Date(d.auditedAt).getTime() / 1000) } : null
+            }));
+            mapped.sort((a, b) => {
+              const dateA = a.auditedAt ? a.auditedAt.toDate().getTime() : 0;
+              const dateB = b.auditedAt ? b.auditedAt.toDate().getTime() : 0;
+              return dateB - dateA;
+            });
+            setAudits(mapped.slice(0, maxItems));
+          } else {
+            loadSharedAudits();
+          }
+        }
+      };
+
+      window.addEventListener('sync-update', handleSyncUpdate);
       const interval = setInterval(() => loadSharedAudits(), 6000);
-      return () => clearInterval(interval);
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('sync-update', handleSyncUpdate);
+      };
     }
 
     const auditsRef = collection(db, 'inventory_audits');

@@ -73,6 +73,24 @@ const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const TRANSLATION_CACHE_FILE = path.join(DATA_DIR, 'translation_cache.json');
 const ENTRY_MISTAKES_DB_FILE = path.join(DATA_DIR, 'entry_mistakes_db.json');
 const APPLICATION_STORAGE_FILE = path.join(DATA_DIR, 'application_storage.json');
+const METADATA_SYNC_FILE = path.join(DATA_DIR, 'metadata_sync.json');
+
+// Real-time SSE synchronization state
+const sseClients = new Set<any>();
+let isRealtimeListeningActive = false;
+let activeUnsubscribes: (() => void)[] = [];
+
+function notifyClients(type: string, data?: any) {
+  const payload = JSON.stringify({ type, timestamp: new Date().toISOString(), data });
+  console.log(`[SSE] Broadcasting event "${type}" to ${sseClients.size} connected clients.`);
+  for (const client of sseClients) {
+    try {
+      client.res.write(`data: ${payload}\n\n`);
+    } catch (err) {
+      sseClients.delete(client);
+    }
+  }
+}
 
 function getTranslationHashSync(text: string): string {
   const clean = (text || '').trim().toLowerCase();
@@ -349,6 +367,67 @@ async function syncEntryMistakesDbFromFirestore(): Promise<any> {
   return null;
 }
 
+async function syncSystemMetadataFromFirestore(): Promise<any> {
+  if (!adminDb) {
+    if (fs.existsSync(METADATA_SYNC_FILE)) {
+      return JSON.parse(fs.readFileSync(METADATA_SYNC_FILE, 'utf8'));
+    }
+    return null;
+  }
+  try {
+    const docRef = adminDb.collection('system').doc('metadata');
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      const lastDataUpdateStr = data.lastDataUpdate 
+        ? (data.lastDataUpdate.toDate ? data.lastDataUpdate.toDate().toISOString() : new Date(data.lastDataUpdate).toISOString())
+        : new Date().toISOString();
+      
+      const metaPayload = {
+        lastDataUpdate: lastDataUpdateStr,
+        isMesaieedHidden: data.isMesaieedHidden !== undefined ? !!data.isMesaieedHidden : false,
+        updatedBy: data.updatedBy || 'system'
+      };
+      fs.writeFileSync(METADATA_SYNC_FILE, JSON.stringify(metaPayload, null, 2));
+      return metaPayload;
+    }
+  } catch (err: any) {
+    handleAdminDbError(err, 'sync system metadata');
+  }
+  if (fs.existsSync(METADATA_SYNC_FILE)) {
+    return JSON.parse(fs.readFileSync(METADATA_SYNC_FILE, 'utf8'));
+  }
+  return null;
+}
+
+async function updateSystemMetadataInFirestore(): Promise<void> {
+  const now = new Date().toISOString();
+  const metaPayload = {
+    lastDataUpdate: now,
+    isMesaieedHidden: false,
+    updatedBy: 'server'
+  };
+  if (fs.existsSync(METADATA_SYNC_FILE)) {
+    try {
+      const current = JSON.parse(fs.readFileSync(METADATA_SYNC_FILE, 'utf8'));
+      metaPayload.isMesaieedHidden = !!current.isMesaieedHidden;
+    } catch (e) {}
+  }
+  fs.writeFileSync(METADATA_SYNC_FILE, JSON.stringify(metaPayload, null, 2));
+  notifyClients('metadata', metaPayload);
+
+  if (adminDb) {
+    try {
+      await adminDb.collection('system').doc('metadata').set({
+        lastDataUpdate: new Date(),
+        updatedBy: 'server'
+      }, { merge: true });
+    } catch (err: any) {
+      console.error('[Firebase Admin] Failed to update global metadata:', err.message);
+    }
+  }
+}
+
 async function saveEntryMistakesDbToFirestore(dbState: any): Promise<void> {
   if (!adminDb) return;
   try {
@@ -468,11 +547,135 @@ async function syncAllFromFirestoreAtStartup() {
       syncMedicationsFromFirestore().catch(e => console.error('Startup medications sync failed:', e.message)),
       syncAuditsFromFirestore().catch(e => console.error('Startup audits sync failed:', e.message)),
       syncEntryMistakesDbFromFirestore().catch(e => console.error('Startup parameters DB sync failed:', e.message)),
-      syncApplicationStorageFromFirestore().catch(e => console.error('Startup application storage sync failed:', e.message))
+      syncApplicationStorageFromFirestore().catch(e => console.error('Startup application storage sync failed:', e.message)),
+      syncSystemMetadataFromFirestore().catch(e => console.error('Startup system metadata sync failed:', e.message))
     ]);
     console.log('[Firebase Startup Sync] All persistent data loaded successfully!');
   } catch (err: any) {
     console.error('[Firebase Startup Sync] Error during startup fetch:', err.message);
+  }
+}
+
+function setupFirestoreListeners() {
+  if (!adminDb) {
+    console.warn('[Firebase Admin Sync] Admin database not active. Skipping real-time listener setup.');
+    return;
+  }
+  
+  console.log('[Firebase Admin Sync] Setting up real-time listeners for instant container synchronization...');
+  
+  try {
+    // 1. Listen to medications
+    const unsubMeds = adminDb.collection('medications').onSnapshot((snapshot: any) => {
+      try {
+        const meds: any[] = [];
+        snapshot.forEach((doc: any) => {
+          meds.push(parseFirestoreDoc(doc));
+        });
+        meds.sort((a, b) => (a.itemName || '').localeCompare(b.itemName || ''));
+        fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+        console.log(`[Firebase Admin Sync] Real-time Medications Sync: Updated ${meds.length} items.`);
+        notifyClients('medications', meds);
+      } catch (err: any) {
+        console.error('[Firebase Admin Sync] Error processing medications snapshot:', err.message);
+      }
+    }, (err: any) => {
+      handleAdminDbError(err, 'listen medications');
+      isRealtimeListeningActive = false;
+    });
+    activeUnsubscribes.push(unsubMeds);
+    
+    // 2. Listen to audits
+    const unsubAudits = adminDb.collection('inventory_audits').onSnapshot((snapshot: any) => {
+      try {
+        const audits: any[] = [];
+        snapshot.forEach((doc: any) => {
+          audits.push(parseFirestoreDoc(doc));
+        });
+        audits.sort((a, b) => new Date(b.auditedAt || 0).getTime() - new Date(a.auditedAt || 0).getTime());
+        fs.writeFileSync(AUDITS_FILE, JSON.stringify(audits, null, 2));
+        console.log(`[Firebase Admin Sync] Real-time Audits Sync: Updated ${audits.length} items.`);
+        notifyClients('audits', audits);
+      } catch (err: any) {
+        console.error('[Firebase Admin Sync] Error processing audits snapshot:', err.message);
+      }
+    }, (err: any) => {
+      handleAdminDbError(err, 'listen audits');
+      isRealtimeListeningActive = false;
+    });
+    activeUnsubscribes.push(unsubAudits);
+
+    // 3. Listen to entry mistakes configs
+    const unsubMistakesConfig = adminDb.collection('entry_mistakes_configs').doc('global').onSnapshot((docSnap: any) => {
+      try {
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          fs.writeFileSync(ENTRY_MISTAKES_DB_FILE, JSON.stringify(data, null, 2));
+          console.log('[Firebase Admin Sync] Real-time Entry Mistakes Config Sync: Updated.');
+          notifyClients('entry-mistakes', data);
+        }
+      } catch (err: any) {
+        console.error('[Firebase Admin Sync] Error processing entry mistakes config snapshot:', err.message);
+      }
+    }, (err: any) => {
+      handleAdminDbError(err, 'listen entry mistakes config');
+      isRealtimeListeningActive = false;
+    });
+    activeUnsubscribes.push(unsubMistakesConfig);
+
+    // 4. Listen to application storage
+    const unsubAppStorage = adminDb.collection('application_storage').onSnapshot((snapshot: any) => {
+      try {
+        const items: any[] = [];
+        snapshot.forEach((doc: any) => {
+          items.push(parseFirestoreDoc(doc));
+        });
+        items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+        fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
+        console.log(`[Firebase Admin Sync] Real-time Application Storage Sync: Updated ${items.length} items.`);
+        notifyClients('application-storage', items);
+      } catch (err: any) {
+        console.error('[Firebase Admin Sync] Error processing application storage snapshot:', err.message);
+      }
+    }, (err: any) => {
+      handleAdminDbError(err, 'listen application storage');
+      isRealtimeListeningActive = false;
+    });
+    activeUnsubscribes.push(unsubAppStorage);
+
+    // 5. Listen to system metadata
+    const unsubSystemMeta = adminDb.collection('system').doc('metadata').onSnapshot((docSnap: any) => {
+      try {
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          const lastDataUpdateStr = data.lastDataUpdate 
+            ? (data.lastDataUpdate.toDate ? data.lastDataUpdate.toDate().toISOString() : new Date(data.lastDataUpdate).toISOString())
+            : new Date().toISOString();
+          
+          const metaPayload = {
+            lastDataUpdate: lastDataUpdateStr,
+            isMesaieedHidden: data.isMesaieedHidden !== undefined ? !!data.isMesaieedHidden : false,
+            updatedBy: data.updatedBy || 'system'
+          };
+          
+          fs.writeFileSync(METADATA_SYNC_FILE, JSON.stringify(metaPayload, null, 2));
+          console.log('[Firebase Admin Sync] Real-time System Metadata Sync: Updated.', metaPayload);
+          notifyClients('metadata', metaPayload);
+        }
+      } catch (err: any) {
+        console.error('[Firebase Admin Sync] Error processing system metadata snapshot:', err.message);
+      }
+    }, (err: any) => {
+      handleAdminDbError(err, 'listen system metadata');
+      isRealtimeListeningActive = false;
+    });
+    activeUnsubscribes.push(unsubSystemMeta);
+
+    isRealtimeListeningActive = true;
+    console.log('[Firebase Admin Sync] Real-time listeners active and running.');
+  } catch (err: any) {
+    console.error('[Firebase Admin Sync] Failed to initialize real-time listeners:', err.message);
+    isRealtimeListeningActive = false;
   }
 }
 
@@ -516,9 +719,31 @@ async function resetAllInFirestore(): Promise<void> {
   }
 }
 
+// SSE stream for real-time synchronization between clients & environments
+app.get('/api/sync-stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no' // Disable buffering for responsive SSE
+  });
+  
+  // Establish connection with a lightweight handshake
+  res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+  
+  const client = { res };
+  sseClients.add(client);
+  console.log(`[SSE] Client connected. Total active SSE clients: ${sseClients.size}`);
+  
+  req.on('close', () => {
+    sseClients.delete(client);
+    console.log(`[SSE] Client disconnected. Total active SSE clients: ${sseClients.size}`);
+  });
+});
+
 // API Routes
 app.get('/api/medications', async (req, res) => {
-  if (adminDb) {
+  if (adminDb && !isRealtimeListeningActive) {
     await syncMedicationsFromFirestore().catch(err => console.error(err));
   }
   const data = fs.readFileSync(MEDS_FILE, 'utf8');
@@ -541,6 +766,8 @@ app.post('/api/medications', async (req, res) => {
       await saveMedicationToFirestore(newMed).catch(err => console.error(err));
     }
 
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+
     res.status(201).json(newMed);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -559,6 +786,8 @@ app.put('/api/medications/:id', async (req, res) => {
       if (adminDb) {
         await saveMedicationToFirestore(meds[index]).catch(err => console.error(err));
       }
+
+      await updateSystemMetadataInFirestore().catch(err => console.error(err));
 
       res.json(meds[index]);
     } else {
@@ -579,6 +808,8 @@ app.delete('/api/medications/:id', async (req, res) => {
     if (adminDb) {
       await deleteMedicationFromFirestore(id).catch(err => console.error(err));
     }
+
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.status(204).send();
   } catch (err: any) {
@@ -680,6 +911,8 @@ app.post('/api/medications/bulk', async (req, res) => {
       await saveMedicationsBulkToFirestore(meds).catch(err => console.error(err));
     }
 
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+
     res.json({ count: newMeds.length });
   } catch (err: any) {
     console.error('Bulk import error:', err);
@@ -688,7 +921,7 @@ app.post('/api/medications/bulk', async (req, res) => {
 });
 
 app.get('/api/audits', async (req, res) => {
-  if (adminDb) {
+  if (adminDb && !isRealtimeListeningActive) {
     await syncAuditsFromFirestore().catch(err => console.error(err));
   }
   const data = fs.readFileSync(AUDITS_FILE, 'utf8');
@@ -709,6 +942,8 @@ app.post('/api/audits', async (req, res) => {
     if (adminDb) {
       await saveAuditToFirestore(newAudit).catch(err => console.error(err));
     }
+
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.status(201).json(newAudit);
   } catch (err: any) {
@@ -758,7 +993,7 @@ app.post('/api/system/reset', async (req, res) => {
 
 app.get('/api/entry-mistakes/db', async (req, res) => {
   try {
-    if (adminDb) {
+    if (adminDb && !isRealtimeListeningActive) {
       await syncEntryMistakesDbFromFirestore().catch(err => console.error(err));
     }
     if (fs.existsSync(ENTRY_MISTAKES_DB_FILE)) {
@@ -787,6 +1022,8 @@ app.post('/api/entry-mistakes/db', async (req, res) => {
       await saveEntryMistakesDbToFirestore(dbState).catch(err => console.error(err));
     }
 
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+
     res.json({ success: true, dbState });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -809,7 +1046,56 @@ app.delete('/api/entry-mistakes/db', async (req, res) => {
       await deleteEntryMistakesDbFromFirestore().catch(err => console.error(err));
     }
 
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+
     res.json({ success: true, configured: false, parameters: [], pharmacists: [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET current system metadata (cached from Firestore or updated locally)
+app.get('/api/system/metadata', async (req, res) => {
+  try {
+    if (adminDb && !isRealtimeListeningActive) {
+      await syncSystemMetadataFromFirestore().catch(err => console.error(err));
+    }
+    if (fs.existsSync(METADATA_SYNC_FILE)) {
+      const data = fs.readFileSync(METADATA_SYNC_FILE, 'utf8');
+      res.json(JSON.parse(data));
+    } else {
+      res.json({
+        lastDataUpdate: new Date().toISOString(),
+        isMesaieedHidden: false
+      });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to update system settings
+app.post('/api/system/metadata/settings', async (req, res) => {
+  try {
+    const { isMesaieedHidden } = req.body;
+    let currentPayload: any = {};
+    if (fs.existsSync(METADATA_SYNC_FILE)) {
+      currentPayload = JSON.parse(fs.readFileSync(METADATA_SYNC_FILE, 'utf8'));
+    }
+    currentPayload.isMesaieedHidden = !!isMesaieedHidden;
+    currentPayload.lastSettingUpdate = new Date().toISOString();
+    
+    fs.writeFileSync(METADATA_SYNC_FILE, JSON.stringify(currentPayload, null, 2));
+    
+    if (adminDb) {
+      await adminDb.collection('system').doc('metadata').set({
+        isMesaieedHidden: !!isMesaieedHidden,
+        lastSettingUpdate: new Date()
+      }, { merge: true });
+    }
+    
+    notifyClients('metadata', currentPayload);
+    res.json({ success: true, metadata: currentPayload });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -818,7 +1104,7 @@ app.delete('/api/entry-mistakes/db', async (req, res) => {
 // GET all stored application mistakes
 app.get('/api/application-storage', async (req, res) => {
   try {
-    if (adminDb) {
+    if (adminDb && !isRealtimeListeningActive) {
       await syncApplicationStorageFromFirestore().catch(err => console.error(err));
     }
     if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
@@ -870,6 +1156,7 @@ app.post('/api/application-storage', async (req, res) => {
       if (adminDb) {
         await saveMismatchesBulkToFirestore(newlyAddedItems).catch(err => console.error(err));
       }
+      await updateSystemMetadataInFirestore().catch(err => console.error(err));
     }
     res.json({ success: true, count: items.length });
   } catch (err: any) {
@@ -906,6 +1193,7 @@ app.post('/api/application-storage/delete', async (req, res) => {
       if (adminDb) {
         await deleteMismatchFromFirestore(itemToDelete).catch(err => console.error(err));
       }
+      await updateSystemMetadataInFirestore().catch(err => console.error(err));
     }
     
     res.json({ success: true, count: items.length });
@@ -928,6 +1216,8 @@ app.post('/api/application-storage/reset', async (req, res) => {
     if (adminDb) {
       await resetApplicationStorageInFirestore().catch(err => console.error(err));
     }
+
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.json({ success: true });
   } catch (err: any) {
@@ -1126,6 +1416,9 @@ async function startServer() {
   await syncAllFromFirestoreAtStartup().catch(err => {
     console.error('[Firebase Startup Sync Init] Failed to run startup fetch:', err.message);
   });
+
+  // Setup real-time Firestore listeners for immediate bidirectional synchronization
+  setupFirestoreListeners();
 
   // Vite middleware for development
   if (!isProd) {

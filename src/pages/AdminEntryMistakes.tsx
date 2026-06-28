@@ -395,6 +395,46 @@ export default function AdminEntryMistakes() {
       }
     } else {
       fetchSavedStorageItems();
+      const handleSyncUpdate = (e: Event) => {
+        const customEvent = e as CustomEvent;
+        if (customEvent.detail) {
+          if (customEvent.detail.type === 'application-storage') {
+            if (customEvent.detail.data) {
+              const data = customEvent.detail.data;
+              const loaded: any[] = data.map((d: any) => ({
+                id: d.id,
+                actionDateTime: d.actionDateTime || '',
+                mrnOrganization: d.mrnOrganization || '',
+                personNameFull: d.personNameFull || '',
+                sex: d.sex || '',
+                nationality: d.nationality || '',
+                pharmacyLocation: d.pharmacyLocation || '',
+                actionType: d.actionType || '',
+                itemNumber: d.itemNumber || '',
+                labelDescription: d.labelDescription || '',
+                dispenseQuantity: d.dispenseQuantity || '',
+                actionPersonnelPharmacy: d.actionPersonnelPharmacy || '',
+                reasons: d.reasons || [],
+                savedAt: d.savedAt || ''
+              }));
+              loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+              setSavedStorageItems(loaded);
+            } else {
+              fetchSavedStorageItems();
+            }
+          } else if (customEvent.detail.type === 'entry-mistakes') {
+            if (customEvent.detail.data) {
+              setDbState(customEvent.detail.data);
+            } else {
+              fetchDb();
+            }
+          }
+        }
+      };
+      window.addEventListener('sync-update', handleSyncUpdate);
+      return () => {
+        window.removeEventListener('sync-update', handleSyncUpdate);
+      };
     }
 
     return () => {

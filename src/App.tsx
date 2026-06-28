@@ -56,6 +56,49 @@ export default function App() {
     };
   }, []);
 
+  // Real-time synchronization EventSource listener
+  useEffect(() => {
+    let sse: EventSource | null = null;
+    let reconnectTimeout: any = null;
+
+    const connectSSE = () => {
+      if (typeof window === 'undefined') return;
+      
+      console.log('[SSE] Connecting to real-time synchronization stream...');
+      sse = new EventSource('/api/sync-stream');
+      
+      sse.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload && payload.type && payload.type !== 'connected') {
+            console.log(`[SSE] Real-time event received: ${payload.type}`);
+            // Dispatch global event for hooks/components to intercept
+            window.dispatchEvent(new CustomEvent('sync-update', { detail: payload }));
+          }
+        } catch (e) {
+          console.error('[SSE] Failed to parse message:', e);
+        }
+      };
+
+      sse.onerror = (err) => {
+        console.warn('[SSE] Sync stream disconnected. Reconnecting in 3 seconds...', err);
+        if (sse) {
+          sse.close();
+          sse = null;
+        }
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = setTimeout(connectSSE, 3000);
+      };
+    };
+
+    connectSSE();
+
+    return () => {
+      if (sse) sse.close();
+      clearTimeout(reconnectTimeout);
+    };
+  }, []);
+
   const adminLogout = async () => {
     if (auth) {
       await signOut(auth).catch(() => {});

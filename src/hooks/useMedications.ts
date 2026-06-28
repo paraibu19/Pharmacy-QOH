@@ -52,8 +52,31 @@ export function useMedications(locationId?: PharmacyLocation) {
 
       loadShared();
       
+      const handleSyncUpdate = (e: Event) => {
+        const customEvent = e as CustomEvent;
+        if (customEvent.detail && customEvent.detail.type === 'medications') {
+          if (customEvent.detail.data) {
+            let items = customEvent.detail.data as Medication[];
+            if (locationId) {
+              items = items.filter(m => m.locationId === locationId);
+            }
+            items.sort((a, b) => a.itemName.localeCompare(b.itemName));
+            setMedications(items);
+            setLastSynced(new Date());
+            hasInitialData.current = true;
+          } else {
+            refresh();
+          }
+        }
+      };
+
+      window.addEventListener('sync-update', handleSyncUpdate);
       const interval = setInterval(() => refresh(), 5000);
-      return () => clearInterval(interval);
+
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('sync-update', handleSyncUpdate);
+      };
     }
 
     setLoading(true);
