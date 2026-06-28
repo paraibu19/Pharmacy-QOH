@@ -11,7 +11,20 @@ const checkQuotaOver = () => {
     if (storage.getItem('firestore_fallback') === 'true') {
       storage.removeItem('firestore_fallback');
     }
-    return sessionStorage.getItem('firestore_fallback') === 'true';
+
+    // Detect if we are inside a cross-origin sandboxed iframe (like AI Studio preview)
+    const isIframe = window.self !== window.top;
+
+    // Detect if storage/cookies are blocked (extremely common in Chrome iframes)
+    let isStorageBlocked = false;
+    try {
+      window.sessionStorage.setItem('__test_storage__', '1');
+      window.sessionStorage.removeItem('__test_storage__');
+    } catch (e) {
+      isStorageBlocked = true;
+    }
+
+    return isIframe || isStorageBlocked || sessionStorage.getItem('firestore_fallback') === 'true';
   }
   return false;
 };
