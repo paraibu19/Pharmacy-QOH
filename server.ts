@@ -139,6 +139,89 @@ if (!fs.existsSync(SETTINGS_FILE)) {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// AI Studio Dev Proxy: Proxy all /api requests from ais-dev- to ais-pre-
+app.use('/api', async (req, res, next) => {
+  const host = req.get('host') || '';
+  if (host.startsWith('ais-dev-') && !req.path.startsWith('/sync-test-broadcast')) {
+    const targetHost = host.replace('ais-dev-', 'ais-pre-');
+    const targetUrl = `https://${targetHost}${req.originalUrl}`;
+    
+    console.log(`[AI Studio Dev Proxy] Intercepted ${req.method} ${req.path}. Forwarding to ${targetUrl}`);
+
+    // SSE stream endpoint special handling
+    if (req.path === '/sync-stream') {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      if (res.flushHeaders) {
+        res.flushHeaders();
+      }
+      
+      try {
+        const response = await fetch(targetUrl, {
+          headers: {
+            'Accept': 'text/event-stream'
+          }
+        });
+        
+        if (!response.body) {
+          res.end();
+          return;
+        }
+        
+        const reader = response.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(value);
+        }
+        res.end();
+      } catch (err: any) {
+        console.error('[AI Studio Dev Proxy] SSE Stream proxy error:', err.message);
+        res.end();
+      }
+      return;
+    }
+    
+    // Standard API proxy
+    try {
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (typeof value === 'string' && key.toLowerCase() !== 'host') {
+          headers[key] = value;
+        }
+      }
+      
+      const options: RequestInit = {
+        method: req.method,
+        headers,
+      };
+      
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        if (req.body !== undefined) {
+          options.body = typeof req.body === 'object' ? JSON.stringify(req.body) : req.body;
+        }
+      }
+      
+      const response = await fetch(targetUrl, options);
+      
+      res.status(response.status);
+      for (const [key, value] of response.headers.entries()) {
+        res.setHeader(key, value);
+      }
+      
+      const blob = await response.blob();
+      const buffer = Buffer.from(await blob.arrayBuffer());
+      res.send(buffer);
+    } catch (err: any) {
+      console.error(`[AI Studio Dev Proxy] Failed to proxy API request ${req.method} ${req.path}:`, err.message);
+      res.status(500).json({ error: 'Dev Proxy Error', details: err.message, targetUrl });
+    }
+    return;
+  }
+  next();
+});
+
 app.post('/api/auth/admin', (req, res) => {
   const { password } = req.body;
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
