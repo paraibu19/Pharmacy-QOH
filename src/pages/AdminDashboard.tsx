@@ -97,6 +97,67 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  const [sseStatus, setSseStatus] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return (window as any).__sseStatus || {
+        connected: false,
+        lastEventTimestamp: null,
+        lastEventType: null,
+        connectedAt: null,
+        reconnectCount: 0
+      };
+    }
+    return {
+      connected: false,
+      lastEventTimestamp: null,
+      lastEventType: null,
+      connectedAt: null,
+      reconnectCount: 0
+    };
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleSseStatusChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setSseStatus(detail);
+      }
+    };
+
+    window.addEventListener('sse-status-change', handleSseStatusChange);
+    return () => {
+      window.removeEventListener('sse-status-change', handleSseStatusChange);
+    };
+  }, []);
+
+  const [isSendingTestSignal, setIsSendingTestSignal] = useState(false);
+  const handleSendTestSignal = async () => {
+    setIsSendingTestSignal(true);
+    try {
+      const res = await fetch('/api/sync-test-broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: 'Admin Dashboard Diagnostic Panel' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccess('Diagnostic broadcast test signal sent successfully! Checking propagation...');
+      } else {
+        setError('Failed to broadcast diagnostic signal.');
+      }
+    } catch (err: any) {
+      setError(`Failed to trigger broadcast test: ${err.message}`);
+    } finally {
+      setIsSendingTestSignal(false);
+      setTimeout(() => {
+        setSuccess(null);
+        setError(null);
+      }, 5000);
+    }
+  };
+
   const handleSourcingToggle = (type: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp') => {
     const isCurrentlyActive = showSourcingTransferOnly && sourcingReportType === type;
     if (isCurrentlyActive) {
@@ -3035,6 +3096,88 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between text-[9px] text-emerald-700/60 font-bold uppercase pt-1">
               <span>Last Sync</span>
               <span className="text-xs font-bold text-emerald-700">{format(lastSynced, 'HH:mm:ss')}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Real-Time SSE Sync Diagnostics Panel */}
+        <div className="bg-white border border-[#141414]/10 rounded-3xl p-6 shadow-sm flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#141414]/5">
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-2xl ${sseStatus.connected ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                <RefreshCw size={20} className={sseStatus.connected ? "animate-spin" : ""} />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-[#141414] uppercase tracking-tight flex flex-wrap items-center gap-2">
+                  <span>SSE Real-Time Stream Diagnostics</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                    sseStatus.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${sseStatus.connected ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
+                    {sseStatus.connected ? 'Connected' : 'Disconnected'}
+                  </span>
+                </h4>
+                <p className="text-xs text-[#141414]/50">Monitor real-time synchronization streams between clients and background database environments.</p>
+              </div>
+            </div>
+            
+            <button
+              onClick={handleSendTestSignal}
+              disabled={isSendingTestSignal}
+              className="px-4 py-2 bg-[#F27D26] hover:bg-[#d66518] text-white rounded-xl text-xs font-bold hover:shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer shrink-0"
+            >
+              {isSendingTestSignal ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles size={14} />}
+              <span>Test Real-Time Broadcast</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-stone-50 border border-stone-100 p-4 rounded-2xl flex flex-col justify-between">
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/40">Last Sync Event</span>
+              <div className="mt-2">
+                <p className="text-sm font-bold text-[#141414] truncate">
+                  {sseStatus.lastEventTimestamp ? format(new Date(sseStatus.lastEventTimestamp), 'dd-MM-yyyy HH:mm:ss') : 'No event received'}
+                </p>
+                <p className="text-[9px] text-[#141414]/40 font-bold uppercase mt-0.5">
+                  {sseStatus.lastEventTimestamp ? 'Timestamp of last message' : 'Awaiting sync payload'}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-stone-50 border border-stone-100 p-4 rounded-2xl flex flex-col justify-between">
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/40">Last Event Type</span>
+              <div className="mt-2">
+                <p className="text-sm font-bold text-[#F27D26] uppercase font-mono truncate">
+                  {sseStatus.lastEventType || 'N/A'}
+                </p>
+                <p className="text-[9px] text-[#141414]/40 font-bold uppercase mt-0.5">
+                  Broadcast payload identifier
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-stone-50 border border-stone-100 p-4 rounded-2xl flex flex-col justify-between">
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/40">Connection Uptime</span>
+              <div className="mt-2">
+                <p className="text-sm font-bold text-[#141414]">
+                  {sseStatus.connectedAt ? format(new Date(sseStatus.connectedAt), 'HH:mm:ss') : 'N/A'}
+                </p>
+                <p className="text-[9px] text-[#141414]/40 font-bold uppercase mt-0.5">
+                  Established connection time
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-stone-50 border border-stone-100 p-4 rounded-2xl flex flex-col justify-between">
+              <span className="text-[9px] font-black uppercase tracking-widest text-[#141414]/40">Reconnect Cycle</span>
+              <div className="mt-2">
+                <p className={`text-sm font-bold ${sseStatus.reconnectCount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {sseStatus.reconnectCount} {sseStatus.reconnectCount === 1 ? 'attempt' : 'attempts'}
+                </p>
+                <p className="text-[9px] text-[#141414]/40 font-bold uppercase mt-0.5">
+                  Stream disconnect count
+                </p>
+              </div>
             </div>
           </div>
         </div>

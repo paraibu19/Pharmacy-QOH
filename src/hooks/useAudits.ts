@@ -94,33 +94,6 @@ export function useAudits(maxItems: number = 50) {
       (err) => {
         setError(err.message);
         setLoading(false);
-        
-        const isQuotaOrDenied = 
-          err.message.toLowerCase().includes('quota') || 
-          err.message.toLowerCase().includes('limit') || 
-          err.message.toLowerCase().includes('exceeded') || 
-          err.message.toLowerCase().includes('permission-denied');
-        
-        const isConnectionError = 
-          (err as any).code === 'unavailable' || 
-          err.message.toLowerCase().includes('unavailable') || 
-          err.message.toLowerCase().includes('could not reach') || 
-          err.message.toLowerCase().includes('connection failed') || 
-          err.message.toLowerCase().includes('failed to connect');
-
-        if (isQuotaOrDenied || isConnectionError) {
-          if (typeof window !== 'undefined') {
-            if (storage.getItem('firestore_fallback')) {
-              storage.removeItem('firestore_fallback');
-            }
-            sessionStorage.setItem('firestore_fallback', 'true');
-            console.warn('Auto-switching useAudits to Local Server database mode.');
-            setTimeout(() => {
-              window.location.reload();
-            }, 800);
-          }
-        }
-        
         handleFirestoreError(err, OperationType.LIST, 'inventory_audits');
       }
     );

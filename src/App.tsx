@@ -61,19 +61,52 @@ export default function App() {
     let sse: EventSource | null = null;
     let reconnectTimeout: any = null;
 
+    const updateSSEStatus = (connected: boolean, lastEvent?: { type: string; time: Date }) => {
+      if (typeof window === 'undefined') return;
+      const current = (window as any).__sseStatus || {
+        connected: false,
+        lastEventTimestamp: null,
+        lastEventType: null,
+        connectedAt: null,
+        reconnectCount: 0
+      };
+
+      const nextStatus = {
+        connected,
+        lastEventTimestamp: lastEvent ? lastEvent.time.toISOString() : current.lastEventTimestamp,
+        lastEventType: lastEvent ? lastEvent.type : current.lastEventType,
+        connectedAt: connected && !current.connected ? new Date().toISOString() : current.connectedAt,
+        reconnectCount: !connected && current.connected ? current.reconnectCount + 1 : current.reconnectCount
+      };
+
+      (window as any).__sseStatus = nextStatus;
+      window.dispatchEvent(new CustomEvent('sse-status-change', { detail: nextStatus }));
+    };
+
     const connectSSE = () => {
       if (typeof window === 'undefined') return;
       
       console.log('[SSE] Connecting to real-time synchronization stream...');
       sse = new EventSource('/api/sync-stream');
       
+      sse.onopen = () => {
+        console.log('[SSE] Stream connected successfully.');
+        updateSSEStatus(true);
+      };
+
       sse.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
-          if (payload && payload.type && payload.type !== 'connected') {
-            console.log(`[SSE] Real-time event received: ${payload.type}`);
-            // Dispatch global event for hooks/components to intercept
-            window.dispatchEvent(new CustomEvent('sync-update', { detail: payload }));
+          if (payload && payload.type) {
+            if (payload.type !== 'connected') {
+              console.log(`[SSE] Real-time event received: ${payload.type}`);
+              // Dispatch global event for hooks/components to intercept
+              window.dispatchEvent(new CustomEvent('sync-update', { detail: payload }));
+              updateSSEStatus(true, { type: payload.type, time: new Date() });
+            } else {
+              // Initial connection acknowledgment
+              updateSSEStatus(true, { type: 'heartbeat/connection', time: new Date() });
+            }
           }
         } catch (e) {
           console.error('[SSE] Failed to parse message:', e);
@@ -82,6 +115,7 @@ export default function App() {
 
       sse.onerror = (err) => {
         console.warn('[SSE] Sync stream disconnected. Reconnecting in 3 seconds...', err);
+        updateSSEStatus(false);
         if (sse) {
           sse.close();
           sse = null;

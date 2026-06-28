@@ -109,34 +109,7 @@ export function useMedications(locationId?: PharmacyLocation) {
         console.error("Firestore onSnapshot error:", err);
         setError(err.message);
         
-        // Auto-detect quota exceeded, permission-denied, or connection-unavailable errors and automatically trigger local storage fallback!
-        const isQuotaOrDenied = 
-          err.message.toLowerCase().includes('quota') || 
-          err.message.toLowerCase().includes('limit') || 
-          err.message.toLowerCase().includes('exceeded') || 
-          err.message.toLowerCase().includes('permission-denied');
-        
-        const isConnectionError = 
-          (err as any).code === 'unavailable' || 
-          err.message.toLowerCase().includes('unavailable') || 
-          err.message.toLowerCase().includes('could not reach') || 
-          err.message.toLowerCase().includes('connection failed') || 
-          err.message.toLowerCase().includes('failed to connect');
-
-        if (isQuotaOrDenied || isConnectionError) {
-          if (typeof window !== 'undefined') {
-            if (storage.getItem('firestore_fallback')) {
-              storage.removeItem('firestore_fallback');
-            }
-            sessionStorage.setItem('firestore_fallback', 'true');
-            console.warn('Auto-switching useMedications to Local Server database mode.');
-            setTimeout(() => {
-              window.location.reload();
-            }, 800);
-          }
-        }
-        
-        // If we hit quota but have no meds yet, try one last time from cache
+        // Try to fetch once from local cache if we hit a quota limit
         if ((err.message.toLowerCase().includes('quota') || err.message.toLowerCase().includes('limit')) && medications.length === 0) {
           getDocsFromCache(q).then(cacheSnap => {
             const items: Medication[] = [];

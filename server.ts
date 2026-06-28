@@ -741,6 +741,14 @@ app.get('/api/sync-stream', (req, res) => {
   });
 });
 
+// Broadcast testing endpoint for Admin Diagnostic Panel
+app.post('/api/sync-test-broadcast', (req, res) => {
+  const sender = req.body?.sender || 'Admin Diagnostic Dashboard';
+  console.log(`[SSE] Received manual diagnostic test-ping from ${sender}. Broadcasting to clients...`);
+  notifyClients('test-ping', { sender, timestamp: new Date().toISOString() });
+  res.json({ success: true, message: 'Test broadcast signal transmitted to all connected SSE clients.' });
+});
+
 // API Routes
 app.get('/api/medications', async (req, res) => {
   if (adminDb && !isRealtimeListeningActive) {
