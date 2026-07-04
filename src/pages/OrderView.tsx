@@ -3,7 +3,7 @@ import {
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
   Eye, EyeOff, Settings, Key, LogOut, KeyRound, ThermometerSnowflake, UploadCloud,
-  ArrowRightLeft, ClipboardList, Calendar
+  ArrowRightLeft, ClipboardList, Calendar, Coins
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -18,16 +18,19 @@ import { formatNumber, parseSafeDate, formatSafeDate, formatExpirationDate } fro
 import LinkedItemsModal from '../components/LinkedItemsModal';
 import MultiLocationLookupModal from '../components/MultiLocationLookupModal';
 import BrandGenericReportModal from '../components/BrandGenericReportModal';
+import OracleQohModal from '../components/OracleQohModal';
+import AdminInventory from './AdminInventory';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
-type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQty' | 'consumption';
+type SortField = 'itemName' | 'itemCode' | 'qoh' | 'orderQty' | 'minQty' | 'maxQty' | 'consumption' | 'averageCost' | 'totalValue';
 type SortOrder = 'asc' | 'desc';
 
 export default function OrderView() {
   const { lastUpdate, isMesaieedHidden } = useSystemMetadata();
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showInventoryAudit, setShowInventoryAudit] = useState(false);
   const [password, setPassword] = useState('');
   const [persistedPassword, setPersistedPassword] = useState('pharmacist123');
   const [showPassword, setShowPassword] = useState(false);
@@ -66,12 +69,33 @@ export default function OrderView() {
   const [orderTarget, setOrderTarget] = useState<number>(1);
   const [showSourcingTransferOnly, setShowSourcingTransferOnly] = useState(false);
   const [sourcingReportType, setSourcingReportType] = useState<'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp'>('qoh');
+  const [stockAlertThreshold, setStockAlertThreshold] = useState<number>(20);
+  const [showOnlyThresholdAlerts, setShowOnlyThresholdAlerts] = useState<boolean>(false);
   
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
+  const [showOracleQoh, setShowOracleQoh] = useState(false);
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const { medications: allMedications, refresh: refreshAll } = useMedications();
+
+  const medicationsByItemCode = useMemo(() => {
+    const map = new Map<string, Medication[]>();
+    if (allMedications) {
+      for (let i = 0; i < allMedications.length; i++) {
+        const med = allMedications[i];
+        if (med.itemCode) {
+          let list = map.get(med.itemCode);
+          if (!list) {
+            list = [];
+            map.set(med.itemCode, list);
+          }
+          list.push(med);
+        }
+      }
+    }
+    return map;
+  }, [allMedications]);
 
   const handleSourcingToggle = (type: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp') => {
     const isCurrentlyActive = showSourcingTransferOnly && sourcingReportType === type;
@@ -116,7 +140,8 @@ export default function OrderView() {
   }, [fetchError]);
 
   const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
-    const matches = (allMedications || []).filter(m => m.itemCode === itemCode && m.locationId !== currentLocationId);
+    const list = medicationsByItemCode.get(itemCode) || [];
+    const matches = list.filter(m => m.locationId !== currentLocationId);
     const otherLocs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED]
       .filter(loc => loc !== currentLocationId);
 
@@ -152,7 +177,8 @@ export default function OrderView() {
   };
 
   const getSourcingLocationsText = (itemCode: string, orderVal: number, mode: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp' = 'qoh') => {
-    const matches = (allMedications || []).filter(om => om.itemCode === itemCode && om.locationId !== selectedLocation);
+    const list = medicationsByItemCode.get(itemCode) || [];
+    const matches = list.filter(om => om.locationId !== selectedLocation);
     let eligible = matches;
 
     if (mode === 'qoh') {
@@ -480,7 +506,8 @@ export default function OrderView() {
           const oQty = m.orderQty || 0;
           if (oQty <= 0) return false;
 
-          const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+          const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+          const matches = list.filter(om => om.locationId !== selectedLocation);
           return matches.some(om => om.qoh > 0.5 * oQty);
         });
       } else {
@@ -502,7 +529,8 @@ export default function OrderView() {
           const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
           if (!expDate || expDate < start || expDate > end) return false;
 
-          const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+          const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+          const matches = list.filter(om => om.locationId !== selectedLocation);
           return matches.some(om => {
             if (om.qoh <= 0) return false;
             const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
@@ -518,6 +546,13 @@ export default function OrderView() {
       }
     }
 
+    if (showOnlyThresholdAlerts) {
+      displayResult = displayResult.filter(m => {
+        const isOut = m.qoh <= 0;
+        return !isOut && m.maxQty > 0 && (m.qoh / m.maxQty) * 100 < stockAlertThreshold;
+      });
+    }
+
     return displayResult.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       
@@ -531,7 +566,7 @@ export default function OrderView() {
       const valB = String(b[sortField as keyof typeof b] || '');
       return valA.localeCompare(valB) * multiplier;
     });
-  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, consumptionFilter, expStart, expEnd, sortField, sortOrder, orderTarget, showSourcingTransferOnly, sourcingReportType, allMedications]);
+  }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, consumptionFilter, expStart, expEnd, sortField, sortOrder, orderTarget, showSourcingTransferOnly, sourcingReportType, allMedications, stockAlertThreshold, showOnlyThresholdAlerts]);
 
   const filterCounts = useMemo(() => {
     const all = medications.length;
@@ -551,9 +586,10 @@ export default function OrderView() {
     const nonRefrigerated = medications.filter(m => !m.isRefrigerated && m.qoh > 0).length;
     const zeroConsumption = medications.filter(m => (m.consumption || 0) === 0 && m.qoh > 0).length;
     const positiveConsumption = medications.filter(m => (m.consumption || 0) > 0 && m.qoh > 0).length;
+    const thresholdAlerts = medications.filter(m => m.qoh > 0 && m.maxQty > 0 && (m.qoh / m.maxQty) * 100 < stockAlertThreshold).length;
 
-    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, nonGenericAndNonBrand, refrigerated, nonRefrigerated, zeroConsumption, positiveConsumption };
-  }, [medications]);
+    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, nonGenericAndNonBrand, refrigerated, nonRefrigerated, zeroConsumption, positiveConsumption, thresholdAlerts };
+  }, [medications, stockAlertThreshold]);
 
   const availableGenericsCount = filterCounts.generics;
   const availableBrandsCount = filterCounts.brands;
@@ -568,10 +604,11 @@ export default function OrderView() {
       const oQty = calculateOrder(m, 1);
       if (oQty <= 0) return false;
 
-      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+      const matches = list.filter(om => om.locationId !== selectedLocation);
       return matches.some(om => om.qoh > 0.5 * oQty);
     }).length;
-  }, [medications, allMedications, selectedLocation]);
+  }, [medications, medicationsByItemCode, selectedLocation]);
 
   const currentExpSourcingCount = useMemo(() => {
     const now = new Date();
@@ -583,7 +620,8 @@ export default function OrderView() {
       const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
       if (!expDate || expDate < start || expDate > end) return false;
 
-      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+      const matches = list.filter(om => om.locationId !== selectedLocation);
       return matches.some(om => {
         if (om.qoh <= 0) return false;
         const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
@@ -591,7 +629,7 @@ export default function OrderView() {
         return true;
       });
     }).length;
-  }, [medications, allMedications, selectedLocation]);
+  }, [medications, medicationsByItemCode, selectedLocation]);
 
   const nextExpSourcingCount = useMemo(() => {
     const now = new Date();
@@ -603,7 +641,8 @@ export default function OrderView() {
       const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
       if (!expDate || expDate < start || expDate > end) return false;
 
-      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+      const matches = list.filter(om => om.locationId !== selectedLocation);
       return matches.some(om => {
         if (om.qoh <= 0) return false;
         const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
@@ -611,7 +650,7 @@ export default function OrderView() {
         return true;
       });
     }).length;
-  }, [medications, allMedications, selectedLocation]);
+  }, [medications, medicationsByItemCode, selectedLocation]);
 
   const afterNextExpSourcingCount = useMemo(() => {
     const now = new Date();
@@ -623,7 +662,8 @@ export default function OrderView() {
       const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
       if (!expDate || expDate < start || expDate > end) return false;
 
-      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+      const matches = list.filter(om => om.locationId !== selectedLocation);
       return matches.some(om => {
         if (om.qoh <= 0) return false;
         const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
@@ -631,7 +671,7 @@ export default function OrderView() {
         return true;
       });
     }).length;
-  }, [medications, allMedications, selectedLocation]);
+  }, [medications, medicationsByItemCode, selectedLocation]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -1393,6 +1433,34 @@ export default function OrderView() {
     );
   }
 
+  if (showInventoryAudit) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6 md:space-y-8 animate-in fade-in duration-300">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-purple-50 p-6 rounded-3xl border border-purple-100 shadow-sm">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <ClipboardList className="w-5 h-5 text-purple-600 animate-pulse" />
+              <h2 className="text-xl font-bold text-purple-950">Technician Portal: Inventory Audit View</h2>
+            </div>
+            <p className="text-xs text-purple-700/70">You are securely logged in with authorized technician inventory audit privileges.</p>
+          </div>
+          <button
+            onClick={() => {
+              setShowInventoryAudit(false);
+              refresh(true);
+            }}
+            className="w-full sm:w-auto px-5 py-3 bg-[#141414] text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-[#F27D26] transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+          >
+            ← Back to Order View
+          </button>
+        </div>
+        <div className="bg-white rounded-3xl border border-[#141414]/10 p-6 md:p-8 shadow-xl">
+          <AdminInventory />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6 md:space-y-8">
       {/* Header */}
@@ -1420,7 +1488,10 @@ export default function OrderView() {
         
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <button 
-            onClick={() => setIsAuthenticated(false)}
+            onClick={() => {
+              setIsAuthenticated(false);
+              setShowInventoryAudit(false);
+            }}
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-red-100 rounded-full text-[10px] font-bold uppercase tracking-widest text-red-500 hover:bg-red-50 transition-all shadow-sm"
           >
             <LogOut className="w-3 h-3" />
@@ -1475,14 +1546,29 @@ export default function OrderView() {
               <FileSpreadsheet className="w-3 h-3 text-[#F27D26]" />
               EXCEL
             </button>
-            <button 
-              onClick={() => setShowBrandGenericReport(true)}
-              className="flex-1 md:flex-none px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest hover:from-orange-600 hover:to-amber-600 transition-all shadow-sm flex items-center justify-center gap-1.5"
-            >
-              <ClipboardList className="w-3.5 h-3.5" />
-              Brand vs Generic
-            </button>
           </div>
+
+          <button 
+            onClick={() => setShowBrandGenericReport(true)}
+            className="flex-1 md:flex-none px-4 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest hover:from-orange-600 hover:to-amber-600 transition-all shadow-sm flex items-center justify-center gap-1.5"
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            Brand vs Generic
+          </button>
+          <button 
+            onClick={() => setShowOracleQoh(true)}
+            className="flex-1 md:flex-none px-4 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest hover:from-teal-600 hover:to-emerald-600 transition-all shadow-sm flex items-center justify-center gap-1.5"
+          >
+            <Coins className="w-3.5 h-3.5" />
+            Oracle QOH
+          </button>
+          <button 
+            onClick={() => setShowInventoryAudit(true)}
+            className="flex-1 md:flex-none px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest hover:from-purple-700 hover:to-indigo-700 transition-all shadow-sm flex items-center justify-center gap-1.5 animate-pulse hover:animate-none"
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            Inventory Audit
+          </button>
         </div>
       </div>
 
@@ -1634,6 +1720,37 @@ export default function OrderView() {
             {showFilters ? 'Hide Advanced Filters' : 'Show Advanced Filters'}
           </button>
         </div>
+
+        {/* Stock Level Threshold Alert Banner */}
+        {filterCounts.thresholdAlerts > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-100 text-red-600 rounded-xl animate-bounce">
+                <AlertTriangle className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black text-red-800 uppercase tracking-wider">Critical Inventory Alert</h4>
+                <p className="text-xs text-red-700 font-medium">
+                  There are <strong className="font-extrabold">{filterCounts.thresholdAlerts}</strong> item(s) with stock levels below your set threshold of <strong className="font-extrabold">{stockAlertThreshold}%</strong> of MAX quantity.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowFilters(true);
+                setShowOnlyThresholdAlerts(true);
+              }}
+              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl shadow-sm transition-all flex items-center gap-1 uppercase tracking-wider whitespace-nowrap cursor-pointer"
+            >
+              <Filter size={12} />
+              Filter Alert Items
+            </button>
+          </motion.div>
+        )}
 
         {/* Search Field */}
         <div className="relative">
@@ -1881,6 +1998,39 @@ export default function OrderView() {
                     </div>
                   </div>
 
+                  {/* Stock Alert Threshold System */}
+                  <div className="bg-red-50/20 p-4 rounded-xl border border-red-100 space-y-2 shadow-xs">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/60 ml-1 block">Stock Level Threshold Alert</span>
+                      <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[9px] font-black uppercase tracking-tight">
+                        &lt; {stockAlertThreshold}% of MAX
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="5"
+                        max="50"
+                        step="5"
+                        value={stockAlertThreshold}
+                        onChange={(e) => setStockAlertThreshold(Number(e.target.value))}
+                        className="flex-1 h-1 bg-[#141414]/15 rounded-lg appearance-none cursor-pointer accent-red-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowOnlyThresholdAlerts(prev => !prev)}
+                        className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border whitespace-nowrap ${
+                          showOnlyThresholdAlerts
+                            ? 'bg-red-500 text-white border-red-500 shadow-sm animate-pulse'
+                            : 'bg-white text-red-600 border-red-200 hover:bg-red-50'
+                        }`}
+                      >
+                        <AlertTriangle className="w-3 h-3" />
+                        Alerts ({filterCounts.thresholdAlerts})
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
 
                 {/* Reset Filters Option bar */}
@@ -1896,6 +2046,7 @@ export default function OrderView() {
                       setExpEnd('');
                       setSearchQuery('');
                       setOrderTarget(1);
+                      setShowOnlyThresholdAlerts(false);
                     }}
                     className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer"
                   >
@@ -2118,6 +2269,24 @@ export default function OrderView() {
                     </th>
                     <th 
                       className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                      onClick={() => toggleSort('averageCost')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Avg Cost
+                        {sortField === 'averageCost' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
+                      onClick={() => toggleSort('totalValue')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Total Value
+                        {sortField === 'totalValue' && <ArrowUpDown className="w-3 h-3 text-[#F27D26]" />}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 cursor-pointer hover:bg-[#141414]/5 transition-colors sticky top-0 bg-[#F9F9F9]"
                       onClick={() => toggleSort('consumption')}
                     >
                       <div className="flex items-center gap-1">
@@ -2159,12 +2328,15 @@ export default function OrderView() {
                 <tbody className="divide-y divide-[#141414]/5">
                   {sortedMeds.map((med, idx) => {
                     const isOrdered = med.orderQty > 0;
+                    const isOutOfStock = med.qoh <= 0;
+                    const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+                    const isCriticalStock = !isOutOfStock && med.maxQty > 0 && (med.qoh / med.maxQty) * 100 < stockAlertThreshold;
                     
                     return (
                       <motion.tr 
                         layout
                         key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} 
-                        className={`group border-b border-[#141414]/5 transition-colors hover:bg-[#141414]/[0.02] ${isOrdered ? 'bg-emerald-50/10' : ''}`}
+                        className={`group border-b border-[#141414]/5 transition-colors hover:bg-[#141414]/[0.02] ${isOutOfStock ? 'bg-red-50/50' : isCriticalStock ? 'bg-red-50/20 border-l-4 border-red-500' : isLowStock ? 'bg-amber-50/30' : isOrdered ? 'bg-emerald-50/10' : ''}`}
                       >
                         <td className="px-6 py-4 font-mono text-xs text-[#141414]/50">{med.itemCode}</td>
                         <td className="px-6 py-4">
@@ -2220,15 +2392,42 @@ export default function OrderView() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${
-                            med.qoh <= 0 
-                              ? 'bg-red-100 text-red-600' 
-                              : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
-                              ? 'bg-amber-100 text-amber-600'
-                              : 'bg-emerald-100 text-emerald-600'
-                          }`}>
-                            {med.qoh <= 0 ? 'Out of Stock' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'Low Stock' : 'In Stock')}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className={`font-mono text-xs ${
+                              isOutOfStock 
+                                ? 'text-red-600 font-bold' 
+                                : isCriticalStock 
+                                ? 'text-red-600 font-extrabold animate-pulse' 
+                                : isLowStock 
+                                ? 'text-amber-600 font-bold' 
+                                : 'text-[#141414] font-bold'
+                            }`}>{formatNumber(med.qoh)}</span>
+                            <span className={`text-[8px] font-bold uppercase tracking-wider px-1 py-0.5 rounded w-fit ${
+                              isOutOfStock 
+                                ? 'bg-red-100 text-red-600' 
+                                : isCriticalStock 
+                                ? 'bg-red-600 text-white shadow-sm animate-pulse' 
+                                : isLowStock 
+                                ? 'bg-amber-100 text-amber-600' 
+                                : 'bg-emerald-100 text-emerald-600'
+                            }`}>
+                              {isOutOfStock ? 'Out of' : isCriticalStock ? 'Critical' : isLowStock ? 'Low' : 'In'} Stock
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 font-mono text-xs text-[#141414]/70">
+                          {med.averageCost !== undefined && med.averageCost !== null ? (
+                            <span>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(med.averageCost)}</span>
+                          ) : (
+                            <span className="text-[#141414]/20">-</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 font-mono text-xs font-bold text-[#141414]/80">
+                          {med.totalValue !== undefined && med.totalValue !== null ? (
+                            <span>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(med.totalValue)}</span>
+                          ) : (
+                            <span className="text-[#141414]/20">-</span>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-1 rounded text-xs font-bold font-mono ${
@@ -2280,11 +2479,15 @@ export default function OrderView() {
             <div className="md:hidden divide-y divide-[#141414]/5">
               {sortedMeds.map((med, idx) => {
                 const isOrdered = med.orderQty > 0;
+                const isOutOfStock = med.qoh <= 0;
+                const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+                const isCriticalStock = !isOutOfStock && med.maxQty > 0 && (med.qoh / med.maxQty) * 100 < stockAlertThreshold;
+                
                 return (
                   <motion.div 
                     layout
                     key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`}
-                    className={`p-4 space-y-4 ${isOrdered ? 'bg-emerald-50/10' : ''}`}
+                    className={`p-4 space-y-4 ${isOutOfStock ? 'bg-red-50/50' : isCriticalStock ? 'bg-red-50/20 border-l-4 border-red-500' : isLowStock ? 'bg-amber-50/30' : isOrdered ? 'bg-emerald-50/10' : ''}`}
                     onClick={() => startEdit(med)}
                   >
                     <div className="flex justify-between items-start">
@@ -2344,16 +2547,18 @@ export default function OrderView() {
                       </div>
                       <div className="text-right">
                         <div className={`px-3 py-1 rounded-full text-xs font-black ${
-                          med.qoh <= 0 
+                          isOutOfStock 
                             ? 'bg-red-100 text-red-600' 
-                            : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3)
+                            : isCriticalStock
+                            ? 'bg-red-600 text-white shadow-sm animate-pulse'
+                            : isLowStock 
                             ? 'bg-amber-100 text-amber-600'
                             : 'bg-emerald-100 text-emerald-600'
                         }`}>
                           {formatNumber(med.qoh)}
                         </div>
-                        <p className="text-[8px] font-bold uppercase tracking-widest text-[#141414]/40 mt-1 whitespace-nowrap">
-                          {med.qoh <= 0 ? 'Out of Stock' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3 ? 'Low Stock' : 'In Stock')}
+                        <p className={`text-[8px] font-bold uppercase tracking-widest mt-1 whitespace-nowrap ${isCriticalStock ? 'text-red-600 animate-pulse font-black' : 'text-[#141414]/40'}`}>
+                          {isOutOfStock ? 'Out of Stock' : isCriticalStock ? 'Critical Alert' : isLowStock ? 'Low Stock' : 'In Stock'}
                         </p>
                       </div>
                     </div>
@@ -2374,6 +2579,29 @@ export default function OrderView() {
                       <div className={`p-2 text-center flex flex-col justify-center items-center ${getExpirationColor(med.expiration1)}`}>
                         <p className="text-[8px] font-bold uppercase tracking-wider opacity-60 mb-0.5">Expiry</p>
                         <p className="text-[10px] font-black">{formatExpirationDate(med.expiration1) || '-'}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center px-3 py-2 text-[10px] bg-[#141414]/[0.01] rounded-xl border border-[#141414]/5 text-[#141414]/60">
+                      <div>
+                        <span className="font-bold uppercase text-[8px] tracking-wider text-[#141414]/40 mr-1">Avg Cost:</span>
+                        <span className="font-mono font-semibold text-[#141414]">
+                          {med.averageCost !== undefined && med.averageCost !== null ? (
+                            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(med.averageCost)
+                          ) : (
+                            '-'
+                          )}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="font-bold uppercase text-[8px] tracking-wider text-[#141414]/40 mr-1">Total Value:</span>
+                        <span className="font-mono font-bold text-[#141414]">
+                          {med.totalValue !== undefined && med.totalValue !== null ? (
+                            new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(med.totalValue)
+                          ) : (
+                            '-'
+                          )}
+                        </span>
                       </div>
                     </div>
                   </motion.div>
@@ -2675,6 +2903,18 @@ export default function OrderView() {
         medications={medications}
         lastUpdate={lastUpdate}
         selectedLocation={selectedLocation}
+      />
+      <OracleQohModal
+        isOpen={showOracleQoh}
+        onClose={() => setShowOracleQoh(false)}
+        currentLocation={selectedLocation}
+        onSuccess={() => {
+          setShowOracleQoh(false);
+          refresh(true);
+          if (refreshAll) {
+            refreshAll(true).catch(err => console.warn("Background refreshAll error:", err));
+          }
+        }}
       />
     </div>
   );

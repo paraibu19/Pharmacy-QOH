@@ -70,7 +70,14 @@ export function useAudits(maxItems: number = 50) {
       };
 
       window.addEventListener('sync-update', handleSyncUpdate);
-      const interval = setInterval(() => loadSharedAudits(), 6000);
+      
+      const interval = setInterval(() => {
+        const isSseConnected = typeof window !== 'undefined' && (window as any).__sseStatus?.connected;
+        if (!isSseConnected) {
+          // Fallback poll if real-time stream is disconnected
+          loadSharedAudits();
+        }
+      }, 15000);
 
       return () => {
         clearInterval(interval);

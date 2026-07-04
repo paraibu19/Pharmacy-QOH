@@ -74,8 +74,42 @@ export default function ApplicationStorage() {
   useEffect(() => {
     let unsubscribe: (() => void) | undefined = undefined;
 
+    // Always fetch initial items via REST API
+    fetchStoredItems();
+
+    // Always set up SSE sync listener
+    const handleSyncUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && customEvent.detail.type === 'application-storage') {
+        if (customEvent.detail.data) {
+          const data = customEvent.detail.data;
+          const loaded: StoredMistake[] = data.map((d: any) => ({
+            id: d.id,
+            actionDateTime: d.actionDateTime || '',
+            mrnOrganization: d.mrnOrganization || '',
+            personNameFull: d.personNameFull || '',
+            sex: d.sex || '',
+            nationality: d.nationality || '',
+            pharmacyLocation: d.pharmacyLocation || '',
+            actionType: d.actionType || '',
+            itemNumber: d.itemNumber || '',
+            labelDescription: d.labelDescription || '',
+            dispenseQuantity: d.dispenseQuantity || '',
+            actionPersonnelPharmacy: d.actionPersonnelPharmacy || '',
+            reasons: d.reasons || [],
+            savedAt: d.savedAt || ''
+          }));
+          loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+          setItems(loaded);
+        } else {
+          fetchStoredItems();
+        }
+      }
+    };
+    window.addEventListener('sync-update', handleSyncUpdate);
+
+    // Also listen to Firestore client-side if available
     if (db) {
-      setLoading(true);
       try {
         const colRef = collection(db, 'application_storage');
         unsubscribe = onSnapshot(colRef, (snapshot) => {
@@ -99,55 +133,18 @@ export default function ApplicationStorage() {
               savedAt: data.savedAt || ''
             });
           });
-          // Sort items by savedAt descending
           loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
           setItems(loaded);
-          setLoading(false);
         }, (error) => {
-          console.warn("Firestore onSnapshot error on application_storage, falling back to REST API:", error);
-          fetchStoredItems();
+          console.warn("Firestore onSnapshot error on application_storage, relying on SSE/REST API:", error);
         });
       } catch (err) {
-        console.warn("Firestore subscription failed, falling back to REST API:", err);
-        fetchStoredItems();
+        console.warn("Firestore subscription failed, relying on SSE/REST API:", err);
       }
-    } else {
-      fetchStoredItems();
-      const handleSyncUpdate = (e: Event) => {
-        const customEvent = e as CustomEvent;
-        if (customEvent.detail && customEvent.detail.type === 'application-storage') {
-          if (customEvent.detail.data) {
-            const data = customEvent.detail.data;
-            const loaded: StoredMistake[] = data.map((d: any) => ({
-              id: d.id,
-              actionDateTime: d.actionDateTime || '',
-              mrnOrganization: d.mrnOrganization || '',
-              personNameFull: d.personNameFull || '',
-              sex: d.sex || '',
-              nationality: d.nationality || '',
-              pharmacyLocation: d.pharmacyLocation || '',
-              actionType: d.actionType || '',
-              itemNumber: d.itemNumber || '',
-              labelDescription: d.labelDescription || '',
-              dispenseQuantity: d.dispenseQuantity || '',
-              actionPersonnelPharmacy: d.actionPersonnelPharmacy || '',
-              reasons: d.reasons || [],
-              savedAt: d.savedAt || ''
-            }));
-            loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
-            setItems(loaded);
-          } else {
-            fetchStoredItems();
-          }
-        }
-      };
-      window.addEventListener('sync-update', handleSyncUpdate);
-      return () => {
-        window.removeEventListener('sync-update', handleSyncUpdate);
-      };
     }
 
     return () => {
+      window.removeEventListener('sync-update', handleSyncUpdate);
       if (unsubscribe) {
         unsubscribe();
       }

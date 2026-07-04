@@ -9,6 +9,7 @@ export function useSystemMetadata() {
   const [isMesaieedHidden, setIsMesaieedHidden] = useState<boolean>(() => {
     return storage.getItem('aw_pharmacy_hide_mesaieed') === 'true';
   });
+  const [isCloudActive, setIsCloudActive] = useState<boolean>(true);
 
   const setMesaieedHidden = async (hidden: boolean) => {
     try {
@@ -35,29 +36,71 @@ export function useSystemMetadata() {
   };
 
   useEffect(() => {
-    // Initial fetch from server to get latest global metadata (handles local/fallback mode sync)
-    fetch('/api/system/metadata')
-      .then(res => {
-        if (res.ok) return res.json();
-        throw new Error('Failed to fetch metadata');
-      })
-      .then(data => {
-        if (data && data.lastDataUpdate) {
-          const dateObj = new Date(data.lastDataUpdate);
-          const timestamp = dateObj.toISOString();
-          const localTime = localDb.getLastUpdateTime();
-          if (!localTime || new Date(timestamp) >= new Date(localTime)) {
-            storage.setItem('aw_pharmacy_last_update', timestamp);
-            setLastUpdate(timestamp);
+    const fetchMetadata = () => {
+      fetch('/api/system/metadata')
+        .then(res => {
+          if (res.ok) return res.json();
+          throw new Error('Failed to fetch metadata');
+        })
+        .then(data => {
+          if (data && data.firebaseActive !== undefined) {
+            setIsCloudActive(!!data.firebaseActive);
           }
-        }
-        if (data && data.isMesaieedHidden !== undefined) {
-          const hidden = !!data.isMesaieedHidden;
-          storage.setItem('aw_pharmacy_hide_mesaieed', hidden ? 'true' : 'false');
-          setIsMesaieedHidden(hidden);
-        }
-      })
-      .catch(err => console.warn('Error fetching initial metadata:', err));
+
+          if (data && data.lastDataUpdate) {
+            const dateObj = new Date(data.lastDataUpdate);
+            const timestamp = dateObj.toISOString();
+            
+            const serverCloudActive = data.firebaseActive !== false;
+            const isManualLocal = typeof window !== 'undefined' && window.sessionStorage?.getItem('firestore_fallback') === 'true';
+            
+            if (serverCloudActive && !isManualLocal) {
+              storage.setItem('aw_pharmacy_last_update', timestamp);
+              setLastUpdate(timestamp);
+            } else {
+              const localTime = localDb.getLastUpdateTime();
+              if (!localTime || new Date(timestamp) > new Date(localTime)) {
+                storage.setItem('aw_pharmacy_last_update', timestamp);
+                setLastUpdate(timestamp);
+              }
+            }
+          }
+          if (data && data.isMesaieedHidden !== undefined) {
+            const hidden = !!data.isMesaieedHidden;
+            if (storage.getItem('aw_pharmacy_hide_mesaieed') !== (hidden ? 'true' : 'false')) {
+              storage.setItem('aw_pharmacy_hide_mesaieed', hidden ? 'true' : 'false');
+              setIsMesaieedHidden(hidden);
+            }
+          }
+
+          // Auto-synchronize Firestore fallback state between server and client
+          // Note: In development/iframe environments, server-side admin SDK initialization may fail due to lack of IAM credentials, 
+          // but the client-side JS SDK can connect perfectly using the Web API Key. We only force the client to fall back to 
+          // Local Mode if both the server is inactive AND the client itself fails or is explicitly told to use local mode.
+          const isDevOrIframe = typeof window !== 'undefined' && 
+            (window.location.hostname === 'localhost' || 
+             window.location.hostname.includes('127.0.0.1') || 
+             window.location.hostname.includes('.run.app') || 
+             window.self !== window.top); // Detection for iframe
+
+          if (data && data.firebaseActive === false && db && !isDevOrIframe) {
+            console.warn("[Firebase Auto-Fallback] Server is running in local storage mode. Switching client to match.");
+            sessionStorage.setItem('firestore_fallback', 'true');
+            window.location.reload();
+            return;
+          } else if (data && data.firebaseActive === true && !db && sessionStorage.getItem('manual_local_mode') !== 'true') {
+            console.info("[Firebase Auto-Recovery] Server's Firestore is active. Switching client back to Cloud DB Mode.");
+            sessionStorage.removeItem('firestore_fallback');
+            window.location.reload();
+            return;
+          }
+        })
+        .catch(err => console.warn('Error fetching metadata:', err));
+    };
+
+    fetchMetadata();
+    const interval = setInterval(fetchMetadata, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -73,11 +116,27 @@ export function useSystemMetadata() {
       const customEvent = e as CustomEvent;
       if (customEvent.detail && customEvent.detail.type === 'metadata') {
         const data = customEvent.detail.data;
+        if (data && data.firebaseActive !== undefined) {
+          setIsCloudActive(!!data.firebaseActive);
+        }
+
         if (data && data.lastDataUpdate) {
           try {
             const timestamp = new Date(data.lastDataUpdate).toISOString();
-            storage.setItem('aw_pharmacy_last_update', timestamp);
-            setLastUpdate(timestamp);
+            
+            const serverCloudActive = data.firebaseActive !== false;
+            const isManualLocal = typeof window !== 'undefined' && window.sessionStorage?.getItem('firestore_fallback') === 'true';
+
+            if (serverCloudActive && !isManualLocal) {
+              storage.setItem('aw_pharmacy_last_update', timestamp);
+              setLastUpdate(timestamp);
+            } else {
+              const localTime = localDb.getLastUpdateTime();
+              if (!localTime || new Date(timestamp) > new Date(localTime)) {
+                storage.setItem('aw_pharmacy_last_update', timestamp);
+                setLastUpdate(timestamp);
+              }
+            }
           } catch (err) {
             console.error('Error parsing SSE metadata timestamp:', err);
           }
@@ -103,19 +162,19 @@ export function useSystemMetadata() {
               const dateObj = (data.lastDataUpdate as any).toDate ? data.lastDataUpdate.toDate() : new Date(data.lastDataUpdate);
               const timestamp = dateObj.toISOString();
               
-              const localTime = localDb.getLastUpdateTime();
-              if (!localTime || new Date(timestamp) >= new Date(localTime)) {
-                storage.setItem('aw_pharmacy_last_update', timestamp);
-                setLastUpdate(timestamp);
-              }
+              // Since db is active here, always trust and use the official Firestore timestamp
+              storage.setItem('aw_pharmacy_last_update', timestamp);
+              setLastUpdate(timestamp);
             } catch (e) {
               console.error('Error parsing metadata timestamp:', e);
             }
           }
           if (data.isMesaieedHidden !== undefined) {
             const hidden = !!data.isMesaieedHidden;
-            storage.setItem('aw_pharmacy_hide_mesaieed', hidden ? 'true' : 'false');
-            setIsMesaieedHidden(hidden);
+            if (storage.getItem('aw_pharmacy_hide_mesaieed') !== (hidden ? 'true' : 'false')) {
+              storage.setItem('aw_pharmacy_hide_mesaieed', hidden ? 'true' : 'false');
+              setIsMesaieedHidden(hidden);
+            }
           }
         }
       }, (error) => {
@@ -128,7 +187,7 @@ export function useSystemMetadata() {
       window.removeEventListener('sync-update', handleSyncUpdate);
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [db]);
 
-  return { lastUpdate, isMesaieedHidden, setMesaieedHidden };
+  return { lastUpdate, isMesaieedHidden, setMesaieedHidden, isCloudActive };
 }

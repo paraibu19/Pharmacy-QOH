@@ -32,6 +32,8 @@ export interface Medication {
   to?: string;
   isRefrigerated?: boolean;
   consumption?: number;
+  averageCost?: number;
+  totalValue?: number;
   enIndications?: string;
   arIndications?: string;
   hiIndications?: string;
@@ -55,4 +57,5 @@ export interface InventoryAudit {
   auditedAt: string;
   auditedBy: string;
   itemName?: string; // Denormalized for display
+  correctionTimestamp?: string;
 }

@@ -85,6 +85,24 @@ export default function UserHome() {
   const { medications: allMedications } = useMedications();
   const [error, setError] = useState<string | null>(null);
 
+  const medicationsByItemCode = useMemo(() => {
+    const map = new Map<string, Medication[]>();
+    if (allMedications) {
+      for (let i = 0; i < allMedications.length; i++) {
+        const med = allMedications[i];
+        if (med.itemCode) {
+          let list = map.get(med.itemCode);
+          if (!list) {
+            list = [];
+            map.set(med.itemCode, list);
+          }
+          list.push(med);
+        }
+      }
+    }
+    return map;
+  }, [allMedications]);
+
   useEffect(() => {
     if (fetchError) {
       setError(`Fetch Error: ${fetchError}`);
@@ -92,7 +110,8 @@ export default function UserHome() {
   }, [fetchError]);
 
   const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
-    const matches = (allMedications || []).filter(m => m.itemCode === itemCode && m.locationId !== currentLocationId);
+    const list = medicationsByItemCode.get(itemCode) || [];
+    const matches = list.filter(m => m.locationId !== currentLocationId);
     const otherLocs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED]
       .filter(loc => loc !== currentLocationId);
 

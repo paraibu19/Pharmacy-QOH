@@ -307,6 +307,10 @@ export const medicationOps = {
           updatedBy: auth?.currentUser?.uid || 'system',
         };
 
+        // Filter out averageCost and totalValue to ensure they are not changed during bulk import
+        delete baseData.averageCost;
+        delete baseData.totalValue;
+
         // Apply Stickiness/Strategy logic
         if (options.photoStrategy === 'remove') {
           baseData.imageUrl = null;
@@ -382,7 +386,23 @@ export const medicationOps = {
 };
 
 export const auditOps = {
-  async reconcille(medId: string, physicalCount: number, locationId: PharmacyLocation, itemCode: string, itemName: string, recordedQoh: number, auditedBy: string = 'System') {
+  async reconcille(medId: string, physicalCount: number, locationId: PharmacyLocation, itemCode: string, itemName: string, recordedQoh: number, auditedBy: string = 'System', correctionTimestamp?: string) {
+    const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    const now = new Date();
+    const dayName = days[now.getDay()];
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    let hours = now.getHours();
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hh = String(hours).padStart(2, '0');
+    const defaultTimestamp = `${dayName}, ${dd}-${mm}-${yyyy} ${hh}:${minutes} ${ampm}`;
+
+    const timestampStr = correctionTimestamp || defaultTimestamp;
+
     if (!db) {
       await sharedDb.updateMedication(medId, { qoh: physicalCount });
       return sharedDb.addAudit({
@@ -393,6 +413,7 @@ export const auditOps = {
         recordedQoh,
         variance: physicalCount - recordedQoh,
         auditedBy,
+        correctionTimestamp: timestampStr,
       });
     }
 
@@ -416,6 +437,7 @@ export const auditOps = {
       variance: physicalCount - recordedQoh,
       auditedAt: serverTimestamp(),
       auditedBy: auth?.currentUser?.uid || auditedBy,
+      correctionTimestamp: timestampStr,
     }));
 
     try {

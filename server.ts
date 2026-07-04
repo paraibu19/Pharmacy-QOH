@@ -5,44 +5,193 @@ import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from "@google/genai";
-import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { 
+  initializeApp as initializeClientApp, 
+  getApps, 
+  getApp 
+} from 'firebase/app';
+import { 
+  getFirestore as getClientFirestore, 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  setDoc, 
+  deleteDoc, 
+  writeBatch, 
+  onSnapshot,
+  Timestamp,
+  serverTimestamp
+} from 'firebase/firestore';
+
+const FieldValue = {
+  serverTimestamp: () => serverTimestamp()
+};
+
+class ClientFirestoreAdapter {
+  private db: any;
+
+  constructor(firebaseConfig: any) {
+    const app = getApps().length > 0 ? getApp() : initializeClientApp(firebaseConfig);
+    this.db = getClientFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+
+  settings(settings: any) {
+    // No-op
+  }
+
+  collection(collectionPath: string) {
+    return new CollectionRefAdapter(this.db, collectionPath);
+  }
+
+  batch() {
+    return new WriteBatchAdapter(this.db);
+  }
+}
+
+class CollectionRefAdapter {
+  constructor(private db: any, private path: string) {}
+
+  doc(docId: string) {
+    return new DocumentRefAdapter(this.db, this.path, docId);
+  }
+
+  async get() {
+    const colRef = collection(this.db, this.path);
+    const snap = await getDocs(colRef);
+    return new QuerySnapshotAdapter(snap);
+  }
+
+  onSnapshot(onNext: any, onError: any) {
+    const colRef = collection(this.db, this.path);
+    return onSnapshot(colRef, (snap) => {
+      onNext(new QuerySnapshotAdapter(snap));
+    }, onError);
+  }
+}
+
+class DocumentRefAdapter {
+  constructor(private db: any, private colPath: string, private docId: string) {}
+
+  get ref() {
+    return doc(this.db, this.colPath, this.docId);
+  }
+
+  async get() {
+    const snap = await getDoc(this.ref);
+    return new DocumentSnapshotAdapter(snap);
+  }
+
+  async set(data: any, options?: any) {
+    if (options) {
+      await setDoc(this.ref, data, options);
+    } else {
+      await setDoc(this.ref, data);
+    }
+  }
+
+  async delete() {
+    await deleteDoc(this.ref);
+  }
+
+  onSnapshot(onNext: any, onError: any) {
+    return onSnapshot(this.ref, (snap) => {
+      onNext(new DocumentSnapshotAdapter(snap));
+    }, onError);
+  }
+}
+
+class DocumentSnapshotAdapter {
+  constructor(private snap: any) {}
+
+  get exists() {
+    return this.snap.exists();
+  }
+
+  get id() {
+    return this.snap.id;
+  }
+
+  data() {
+    return this.snap.data();
+  }
+}
+
+class QuerySnapshotAdapter {
+  constructor(private snap: any) {}
+
+  get docs() {
+    return this.snap.docs.map((docSnap: any) => new DocumentSnapshotAdapter(docSnap));
+  }
+
+  forEach(callback: (doc: DocumentSnapshotAdapter) => void) {
+    this.snap.forEach((docSnap: any) => {
+      callback(new DocumentSnapshotAdapter(docSnap));
+    });
+  }
+}
+
+class WriteBatchAdapter {
+  private batch: any;
+
+  constructor(db: any) {
+    this.batch = writeBatch(db);
+  }
+
+  set(docRefAdapter: any, data: any, options?: any) {
+    const nativeRef = docRefAdapter.ref || docRefAdapter;
+    if (options) {
+      this.batch.set(nativeRef, data, options);
+    } else {
+      this.batch.set(nativeRef, data);
+    }
+  }
+
+  delete(docRefAdapter: any) {
+    const nativeRef = docRefAdapter.ref || docRefAdapter;
+    this.batch.delete(nativeRef);
+  }
+
+  async commit() {
+    await this.batch.commit();
+  }
+}
 
 dotenv.config();
 
-// Initialize Firebase Admin for persistent Firestore synchronization
+// Initialize Firebase Client sync adapter
 let adminDb: any = null;
 try {
-  let projectId: string | undefined = undefined;
-  let databaseId: string | undefined = undefined;
-  
   const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    projectId = config.projectId;
-    databaseId = config.firestoreDatabaseId;
-  }
-  
-  if (!projectId) {
-    projectId = process.env.GOOGLE_CLOUD_PROJECT;
-  }
-  
-  if (projectId) {
-    let adminApp;
-    if (getApps().length === 0) {
-      adminApp = initializeApp({
-        projectId: projectId
-      });
-    } else {
-      adminApp = getApps()[0];
-    }
-    adminDb = databaseId ? getFirestore(adminApp, databaseId) : getFirestore(adminApp);
-    console.log(`[Firebase Admin Sync] Firestore initialized successfully for project: ${projectId}, database: ${databaseId || '(default)'}`);
+    adminDb = new ClientFirestoreAdapter(config);
+    console.log(`[Firebase Client Sync] Firestore initialized successfully with client credentials for project: ${config.projectId}`);
   } else {
-    console.warn('[Firebase Admin Sync] No project ID found. Running in local-only storage fallback.');
+    console.warn('[Firebase Client Sync] No configuration file found. Running in local-only fallback.');
   }
 } catch (err: any) {
-  console.warn('[Firebase Admin Sync] Graceful initialization failure:', err.message);
+  console.warn('[Firebase Client Sync] Graceful initialization failure:', err.message);
+}
+
+function cleanServerUndefined(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanServerUndefined(item));
+  }
+  if (typeof obj === 'object') {
+    const cleaned: any = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const val = obj[key];
+        if (val !== undefined) {
+          cleaned[key] = cleanServerUndefined(val);
+        }
+      }
+    }
+    return cleaned;
+  }
+  return obj;
 }
 
 let aiClient: any = null;
@@ -123,6 +272,27 @@ if (!fs.existsSync(TRANSLATION_CACHE_FILE)) {
 // Ensure files exist
 if (!fs.existsSync(MEDS_FILE)) {
   fs.writeFileSync(MEDS_FILE, '[]');
+}
+
+// Sanitize and normalize location IDs on startup
+try {
+  if (fs.existsSync(MEDS_FILE)) {
+    const raw = fs.readFileSync(MEDS_FILE, 'utf8');
+    const meds = JSON.parse(raw);
+    let dirty = false;
+    for (const med of meds) {
+      if (med.locationId === 'adult') {
+        med.locationId = 'adult-emergency';
+        dirty = true;
+      }
+    }
+    if (dirty) {
+      fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+      console.log('[Startup Sanitization] Standardized legacy "adult" locationId values to "adult-emergency".');
+    }
+  }
+} catch (e: any) {
+  console.warn('[Startup Sanitization] Failed to normalize location IDs:', e.message);
 }
 
 if (!fs.existsSync(AUDITS_FILE)) fs.writeFileSync(AUDITS_FILE, '[]');
@@ -296,16 +466,23 @@ function parseFirestoreDoc(doc: any): any {
 
 function handleAdminDbError(err: any, context: string) {
   const errMsg = err.message || String(err);
-  const isPermissionDenied = errMsg.includes('PERMISSION_DENIED') || 
-                             errMsg.includes('insufficient permissions') || 
-                             errMsg.includes(' 7 ') ||
-                             errMsg.startsWith('7 ') ||
-                             errMsg.includes(': 7') ||
-                             errMsg.includes('Status code: 7');
+  const lowerMsg = errMsg.toLowerCase();
   
-  if (isPermissionDenied) {
+  const isFallbackTrigger = errMsg.includes('PERMISSION_DENIED') || 
+                            errMsg.includes('insufficient permissions') || 
+                            lowerMsg.includes('quota') || 
+                            lowerMsg.includes('exhausted') || 
+                            lowerMsg.includes('limit') || 
+                            lowerMsg.includes('over-quota') ||
+                            lowerMsg.includes('unavailable') ||
+                            errMsg.includes(' 7 ') ||
+                            errMsg.startsWith('7 ') ||
+                            errMsg.includes(': 7') ||
+                            errMsg.includes('Status code: 7');
+  
+  if (isFallbackTrigger) {
     if (adminDb) {
-      console.warn(`[Firebase Sync Fallback] Server credentials do not have permission to sync (${context}). Gracefully disabling live server-side Firestore sync and using local filesystem storage fallback.`);
+      console.warn(`[Firebase Sync Fallback] Server credentials, quota, or service state triggered fallback (${context}). Gracefully disabling live server-side Firestore sync and using local filesystem storage fallback.`);
       adminDb = null;
     }
   } else {
@@ -339,13 +516,14 @@ async function saveMedicationToFirestore(item: any): Promise<void> {
   try {
     const { id, addedAt, lastUpdatedAt, ...rest } = item;
     const docRef = adminDb.collection('medications').doc(id);
-    await docRef.set({
+    const cleaned = cleanServerUndefined({
       ...rest,
       id: id,
       addedAt: addedAt || new Date().toISOString(),
       lastUpdatedAt: lastUpdatedAt || new Date().toISOString(),
       updatedBy: rest.updatedBy || 'system'
-    }, { merge: true });
+    });
+    await docRef.set(cleaned, { merge: true });
   } catch (err: any) {
     handleAdminDbError(err, 'save medication');
   }
@@ -359,13 +537,14 @@ async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
     for (const item of items) {
       const { id, addedAt, lastUpdatedAt, ...rest } = item;
       const docRef = adminDb.collection('medications').doc(id);
-      batch.set(docRef, {
+      const cleaned = cleanServerUndefined({
         ...rest,
         id: id,
         addedAt: addedAt || new Date().toISOString(),
         lastUpdatedAt: lastUpdatedAt || new Date().toISOString(),
         updatedBy: rest.updatedBy || 'system'
-      }, { merge: true });
+      });
+      batch.set(docRef, cleaned, { merge: true });
       
       count++;
       if (count >= 500) {
@@ -415,12 +594,13 @@ async function saveAuditToFirestore(item: any): Promise<void> {
   if (!adminDb) return;
   try {
     const { id, auditedAt, ...rest } = item;
-    await adminDb.collection('inventory_audits').doc(id).set({
+    const cleaned = cleanServerUndefined({
       ...rest,
       id: id,
       auditedAt: auditedAt ? Timestamp.fromDate(new Date(auditedAt)) : FieldValue.serverTimestamp(),
       auditedBy: rest.auditedBy || 'system'
     });
+    await adminDb.collection('inventory_audits').doc(id).set(cleaned);
   } catch (err: any) {
     handleAdminDbError(err, 'save audit');
   }
@@ -514,7 +694,7 @@ async function updateSystemMetadataInFirestore(): Promise<void> {
 async function saveEntryMistakesDbToFirestore(dbState: any): Promise<void> {
   if (!adminDb) return;
   try {
-    await adminDb.collection('entry_mistakes_configs').doc('global').set(dbState);
+    await adminDb.collection('entry_mistakes_configs').doc('global').set(cleanServerUndefined(dbState));
   } catch (err: any) {
     handleAdminDbError(err, 'save parameters DB');
   }
@@ -565,11 +745,12 @@ async function saveMismatchesBulkToFirestore(items: any[]): Promise<void> {
     for (const item of items) {
       const id = item.id || `${item.mrnOrganization || ''}_${item.actionDateTime || ''}_${item.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
       const docRef = adminDb.collection('application_storage').doc(id);
-      batch.set(docRef, {
+      const cleaned = cleanServerUndefined({
         ...item,
         id: id,
         savedAt: item.savedAt || new Date().toISOString()
-      }, { merge: true });
+      });
+      batch.set(docRef, cleaned, { merge: true });
       
       count++;
       if (count >= 500) {
@@ -950,8 +1131,11 @@ app.post('/api/medications/bulk', async (req, res) => {
         imageUrl = null;
       }
 
+      // Filter out averageCost and totalValue from incoming item to ensure they are not changed
+      const { averageCost: _incomingAvgCost, totalValue: _incomingTotalVal, ...mFiltered } = m;
+
       // Check translation cache on the server
-      const itemText = (m.enIndications && m.enIndications.trim() !== '') ? m.enIndications.trim() : m.arIndications?.trim() || '';
+      const itemText = (mFiltered.enIndications && mFiltered.enIndications.trim() !== '') ? mFiltered.enIndications.trim() : mFiltered.arIndications?.trim() || '';
       let cachedTrans: any = null;
       if (itemText) {
         const hash = getTranslationHashSync(itemText);
@@ -966,25 +1150,42 @@ app.post('/api/medications/bulk', async (req, res) => {
       };
 
       const transFields = {
-        hiIndications: m.hiIndications || existing?.hiIndications || getCachedField('hiIndications', 'hi') || '',
-        urIndications: m.urIndications || existing?.urIndications || getCachedField('urIndications', 'ur') || '',
-        mlIndications: m.mlIndications || existing?.mlIndications || getCachedField('mlIndications', 'ml') || '',
-        bnIndications: m.bnIndications || existing?.bnIndications || getCachedField('bnIndications', 'bn') || '',
-        tlIndications: m.tlIndications || existing?.tlIndications || getCachedField('tlIndications', 'tl') || ''
+        hiIndications: mFiltered.hiIndications || existing?.hiIndications || getCachedField('hiIndications', 'hi') || '',
+        urIndications: mFiltered.urIndications || existing?.urIndications || getCachedField('urIndications', 'ur') || '',
+        mlIndications: mFiltered.mlIndications || existing?.mlIndications || getCachedField('mlIndications', 'ml') || '',
+        bnIndications: mFiltered.bnIndications || existing?.bnIndications || getCachedField('bnIndications', 'bn') || '',
+        tlIndications: mFiltered.tlIndications || existing?.tlIndications || getCachedField('tlIndications', 'tl') || ''
       };
 
       if (existingIndex !== -1) {
+        // Explicitly preserve existing averageCost and totalValue
+        const preservedCost = meds[existingIndex].averageCost;
+        const preservedValue = meds[existingIndex].totalValue;
+
         meds[existingIndex] = { 
           ...meds[existingIndex], 
-          ...m, 
+          ...mFiltered, 
           ...transFields,
           imageUrl: options?.photoStrategy === 'remove' ? null : (imageUrl || meds[existingIndex].imageUrl),
           lastUpdatedAt: new Date().toISOString() 
         };
+
+        if (preservedCost !== undefined) {
+          meds[existingIndex].averageCost = preservedCost;
+        } else {
+          delete meds[existingIndex].averageCost;
+        }
+
+        if (preservedValue !== undefined) {
+          meds[existingIndex].totalValue = preservedValue;
+        } else {
+          delete meds[existingIndex].totalValue;
+        }
+
         return meds[existingIndex];
       } else {
         const nm = {
-          ...m,
+          ...mFiltered,
           ...transFields,
           imageUrl: imageUrl || null,
           id: Math.random().toString(36).substring(2, 11),
@@ -1007,6 +1208,63 @@ app.post('/api/medications/bulk', async (req, res) => {
     res.json({ count: newMeds.length });
   } catch (err: any) {
     console.error('Bulk import error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/medications/oracle-qoh', async (req, res) => {
+  try {
+    const { locationId, items } = req.body;
+    if (!locationId || !Array.isArray(items)) {
+      return res.status(400).json({ error: 'locationId and items array are required' });
+    }
+
+    const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
+    const updatedMeds: any[] = [];
+    const createdMeds: any[] = [];
+
+    for (const item of items) {
+      const existingIndex = meds.findIndex((em: any) => em.locationId === locationId && em.itemCode === item.itemCode);
+      if (existingIndex !== -1) {
+        const existing = meds[existingIndex];
+        const hasDiff = 
+          existing.qoh !== item.qoh ||
+          existing.averageCost !== item.averageCost ||
+          existing.totalValue !== item.totalValue;
+
+        if (hasDiff) {
+          meds[existingIndex] = {
+            ...existing,
+            qoh: item.qoh,
+            averageCost: item.averageCost,
+            totalValue: item.totalValue,
+            lastUpdatedAt: new Date().toISOString(),
+            updatedBy: 'Oracle QOH Upload'
+          };
+          updatedMeds.push(meds[existingIndex]);
+        }
+      }
+    }
+
+    fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
+
+    if (adminDb) {
+      const allToSync = [...updatedMeds, ...createdMeds];
+      await saveMedicationsBulkToFirestore(allToSync).catch(err => console.error('[Oracle QOH] Firestore save error:', err));
+    }
+
+    await updateSystemMetadataInFirestore().catch(err => console.error('[Oracle QOH] Metadata update error:', err));
+
+    notifyClients('medications', meds);
+
+    res.json({
+      success: true,
+      updatedCount: updatedMeds.length,
+      createdCount: createdMeds.length,
+      totalCount: items.length
+    });
+  } catch (err: any) {
+    console.error('[Oracle QOH] Server error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1151,15 +1409,24 @@ app.get('/api/system/metadata', async (req, res) => {
     if (adminDb && !isRealtimeListeningActive) {
       await syncSystemMetadataFromFirestore().catch(err => console.error(err));
     }
+    
+    let payload: any = {
+      lastDataUpdate: new Date().toISOString(),
+      isMesaieedHidden: false,
+      firebaseActive: adminDb !== null,
+      realtimeListening: isRealtimeListeningActive
+    };
+
     if (fs.existsSync(METADATA_SYNC_FILE)) {
-      const data = fs.readFileSync(METADATA_SYNC_FILE, 'utf8');
-      res.json(JSON.parse(data));
-    } else {
-      res.json({
-        lastDataUpdate: new Date().toISOString(),
-        isMesaieedHidden: false
-      });
+      const data = JSON.parse(fs.readFileSync(METADATA_SYNC_FILE, 'utf8'));
+      payload = {
+        ...payload,
+        ...data,
+        firebaseActive: adminDb !== null,
+        realtimeListening: isRealtimeListeningActive
+      };
     }
+    res.json(payload);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

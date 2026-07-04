@@ -44,7 +44,9 @@ export default function MedicationFormModal({
     imageUrl: '',
     isRefrigerated: false,
     enIndications: '',
-    arIndications: ''
+    arIndications: '',
+    averageCost: 0,
+    totalValue: 0
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -106,7 +108,9 @@ export default function MedicationFormModal({
         imageUrl: '',
         isRefrigerated: false,
         enIndications: '',
-        arIndications: ''
+        arIndications: '',
+        averageCost: 0,
+        totalValue: 0
       });
     }
   }, [initialData, isOpen]);
@@ -321,6 +325,30 @@ export default function MedicationFormModal({
                       onChange={e => setForm({...form, maxQty: Number(e.target.value)})}
                       className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#F27D26]/20"
                     />
+                  </div>
+                  <div className="col-span-2 grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest ml-1">Average Cost (QAR)</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={form.averageCost !== undefined ? form.averageCost : ''}
+                        onChange={e => setForm({...form, averageCost: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
+                        className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl text-sm font-medium font-mono focus:ring-2 focus:ring-[#F27D26]/20"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest ml-1">Total Value (QAR)</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={form.totalValue !== undefined ? form.totalValue : ''}
+                        onChange={e => setForm({...form, totalValue: e.target.value === '' ? 0 : parseFloat(e.target.value)})}
+                        className="w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl text-sm font-medium font-mono focus:ring-2 focus:ring-[#F27D26]/20"
+                        placeholder="0.00"
+                      />
+                    </div>
                   </div>
                   <div className="col-span-2 grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">

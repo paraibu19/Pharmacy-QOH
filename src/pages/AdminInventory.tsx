@@ -3,15 +3,17 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Download, Save, RefreshCw, AlertTriangle, 
   CheckCircle2, ArrowUpRight, History, Loader2, ArrowUpDown, Filter, X, FileSpreadsheet,
-  Sparkles, ThermometerSnowflake, UploadCloud, ClipboardList
+  Sparkles, ThermometerSnowflake, UploadCloud, ClipboardList, FileText
 } from 'lucide-react';
 import { PharmacyLocation, Medication, PHARMACY_NAMES } from '../types';
 import { LOCATIONS } from '../constants';
 import { format } from 'date-fns';
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { useMedications } from '../hooks/useMedications';
 import { auditOps } from '../lib/firebaseOperations';
-import { formatNumber, parseSafeDate, formatSafeDate } from '../lib/formatters';
+import { formatNumber, parseSafeDate, formatSafeDate, formatExpirationDate } from '../lib/formatters';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 import { medicationOps } from '../lib/firebaseOperations';
@@ -24,6 +26,11 @@ type SortOrder = 'asc' | 'desc';
 
 export default function AdminInventory() {
   const { lastUpdate, isMesaieedHidden } = useSystemMetadata();
+
+  const formatCurrency = (val?: number | null) => {
+    if (val === undefined || val === null) return '-';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(val);
+  };
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
 
@@ -38,11 +45,47 @@ export default function AdminInventory() {
   const [classificationFilter, setClassificationFilter] = useState<'qatari' | 'restricted' | null>(null);
   const [typeFilter, setTypeFilter] = useState<'generic' | 'brand' | null>(null);
   const [refFilter, setRefFilter] = useState<boolean>(false);
+  
+  // Expensive Expiry Follow Up States
+  const [expensiveCostFilter, setExpensiveCostFilter] = useState<string>('');
+  const [expensiveValueFilter, setExpensiveValueFilter] = useState<string>('');
+  const [expensiveCostOperator, setExpensiveCostOperator] = useState<'above' | 'below'>('below');
+  const [expensiveValueOperator, setExpensiveValueOperator] = useState<'above' | 'below'>('below');
+
+  // ABC Class states
+  const [abcClassFilter, setAbcClassFilter] = useState<'A' | 'B' | 'C' | null>(null);
+
+  // Custom Confirmation Modal state
+  const [adjustmentConfirm, setAdjustmentConfirm] = useState<{
+    med: Medication;
+    physicalCount: number;
+    variance: number;
+    timestampStr: string;
+  } | null>(null);
+
   const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
   
   const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
   const { medications: allMedications } = useMedications();
   const [error, setError] = useState<string | null>(null);
+
+  const medicationsByItemCode = useMemo(() => {
+    const map = new Map<string, Medication[]>();
+    if (allMedications) {
+      for (let i = 0; i < allMedications.length; i++) {
+        const med = allMedications[i];
+        if (med.itemCode) {
+          let list = map.get(med.itemCode);
+          if (!list) {
+            list = [];
+            map.set(med.itemCode, list);
+          }
+          list.push(med);
+        }
+      }
+    }
+    return map;
+  }, [allMedications]);
 
   useEffect(() => {
     if (fetchError) {
@@ -51,7 +94,8 @@ export default function AdminInventory() {
   }, [fetchError]);
 
   const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
-    const matches = (allMedications || []).filter(m => m.itemCode === itemCode && m.locationId !== currentLocationId);
+    const list = medicationsByItemCode.get(itemCode) || [];
+    const matches = list.filter(m => m.locationId !== currentLocationId);
     const otherLocs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED]
       .filter(loc => loc !== currentLocationId && !(isMesaieedHidden && loc === PharmacyLocation.MESAIEED));
 
@@ -154,6 +198,62 @@ export default function AdminInventory() {
     return null;
   };
 
+  const classifiedMedsMap = useMemo(() => {
+    const map = new Map<string, { finalScore: number; classification: 'A' | 'B' | 'C' }>();
+    if (!medications || medications.length === 0) return map;
+
+    const validMeds = [...medications];
+    const maxTotalValue = Math.max(...validMeds.map(m => m.totalValue || 0), 0);
+    const maxAverageCost = Math.max(...validMeds.map(m => m.averageCost || 0), 0);
+
+    const scoredMeds = validMeds.map(m => {
+      const totalValueScore = maxTotalValue > 0 ? ((m.totalValue || 0) / maxTotalValue) * 100 : 0;
+      const averageCostScore = maxAverageCost > 0 ? ((m.averageCost || 0) / maxAverageCost) * 100 : 0;
+      const finalScore = (totalValueScore * 0.70) + (averageCostScore * 0.30);
+      return {
+        id: m.id,
+        finalScore
+      };
+    });
+
+    // Sort by finalScore DESC
+    scoredMeds.sort((a, b) => b.finalScore - a.finalScore);
+
+    const total = scoredMeds.length;
+    // Class A: highest 20%
+    // Class B: next 30%
+    // Class C: remaining 50%
+    const cutOffA = Math.ceil(total * 0.20);
+    const cutOffB = Math.ceil(total * 0.50); // top 50% (20% A + 30% B)
+
+    scoredMeds.forEach((item, index) => {
+      let classification: 'A' | 'B' | 'C' = 'C';
+      if (index < cutOffA) {
+        classification = 'A';
+      } else if (index < cutOffB) {
+        classification = 'B';
+      }
+      map.set(item.id, {
+        finalScore: item.finalScore,
+        classification
+      });
+    });
+
+    return map;
+  }, [medications]);
+
+  const abcCounts = useMemo(() => {
+    let aCount = 0;
+    let bCount = 0;
+    let cCount = 0;
+    classifiedMedsMap.forEach(info => {
+      if (info.classification === 'A') aCount++;
+      else if (info.classification === 'B') bCount++;
+      else if (info.classification === 'C') cCount++;
+    });
+    return { A: aCount, B: bCount, C: cCount };
+  }, [classifiedMedsMap]);
+
   const sortedMeds = useMemo(() => {
     let result = [...medications];
     
@@ -212,6 +312,36 @@ export default function AdminInventory() {
       result = result.filter(m => !!m.isRefrigerated);
     }
 
+    // ABC Class Filter
+    if (abcClassFilter) {
+      result = result.filter(m => {
+        const info = classifiedMedsMap.get(m.id);
+        return info?.classification === abcClassFilter;
+      });
+    }
+
+    // Expensive Cost Filter (Average Cost Below or Above)
+    if (expensiveCostFilter) {
+      const threshold = parseFloat(expensiveCostFilter);
+      if (!isNaN(threshold)) {
+        result = result.filter(m => {
+          const cost = m.averageCost || 0;
+          return expensiveCostOperator === 'below' ? cost < threshold : cost >= threshold;
+        });
+      }
+    }
+
+    // Expensive Value Filter (Total Value Below or Above)
+    if (expensiveValueFilter) {
+      const threshold = parseFloat(expensiveValueFilter);
+      if (!isNaN(threshold)) {
+        result = result.filter(m => {
+          const val = m.totalValue || 0;
+          return expensiveValueOperator === 'below' ? val < threshold : val >= threshold;
+        });
+      }
+    }
+
     if (expStart || expEnd) {
       const start = expStart ? new Date(expStart) : null;
       const end = expEnd ? new Date(expEnd) : null;
@@ -256,7 +386,7 @@ export default function AdminInventory() {
       
       return a[sortField].localeCompare(b[sortField]) * multiplier;
     });
-  }, [medications, searchQuery, sortField, sortOrder, expStart, expEnd, physicalCounts, stockFilter, classificationFilter, typeFilter, refFilter]);
+  }, [medications, searchQuery, sortField, sortOrder, expStart, expEnd, physicalCounts, stockFilter, classificationFilter, typeFilter, refFilter, abcClassFilter, expensiveCostFilter, expensiveCostOperator, expensiveValueFilter, expensiveValueOperator, classifiedMedsMap]);
 
   const filterCounts = useMemo(() => {
     const all = medications.length;
@@ -292,16 +422,37 @@ export default function AdminInventory() {
   };
 
   const downloadExcel = () => {
-    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
+    const reportDateTime = format(new Date(), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase();
+    const locationName = PHARMACY_NAMES[selectedLocation];
+
+    const filterParts: string[] = [];
+    if (abcClassFilter) {
+      const pct = abcClassFilter === 'A' ? 'Top 20%' : abcClassFilter === 'B' ? 'Next 30%' : 'Remaining 50%';
+      const count = abcCounts[abcClassFilter];
+      filterParts.push(`Class ${abcClassFilter} (${pct}) (${count})`);
+    }
+    if (stockFilter !== 'all') filterParts.push(`Stock: ${stockFilter.toUpperCase()}`);
+    if (classificationFilter) filterParts.push(`Classification: ${classificationFilter.toUpperCase()}`);
+    if (typeFilter) filterParts.push(`Type: ${typeFilter.toUpperCase()}`);
+    if (refFilter) filterParts.push('Refrigerated');
+    if (expensiveCostFilter) filterParts.push(`Cost ${expensiveCostOperator === 'below' ? '<' : '>='} ${expensiveCostFilter} QAR`);
+    if (expensiveValueFilter) filterParts.push(`Value ${expensiveValueOperator === 'below' ? '<' : '>='} ${expensiveValueFilter} QAR`);
+    if (searchQuery) filterParts.push(`Search: "${searchQuery}"`);
+    const activeFiltersStr = filterParts.length > 0 ? filterParts.join(', ') : 'None';
+
     const aoa: any[][] = [
-      ['LAST UPDATE:', displayDate],
-      [],
-      ['Item Code', 'Item Name', 'Current QOH', 'Min', 'Max', 'Physical Count', 'Variance', 'Last Updated']
+      ['Inventory Audit Report'],
+      [`Report Date and Time: ${reportDateTime}`],
+      [`Pharmacy Location: ${locationName}`],
+      [`Filter: ${activeFiltersStr}`],
+      [], // Empty separation row
+      ['Item Code', 'Item Name', 'Current QOH', 'Min', 'Max', 'Physical Count', 'Variance', 'Exp1', 'Exp2', 'Exp3', 'Average Cost', 'Total Value', 'ABC Class', 'Final Score', 'Last Updated']
     ];
 
     sortedMeds.forEach(m => {
       const physical = physicalCounts[m.id] ?? m.qoh;
       const variance = physical - m.qoh;
+      const classInfo = classifiedMedsMap.get(m.id);
       aoa.push([
         m.itemCode,
         m.itemName,
@@ -310,6 +461,13 @@ export default function AdminInventory() {
         m.maxQty || 0,
         physical,
         variance,
+        m.expiration1 || '-',
+        m.expiration2 || '-',
+        m.expiration3 || '-',
+        m.averageCost || 0,
+        m.totalValue || 0,
+        classInfo ? `Class ${classInfo.classification}` : '-',
+        classInfo ? parseFloat(classInfo.finalScore.toFixed(1)) : 0,
         formatSafeDate(m.lastUpdatedAt, 'yyyy-MM-dd HH:mm', '-')
       ]);
     });
@@ -326,22 +484,40 @@ export default function AdminInventory() {
     if (physical === undefined) return;
     
     const variance = physical - med.qoh;
-    if (confirm(`Adjust QOH for ${med.itemName}? Variance: ${variance > 0 ? '+' : ''}${formatNumber(variance)}`)) {
-      await auditOps.reconcille(med.id, physical, selectedLocation, med.itemCode, med.itemName, med.qoh);
-      setPhysicalCounts(prev => {
-         const next = { ...prev };
-         delete next[med.id];
-         return next;
-      });
-    }
+    const nowStr = format(new Date(), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase();
+    
+    setAdjustmentConfirm({
+      med,
+      physicalCount: physical,
+      variance,
+      timestampStr: nowStr
+    });
   };
 
   const downloadCSV = () => {
-    const displayDate = formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'NO DATA').toUpperCase();
-    const headers = ['Item Code', 'Item Name', 'Current QOH', 'Min', 'Max', 'Physical Count', 'Variance', 'Last Updated'];
+    const reportDateTime = format(new Date(), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase();
+    const locationName = PHARMACY_NAMES[selectedLocation];
+
+    const filterParts: string[] = [];
+    if (abcClassFilter) {
+      const pct = abcClassFilter === 'A' ? 'Top 20%' : abcClassFilter === 'B' ? 'Next 30%' : 'Remaining 50%';
+      const count = abcCounts[abcClassFilter];
+      filterParts.push(`Class ${abcClassFilter} (${pct}) (${count})`);
+    }
+    if (stockFilter !== 'all') filterParts.push(`Stock: ${stockFilter.toUpperCase()}`);
+    if (classificationFilter) filterParts.push(`Classification: ${classificationFilter.toUpperCase()}`);
+    if (typeFilter) filterParts.push(`Type: ${typeFilter.toUpperCase()}`);
+    if (refFilter) filterParts.push('Refrigerated');
+    if (expensiveCostFilter) filterParts.push(`Cost ${expensiveCostOperator === 'below' ? '<' : '>='} ${expensiveCostFilter} QAR`);
+    if (expensiveValueFilter) filterParts.push(`Value ${expensiveValueOperator === 'below' ? '<' : '>='} ${expensiveValueFilter} QAR`);
+    if (searchQuery) filterParts.push(`Search: "${searchQuery}"`);
+    const activeFiltersStr = filterParts.length > 0 ? filterParts.join(', ') : 'None';
+
+    const headers = ['Item Code', 'Item Name', 'Current QOH', 'Min', 'Max', 'Physical Count', 'Variance', 'Exp1', 'Exp2', 'Exp3', 'Average Cost', 'Total Value', 'ABC Class', 'Final Score', 'Last Updated'];
     const rows = sortedMeds.map(m => {
       const physical = physicalCounts[m.id] ?? m.qoh;
       const variance = physical - m.qoh;
+      const classInfo = classifiedMedsMap.get(m.id);
       return [
         m.itemCode,
         m.itemName,
@@ -350,16 +526,31 @@ export default function AdminInventory() {
         formatNumber(m.maxQty || 0),
         formatNumber(physical),
         formatNumber(variance),
+        m.expiration1 || '-',
+        m.expiration2 || '-',
+        m.expiration3 || '-',
+        formatNumber(m.averageCost || 0),
+        formatNumber(m.totalValue || 0),
+        classInfo ? `Class ${classInfo.classification}` : '-',
+        classInfo ? classInfo.finalScore.toFixed(1) : '0',
         formatSafeDate(m.lastUpdatedAt, 'yyyy-MM-dd HH:mm', '-')
       ];
     });
 
+    const headerLines = [
+      `"Inventory Audit Report"`,
+      `"Report Date and Time: ${reportDateTime}"`,
+      `"Pharmacy Location: ${locationName}"`,
+      `"Filter: ${activeFiltersStr}"`,
+      ""
+    ];
+
     const csvContent = [
-      `"LAST UPDATE: ${displayDate}"`,
-      "",
+      ...headerLines,
       headers.join(","),
       ...rows.map(r => r.map(field => `"${String(field).replace(/"/g, '""')}"`).join(","))
     ].join("\n");
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
@@ -371,32 +562,164 @@ export default function AdminInventory() {
     document.body.removeChild(link);
   };
 
+  const downloadPDF = () => {
+    const reportDateTime = format(new Date(), 'EEEE, dd-MM-yyyy hh:mm a').toUpperCase();
+    const locationName = PHARMACY_NAMES[selectedLocation];
+
+    const filterParts: string[] = [];
+    if (abcClassFilter) {
+      const pct = abcClassFilter === 'A' ? 'Top 20%' : abcClassFilter === 'B' ? 'Next 30%' : 'Remaining 50%';
+      const count = abcCounts[abcClassFilter];
+      filterParts.push(`Class ${abcClassFilter} (${pct}) (${count})`);
+    }
+    if (stockFilter !== 'all') filterParts.push(`Stock: ${stockFilter.toUpperCase()}`);
+    if (classificationFilter) filterParts.push(`Classification: ${classificationFilter.toUpperCase()}`);
+    if (typeFilter) filterParts.push(`Type: ${typeFilter.toUpperCase()}`);
+    if (refFilter) filterParts.push('Refrigerated');
+    if (expensiveCostFilter) filterParts.push(`Cost ${expensiveCostOperator === 'below' ? '<' : '>='} ${expensiveCostFilter} QAR`);
+    if (expensiveValueFilter) filterParts.push(`Value ${expensiveValueOperator === 'below' ? '<' : '>='} ${expensiveValueFilter} QAR`);
+    if (searchQuery) filterParts.push(`Search: "${searchQuery}"`);
+    const activeFiltersStr = filterParts.length > 0 ? filterParts.join(', ') : 'None';
+
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    // Drawing titles and header fields
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(242, 125, 38); // Brand #F27D26
+    doc.text("Inventory Audit Report", 14, 15);
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(20, 20, 20);
+
+    doc.text("Report Date and Time:", 14, 22);
+    doc.setFont("Helvetica", "normal");
+    doc.text(reportDateTime, 55, 22);
+
+    doc.setFont("Helvetica", "bold");
+    doc.text("Pharmacy Location:", 14, 28);
+    doc.setFont("Helvetica", "normal");
+    doc.text(locationName, 55, 28);
+
+    doc.setFont("Helvetica", "bold");
+    doc.text("Filter:", 14, 34);
+    doc.setFont("Helvetica", "normal");
+    doc.text(activeFiltersStr, 55, 34);
+
+    const headers = [
+      'Item Code', 
+      'Item Name', 
+      'Current QOH', 
+      'Min', 
+      'Max', 
+      'Physical Count', 
+      'Variance', 
+      'Exp1', 
+      'Exp2', 
+      'Exp3', 
+      'Average Cost', 
+      'Total Value', 
+      'ABC Class', 
+      'Final Score', 
+      'Last Updated'
+    ];
+
+    const body = sortedMeds.map(m => {
+      const physical = physicalCounts[m.id] ?? m.qoh;
+      const variance = physical - m.qoh;
+      const classInfo = classifiedMedsMap.get(m.id);
+      return [
+        m.itemCode,
+        m.itemName,
+        m.qoh.toString(),
+        (m.minQty || 0).toString(),
+        (m.maxQty || 0).toString(),
+        physical.toString(),
+        (variance > 0 ? `+${variance}` : variance.toString()),
+        m.expiration1 || '-',
+        m.expiration2 || '-',
+        m.expiration3 || '-',
+        formatNumber(m.averageCost || 0),
+        formatNumber(m.totalValue || 0),
+        classInfo ? `Class ${classInfo.classification}` : '-',
+        classInfo ? classInfo.finalScore.toFixed(1) : '0',
+        formatSafeDate(m.lastUpdatedAt, 'yyyy-MM-dd HH:mm', '-')
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 40,
+      head: [headers],
+      body: body,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [242, 125, 38], // Brand #F27D26 color
+        textColor: [255, 255, 255],
+        fontSize: 7,
+        fontStyle: 'bold'
+      },
+      bodyStyles: {
+        fontSize: 7,
+        textColor: [40, 40, 40]
+      },
+      columnStyles: {
+        0: { cellWidth: 'wrap' }, // Item Code
+        1: { cellWidth: 'auto' }, // Item Name
+        2: { cellWidth: 15, halign: 'center' }, // Current QOH
+        3: { cellWidth: 10, halign: 'center' }, // Min
+        4: { cellWidth: 10, halign: 'center' }, // Max
+        5: { cellWidth: 15, halign: 'center' }, // Physical Count
+        6: { cellWidth: 15, halign: 'center' }, // Variance
+        7: { cellWidth: 16 }, // Exp1
+        8: { cellWidth: 16 }, // Exp2
+        9: { cellWidth: 16 }, // Exp3
+        10: { cellWidth: 16, halign: 'right' }, // Average Cost
+        11: { cellWidth: 16, halign: 'right' }, // Total Value
+        12: { cellWidth: 15, halign: 'center' }, // ABC Class
+        13: { cellWidth: 15, halign: 'center' }, // Final Score
+        14: { cellWidth: 22 } // Last Updated
+      },
+      styles: {
+        font: "Helvetica",
+        cellPadding: 1,
+        overflow: 'linebreak'
+      }
+    });
+
+    doc.save(`Inventory_Audit_${selectedLocation}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+  };
+
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
         <div>
-          <div className="flex items-center gap-3 mb-1">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-1">
             <h1 className="text-3xl font-bold tracking-tight">Inventory Audit</h1>
-            <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10">
-              <UploadCloud className="w-3 h-3" />
-              <span className="opacity-60 text-[#141414]">Last Update:</span>
-              <span className="text-[#F27D26]">
+            <div className="flex items-center gap-2 px-3 py-1 bg-[#F27D26]/5 rounded-full text-[10px] font-bold text-[#F27D26] uppercase tracking-widest border border-[#F27D26]/10 w-fit">
+              <UploadCloud className="w-3.5 h-3.5 shrink-0" />
+              <span className="opacity-60 text-[#141414] whitespace-nowrap">Last Update:</span>
+              <span className="text-[#F27D26] whitespace-nowrap">
                 {formatSafeDate(lastUpdate, 'EEEE, dd-MM-yyyy hh:mm a', 'No Data').toUpperCase()}
               </span>
             </div>
           </div>
-          <p className="text-[#141414]/50">Perform physical stock verification and reconcile variances.</p>
+          <p className="text-[#141414]/50 text-sm">Perform physical stock verification and reconcile variances.</p>
         </div>
         
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full lg:w-auto">
             <button
               onClick={() => {
                 setTypeFilter(prev => prev === 'generic' ? null : 'generic');
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs ${
                 typeFilter === 'generic' 
                   ? 'bg-yellow-400 text-white shadow-lg ring-2 ring-yellow-400/20' 
-                  : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100 shadow-sm'
+                  : 'bg-yellow-50 text-yellow-700 border border-yellow-100 hover:bg-yellow-100'
               }`}
             >
               <Sparkles className="w-4 h-4" />
@@ -406,19 +729,19 @@ export default function AdminInventory() {
               onClick={() => {
                 setTypeFilter(prev => prev === 'brand' ? null : 'brand');
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-xs ${
                 typeFilter === 'brand' 
                   ? 'bg-orange-400 text-white shadow-lg ring-2 ring-orange-400/20' 
-                  : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100 shadow-sm'
+                  : 'bg-orange-50 text-orange-700 border border-orange-100 hover:bg-orange-100'
               }`}
             >
               <Sparkles className="w-4 h-4" />
               Available Brands ({availableBrandsCount})
             </button>
-          <div className="flex bg-[#141414] rounded-xl p-1 shadow-lg shadow-black/20 overflow-hidden shrink-0">
+          <div className="flex flex-wrap sm:flex-nowrap bg-[#141414] rounded-xl p-1 shadow-lg shadow-black/20 overflow-hidden shrink-0 items-center justify-center">
             <button 
               onClick={downloadCSV}
-              className="flex items-center gap-2 px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold border-r border-white/5"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold border-r border-white/5 whitespace-nowrap"
               title="Download CSV"
             >
               <Download className="w-4 h-4" />
@@ -426,19 +749,19 @@ export default function AdminInventory() {
             </button>
             <button 
               onClick={downloadExcel}
-              className="flex items-center gap-2 px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold border-r border-white/5"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold border-r border-white/5 whitespace-nowrap"
               title="Download Excel"
             >
               <FileSpreadsheet className="w-4 h-4 text-[#F27D26]" />
               Excel
             </button>
             <button 
-              onClick={() => setShowBrandGenericReport(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-400 to-amber-500 hover:from-orange-500 hover:to-amber-600 rounded-lg transition-all text-white text-xs font-extrabold uppercase tracking-widest px-3"
-              title="Brand vs Generic Report"
+              onClick={downloadPDF}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 text-white hover:bg-white/10 rounded-lg transition-all text-xs font-bold whitespace-nowrap"
+              title="Download PDF"
             >
-              <ClipboardList className="w-4 h-4" />
-              Brand vs Generic
+              <FileText className="w-4 h-4 text-red-400" />
+              PDF
             </button>
           </div>
         </div>
@@ -519,7 +842,7 @@ export default function AdminInventory() {
           <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd
+              showFilters || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd || abcClassFilter !== null || expensiveCostFilter !== '' || expensiveValueFilter !== ''
               ? 'bg-[#141414] text-white shadow-lg'
               : 'bg-[#141414]/5 text-[#141414]/60 hover:bg-[#141414]/10'
             }`}
@@ -529,7 +852,7 @@ export default function AdminInventory() {
           </button>
         </div>
 
-        {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd) && (
+        {(stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd || abcClassFilter !== null || expensiveCostFilter !== '' || expensiveValueFilter !== '') && (
           <div className="flex flex-wrap items-center gap-2 p-3 bg-[#141414]/[0.02] rounded-xl border border-[#141414]/5 animate-in slide-in-from-top-2">
             <span className="text-[9px] font-bold uppercase tracking-widest text-[#141414]/40 flex items-center gap-1">
               Active Filters:
@@ -560,8 +883,33 @@ export default function AdminInventory() {
                 Exp Range: {expStart || '*'} to {expEnd || '*'}
               </span>
             )}
+            {abcClassFilter !== null && (
+              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md text-[9px] font-black shadow-sm border border-indigo-100 uppercase tracking-wider">
+                ABC: Class {abcClassFilter}
+              </span>
+            )}
+            {expensiveCostFilter !== '' && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Cost {expensiveCostOperator === 'below' ? '<' : '>='} {expensiveCostFilter} QAR
+              </span>
+            )}
+            {expensiveValueFilter !== '' && (
+              <span className="px-2 py-0.5 bg-white text-[#141414] rounded-md text-[9px] font-bold shadow-sm border border-[#141414]/5">
+                Value {expensiveValueOperator === 'below' ? '<' : '>='} {expensiveValueFilter} QAR
+              </span>
+            )}
             <button 
-              onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter(false); setExpStart(''); setExpEnd(''); }}
+              onClick={() => { 
+                setStockFilter('all'); 
+                setClassificationFilter(null); 
+                setTypeFilter(null); 
+                setRefFilter(false); 
+                setExpStart(''); 
+                setExpEnd(''); 
+                setAbcClassFilter(null);
+                setExpensiveCostFilter('');
+                setExpensiveValueFilter('');
+              }}
               className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
             >
               Clear All
@@ -682,6 +1030,119 @@ export default function AdminInventory() {
 
             </div>
 
+            {/* ABC Classification & Expensive Follow Up section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-[#141414]/5">
+              {/* ABC Class selection */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Weighted ABC Classification</span>
+                <p className="text-[10px] text-[#141414]/50 leading-tight">Score = 70% Total Value + 30% Avg Cost. Class thresholds based on percentile rank.</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: 'A', label: 'Class A (Top 20%)', color: 'bg-amber-500 border-amber-500 text-white hover:bg-amber-600' },
+                    { id: 'B', label: 'Class B (Next 30%)', color: 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700' },
+                    { id: 'C', label: 'Class C (Remaining 50%)', color: 'bg-slate-500 border-slate-500 text-white hover:bg-slate-600' },
+                  ].map(c => {
+                    const active = abcClassFilter === c.id;
+                    const count = abcCounts[c.id as 'A' | 'B' | 'C'];
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setAbcClassFilter(prev => prev === c.id ? null : c.id as any)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                          active 
+                            ? c.color 
+                            : 'bg-white text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/5'
+                        }`}
+                      >
+                        {c.label} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Expensive Expiry Follow Up Filter inputs */}
+              <div className="space-y-3">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Expensive Expiry Follow Up</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Cost threshold */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center ml-1">
+                      <label className="text-[10px] font-bold text-[#141414]/50 uppercase tracking-widest">Average Cost</label>
+                      <div className="flex items-center bg-[#141414]/5 p-0.5 rounded-lg border border-[#141414]/5">
+                        <button
+                          type="button"
+                          onClick={() => setExpensiveCostOperator('below')}
+                          className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase transition-all ${
+                            expensiveCostOperator === 'below' ? 'bg-[#141414] text-white' : 'text-[#141414]/60'
+                          }`}
+                        >
+                          Below
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpensiveCostOperator('above')}
+                          className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase transition-all ${
+                            expensiveCostOperator === 'above' ? 'bg-[#141414] text-white' : 'text-[#141414]/60'
+                          }`}
+                        >
+                          Above
+                        </button>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#141414]/40 uppercase">QAR</span>
+                      <input
+                        type="number"
+                        placeholder="e.g. 1000"
+                        value={expensiveCostFilter}
+                        onChange={(e) => setExpensiveCostFilter(e.target.value)}
+                        className="w-full pl-12 pr-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-xs focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Value threshold */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center ml-1">
+                      <label className="text-[10px] font-bold text-[#141414]/50 uppercase tracking-widest">Total Value</label>
+                      <div className="flex items-center bg-[#141414]/5 p-0.5 rounded-lg border border-[#141414]/5">
+                        <button
+                          type="button"
+                          onClick={() => setExpensiveValueOperator('below')}
+                          className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase transition-all ${
+                            expensiveValueOperator === 'below' ? 'bg-[#141414] text-white' : 'text-[#141414]/60'
+                          }`}
+                        >
+                          Below
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpensiveValueOperator('above')}
+                          className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase transition-all ${
+                            expensiveValueOperator === 'above' ? 'bg-[#141414] text-white' : 'text-[#141414]/60'
+                          }`}
+                        >
+                          Above
+                        </button>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[#141414]/40 uppercase">QAR</span>
+                      <input
+                        type="number"
+                        placeholder="e.g. 1000"
+                        value={expensiveValueFilter}
+                        onChange={(e) => setExpensiveValueFilter(e.target.value)}
+                        className="w-full pl-12 pr-4 py-2 bg-white border border-[#141414]/10 rounded-xl text-xs focus:ring-2 focus:ring-[#F27D26]/10 transition-all font-bold"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Date range selection */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-[#141414]/5">
               <div className="space-y-1.5">
@@ -785,6 +1246,21 @@ export default function AdminInventory() {
                     {sortField === 'minQty' && <ArrowUpDown className="w-3 h-3 text-[#141414]" />}
                   </div>
                 </th>
+                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">
+                  Exp 1
+                </th>
+                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">
+                  Exp 2
+                </th>
+                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">
+                  Exp 3
+                </th>
+                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">
+                  Average Cost
+                </th>
+                <th className="px-6 py-4 sticky top-0 bg-[#F9F9F9]">
+                  Total Value
+                </th>
                 <th 
                   className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
                   onClick={() => toggleSort('physical')}
@@ -809,7 +1285,7 @@ export default function AdminInventory() {
             <tbody className="divide-y divide-[#141414]/5">
               {loading && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-20 text-center">
+                  <td colSpan={11} className="px-6 py-20 text-center">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#141414]/20" />
                   </td>
                 </tr>
@@ -823,7 +1299,22 @@ export default function AdminInventory() {
                   <tr key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className="hover:bg-[#141414]/[0.01] transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-mono text-[#141414]/40 mb-0.5">{med.itemCode}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <span className="text-[10px] font-mono text-[#141414]/40">{med.itemCode}</span>
+                          {(() => {
+                            const info = classifiedMedsMap.get(med.id);
+                            if (!info) return null;
+                            const colors = 
+                              info.classification === 'A' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                              info.classification === 'B' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' :
+                              'bg-slate-100 text-slate-800 border-slate-200';
+                            return (
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-black border uppercase tracking-widest ${colors}`}>
+                                Class {info.classification} ({info.finalScore.toFixed(1)} pts)
+                              </span>
+                            );
+                          })()}
+                        </div>
                         <button 
                           onClick={() => startEdit(med)}
                           className="text-sm font-bold text-[#141414] hover:text-[#F27D26] transition-colors text-left"
@@ -872,6 +1363,21 @@ export default function AdminInventory() {
                         <span>Max: <span className="text-[#141414]">{formatNumber(med.maxQty)}</span></span>
                       </div>
                     </td>
+                    <td className="px-6 py-4 text-xs font-semibold text-[#141414]/80 whitespace-nowrap">
+                      {formatExpirationDate(med.expiration1) || '-'}
+                    </td>
+                    <td className="px-6 py-4 text-xs font-semibold text-[#141414]/60 whitespace-nowrap">
+                      {formatExpirationDate(med.expiration2) || '-'}
+                    </td>
+                    <td className="px-6 py-4 text-xs font-semibold text-[#141414]/60 whitespace-nowrap">
+                      {formatExpirationDate(med.expiration3) || '-'}
+                    </td>
+                    <td className="px-6 py-4 text-xs font-semibold text-[#141414]/80 whitespace-nowrap">
+                      {formatCurrency(med.averageCost)}
+                    </td>
+                    <td className="px-6 py-4 text-xs font-semibold text-[#141414]/80 whitespace-nowrap">
+                      {formatCurrency(med.totalValue)}
+                    </td>
                     <td className="px-6 py-4">
                       <input
                         type="number"
@@ -901,18 +1407,35 @@ export default function AdminInventory() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => handleAdjust(med)}
-                        disabled={!hasVariance}
-                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                          hasVariance 
-                            ? 'bg-[#141414] text-white hover:scale-105 active:scale-95 shadow-lg shadow-black/10' 
-                            : 'bg-[#141414]/5 text-[#141414]/20 cursor-not-allowed'
-                        }`}
-                      >
-                        <Save className="w-3 h-3" />
-                        Reconcile
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {hasVariance && (
+                          <button
+                            onClick={() => {
+                              setPhysicalCounts(prev => {
+                                const next = { ...prev };
+                                delete next[med.id];
+                                return next;
+                              });
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 transition-all border border-red-100"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            Cancel
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleAdjust(med)}
+                          disabled={!hasVariance}
+                          className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                            hasVariance 
+                              ? 'bg-[#141414] text-white hover:scale-105 active:scale-95 shadow-lg shadow-black/10' 
+                              : 'bg-[#141414]/5 text-[#141414]/20 cursor-not-allowed'
+                          }`}
+                        >
+                          <Save className="w-3 h-3" />
+                          Reconcile
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -934,38 +1457,132 @@ export default function AdminInventory() {
             const hasVariance = variance !== 0;
 
             return (
-              <div key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className="p-4 space-y-4">
-                <div className="flex justify-between items-start">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest">{med.itemCode}</span>
-                    <h3 className="font-bold text-[#141414] leading-tight">{med.itemName}</h3>
-                    {med.isRefrigerated && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[8px] font-black uppercase tracking-tighter">
-                        <ThermometerSnowflake size={8} />
-                        Refrigerated
-                      </span>
-                    )}
-                    {med.generic && (
-                      <p className="text-[10px] italic text-[#141414]/40 leading-none">{med.generic}</p>
-                    )}
-                    <div className="flex flex-wrap gap-1 mt-1.5 mb-1 bg-[#141414]/[0.02] p-1.5 rounded-lg border border-[#141414]/5" onClick={(e) => e.stopPropagation()}>
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 self-center">Other locations:</span>
-                      {getOtherLocationsAvailability(med.itemCode, selectedLocation, true)}
-                    </div>
+              <div 
+                key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} 
+                className="p-5 space-y-4 hover:bg-[#141414]/[0.01] transition-colors"
+              >
+                {/* 1. Item Header - Code, Badges, Stock Status */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-mono font-bold text-[#141414]/50 tracking-wider bg-[#141414]/5 px-2 py-0.5 rounded-md">
+                      {med.itemCode}
+                    </span>
+                    {(() => {
+                      const info = classifiedMedsMap.get(med.id);
+                      if (!info) return null;
+                      const colors = 
+                        info.classification === 'A' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                        info.classification === 'B' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' :
+                        'bg-slate-100 text-slate-800 border-slate-200';
+                      return (
+                        <span className={`px-2 py-0.5 rounded text-[8px] font-black border uppercase tracking-wider ${colors}`}>
+                          Class {info.classification}
+                        </span>
+                      );
+                    })()}
                   </div>
-                  <div className="text-right flex flex-col items-end gap-1">
-                    <span className="text-sm font-black bg-[#141414]/5 px-2 py-1 rounded">{formatNumber(med.qoh)}</span>
-                    <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${
-                      med.qoh <= 0 ? 'bg-red-100 text-red-600' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                      med.qoh <= 0 
+                        ? 'bg-red-100 text-red-600 border border-red-200' 
+                        : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) 
+                          ? 'bg-amber-100 text-amber-600 border border-amber-200' 
+                          : 'bg-emerald-100 text-emerald-600 border border-emerald-200'
                     }`}>
-                      {med.qoh <= 0 ? 'Out' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'Low' : 'OK'}
+                      {med.qoh <= 0 ? 'Out of Stock' : (med.maxQty > 0 && med.qoh < med.maxQty * 0.3) ? 'Low Stock' : 'In Stock'}
                     </span>
                   </div>
                 </div>
 
+                {/* 2. Medication Name & Basic Details */}
+                <div className="space-y-1">
+                  <h3 className="font-bold text-base text-[#141414] leading-tight">
+                    <button 
+                      onClick={() => startEdit(med)}
+                      className="hover:text-[#F27D26] transition-colors text-left font-black"
+                    >
+                      {med.itemName}
+                    </button>
+                  </h3>
+                  {med.generic && (
+                    <p className="text-xs italic text-[#141414]/40 leading-normal">{med.generic}</p>
+                  )}
+                  
+                  {med.isRefrigerated && (
+                    <div className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[8px] font-black uppercase tracking-wider border border-blue-200 shadow-xs mt-1">
+                      <ThermometerSnowflake size={10} className="text-blue-500 animate-pulse" />
+                      REFRIGERATED
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Availability in Other Locations */}
+                <div 
+                  className="flex flex-col gap-1 bg-[#141414]/[0.01] p-2 rounded-xl border border-[#141414]/5 text-[10px]" 
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40">
+                    Other locations availability:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {getOtherLocationsAvailability(med.itemCode, selectedLocation, true)}
+                  </div>
+                </div>
+
+                {/* 4. Inventory Parameters & Financial Info */}
                 <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#141414]/[0.01] p-3 rounded-xl border border-[#141414]/5 space-y-2">
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 block mb-0.5">System Inventory</span>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-lg font-black text-[#141414]">{formatNumber(med.qoh)}</span>
+                        <span className="text-[10px] text-[#141414]/40 uppercase font-bold">QOH</span>
+                      </div>
+                    </div>
+                    <div className="border-t border-[#141414]/5 pt-2 flex justify-between text-[10px] font-bold text-[#141414]/50">
+                      <span>Min: <span className="text-[#141414]">{formatNumber(med.minQty)}</span></span>
+                      <span>Max: <span className="text-[#141414]">{formatNumber(med.maxQty)}</span></span>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#141414]/[0.01] p-3 rounded-xl border border-[#141414]/5 space-y-2">
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 block mb-0.5">Average Cost</span>
+                      <span className="text-sm font-extrabold text-[#141414]/80">{formatCurrency(med.averageCost)}</span>
+                    </div>
+                    <div className="border-t border-[#141414]/5 pt-2">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 block mb-0.5">Total Value</span>
+                      <span className="text-sm font-extrabold text-[#141414]">{formatCurrency(med.totalValue)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Expiration Dates */}
+                <div className="bg-[#141414]/[0.01] p-3 rounded-xl border border-[#141414]/5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#141414]/40 block mb-1.5">Batch Expiration Dates</span>
+                  <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
+                    <div className="bg-white p-1.5 rounded-lg border border-[#141414]/5">
+                      <span className="text-[8px] text-[#141414]/40 block mb-0.5 uppercase tracking-wider">Batch 1</span>
+                      <span className="text-[#141414] font-bold">{formatExpirationDate(med.expiration1) || '-'}</span>
+                    </div>
+                    <div className="bg-white p-1.5 rounded-lg border border-[#141414]/5">
+                      <span className="text-[8px] text-[#141414]/40 block mb-0.5 uppercase tracking-wider">Batch 2</span>
+                      <span className="text-[#141414]/70 font-bold">{formatExpirationDate(med.expiration2) || '-'}</span>
+                    </div>
+                    <div className="bg-white p-1.5 rounded-lg border border-[#141414]/5">
+                      <span className="text-[8px] text-[#141414]/40 block mb-0.5 uppercase tracking-wider">Batch 3</span>
+                      <span className="text-[#141414]/70 font-bold">{formatExpirationDate(med.expiration3) || '-'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. Physical Count Input and Variance Tracking */}
+                <div className="grid grid-cols-2 gap-3 pt-1">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block ml-1">Physical Count</label>
+                    <label className="text-[10px] font-bold text-[#141414]/50 uppercase tracking-widest block ml-1">
+                      Physical Count
+                    </label>
                     <input
                       type="number"
                       step="any"
@@ -973,37 +1590,66 @@ export default function AdminInventory() {
                       value={physicalCounts[med.id] ?? ''}
                       placeholder={formatNumber(med.qoh)}
                       onChange={(e) => handlePhysicalCountChange(med.id, e.target.value)}
-                      className={`w-full px-4 py-3 bg-[#141414]/5 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#F27D26]/20 transition-all ${
-                        hasVariance ? 'ring-2 ring-orange-200 bg-orange-50/50' : ''
+                      className={`w-full px-4 py-2.5 bg-white border border-[#141414]/15 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#F27D26]/20 transition-all ${
+                        hasVariance ? 'border-orange-200 bg-orange-50/50 text-[#141414]' : 'focus:border-[#141414]'
                       }`}
                     />
                   </div>
+
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-widest block ml-1">Variance</label>
-                    <div className={`h-[44px] flex items-center justify-center px-4 rounded-xl text-sm font-black border ${
+                    <label className="text-[10px] font-bold text-[#141414]/50 uppercase tracking-widest block ml-1">
+                      Variance
+                    </label>
+                    <div className={`h-[42px] flex items-center justify-center px-4 rounded-xl text-sm font-black border transition-all ${
                       hasVariance 
-                        ? variance > 0 ? 'bg-blue-50 border-blue-100 text-blue-600' : 'bg-red-50 border-red-100 text-red-600'
-                        : 'bg-[#141414]/5 border-transparent text-[#141414]/20'
+                        ? variance > 0 
+                          ? 'bg-blue-50 border-blue-100 text-blue-600 shadow-xs' 
+                          : 'bg-red-50 border-red-100 text-red-600 shadow-xs'
+                        : 'bg-emerald-50 border-emerald-100 text-emerald-600'
                     }`}>
                       {hasVariance ? (
                         <>
-                          <ArrowUpRight className={`w-3 h-3 mr-1 ${variance < 0 ? 'rotate-180' : ''}`} />
+                          <ArrowUpRight className={`w-3.5 h-3.5 mr-1 shrink-0 ${variance < 0 ? 'rotate-180' : ''}`} />
                           {variance > 0 ? '+' : ''}{formatNumber(variance)}
                         </>
-                      ) : '0'}
+                      ) : (
+                        <div className="flex items-center gap-1 text-[10px]">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>MATCH</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
+                {/* 7. Quick Reconcile / Cancel Action Bar */}
                 {hasVariance && (
-                  <button
-                    onClick={() => handleAdjust(med)}
-                    className="w-full py-4 bg-[#141414] text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-[#F27D26] shadow-xl transition-all flex items-center justify-center gap-2"
-                  >
-                    <Save className="w-4 h-4" />
-                    Reconcile Variance
-                  </button>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        setPhysicalCounts(prev => {
+                          const next = { ...prev };
+                          delete next[med.id];
+                          return next;
+                        });
+                      }}
+                      className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-500 rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 border border-red-100 active:scale-95"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleAdjust(med)}
+                      className="flex-[2] py-3 bg-[#141414] hover:bg-[#F27D26] text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      Reconcile Variance
+                    </button>
+                  </div>
                 )}
+                <div className="text-[9px] text-[#141414]/30 uppercase italic text-right pt-1">
+                  Last Updated: {formatSafeDate(med.lastUpdatedAt, 'dd MMM, HH:mm', '-')}
+                </div>
               </div>
             );
           })}
@@ -1077,6 +1723,102 @@ export default function AdminInventory() {
           >
             {success}
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Correction Confirmation Modal */}
+      <AnimatePresence>
+        {adjustmentConfirm && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[210] animate-in fade-in duration-200">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full border border-[#141414]/10 shadow-2xl space-y-6"
+            >
+              <div className="space-y-2 text-center">
+                <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <AlertTriangle className="w-6 h-6 animate-pulse" />
+                </div>
+                <h3 className="text-lg font-black text-[#141414] uppercase tracking-wider">Confirm Count Correction</h3>
+                <p className="text-xs text-[#141414]/50 leading-relaxed">
+                  You are about to adjust the physical stock level in the database. Please verify the numbers below.
+                </p>
+              </div>
+
+              <div className="bg-[#141414]/[0.02] border border-[#141414]/5 rounded-2xl p-4 space-y-4">
+                <div>
+                  <span className="text-[9px] font-mono text-[#141414]/40 uppercase block">Item Details</span>
+                  <span className="text-sm font-black text-[#141414] block leading-tight">{adjustmentConfirm.med.itemName}</span>
+                  <span className="text-xs font-mono text-[#141414]/40">{adjustmentConfirm.med.itemCode}</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t border-[#141414]/5">
+                  <div className="bg-white p-2 rounded-xl border border-[#141414]/5">
+                    <span className="text-[8px] font-bold text-[#141414]/40 uppercase block mb-1">System QOH</span>
+                    <span className="text-sm font-black text-[#141414]">{formatNumber(adjustmentConfirm.med.qoh)}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-xl border border-[#141414]/5">
+                    <span className="text-[8px] font-bold text-[#141414]/40 uppercase block mb-1">Physical</span>
+                    <span className="text-sm font-black text-[#F27D26]">{formatNumber(adjustmentConfirm.physicalCount)}</span>
+                  </div>
+                  <div className={`p-2 rounded-xl border ${
+                    adjustmentConfirm.variance > 0 
+                      ? 'bg-blue-50/50 border-blue-100 text-blue-700' 
+                      : adjustmentConfirm.variance < 0 
+                        ? 'bg-red-50/50 border-red-100 text-red-700' 
+                        : 'bg-white border-[#141414]/5 text-[#141414]/40'
+                  }`}>
+                    <span className="text-[8px] font-bold uppercase block mb-1">Variance</span>
+                    <span className="text-sm font-black">
+                      {adjustmentConfirm.variance > 0 ? '+' : ''}
+                      {formatNumber(adjustmentConfirm.variance)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#141414]/5">
+                  <span className="text-[8px] font-bold text-[#141414]/40 uppercase block">Correction Timestamp</span>
+                  <span className="text-xs font-mono font-black text-indigo-600 block mt-0.5">
+                    {adjustmentConfirm.timestampStr}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAdjustmentConfirm(null)}
+                  className="flex-1 py-3 text-xs font-bold bg-[#141414]/5 hover:bg-[#141414]/10 rounded-xl transition-all uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const { med, physicalCount, timestampStr } = adjustmentConfirm;
+                    setAdjustmentConfirm(null);
+                    try {
+                      await auditOps.reconcille(med.id, physicalCount, selectedLocation, med.itemCode, med.itemName, med.qoh, 'System', timestampStr);
+                      setPhysicalCounts(prev => {
+                        const next = { ...prev };
+                        delete next[med.id];
+                        return next;
+                      });
+                      await refresh();
+                      setSuccess('Inventory corrected successfully');
+                      setTimeout(() => setSuccess(null), 3500);
+                    } catch (err: any) {
+                      alert(err.message || 'Correction failed');
+                    }
+                  }}
+                  className="flex-1 py-3 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all uppercase tracking-wider shadow-lg shadow-emerald-600/10"
+                >
+                  Confirm & Correct
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

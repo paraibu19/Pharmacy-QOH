@@ -69,6 +69,7 @@ interface WorkloadRecord {
   reasons: string[];
   isMismatch: boolean;
   dismissedBrandVsGeneric?: boolean;
+  isExcludedByVariance?: boolean;
 }
 
 function formatActionDateTime(val: any): string {
@@ -140,6 +141,10 @@ const isNonQatariBrandMistake = (
   medicationsList: Medication[],
   locationMatcher: (loc1: string, loc2: string) => boolean
 ): { isMistake: boolean; details: string; targetGenericCode?: string; targetGenericName?: string } => {
+  if (rec.isExcludedByVariance) {
+    return { isMistake: false, details: '' };
+  }
+
   // 1. Check if patient is Non-Qatari
   const nationalityLower = (rec.nationality || '').toLowerCase().trim();
   
@@ -355,9 +360,50 @@ export default function AdminEntryMistakes() {
   // Fetch configured parameters database on load
   useEffect(() => {
     fetchDb();
+    fetchSavedStorageItems();
     
     let unsubscribe: (() => void) | undefined = undefined;
 
+    // Always set up SSE sync listener
+    const handleSyncUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail) {
+        if (customEvent.detail.type === 'application-storage') {
+          if (customEvent.detail.data) {
+            const data = customEvent.detail.data;
+            const loaded: any[] = data.map((d: any) => ({
+              id: d.id,
+              actionDateTime: d.actionDateTime || '',
+              mrnOrganization: d.mrnOrganization || '',
+              personNameFull: d.personNameFull || '',
+              sex: d.sex || '',
+              nationality: d.nationality || '',
+              pharmacyLocation: d.pharmacyLocation || '',
+              actionType: d.actionType || '',
+              itemNumber: d.itemNumber || '',
+              labelDescription: d.labelDescription || '',
+              dispenseQuantity: d.dispenseQuantity || '',
+              actionPersonnelPharmacy: d.actionPersonnelPharmacy || '',
+              reasons: d.reasons || [],
+              savedAt: d.savedAt || ''
+            }));
+            loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+            setSavedStorageItems(loaded);
+          } else {
+            fetchSavedStorageItems();
+          }
+        } else if (customEvent.detail.type === 'entry-mistakes') {
+          if (customEvent.detail.data) {
+            setDbState(customEvent.detail.data);
+          } else {
+            fetchDb();
+          }
+        }
+      }
+    };
+    window.addEventListener('sync-update', handleSyncUpdate);
+
+    // Also listen to Firestore client-side if available
     if (db) {
       try {
         const colRef = collection(db, 'application_storage');
@@ -382,62 +428,18 @@ export default function AdminEntryMistakes() {
               savedAt: data.savedAt || ''
             });
           });
-          // Sort items by savedAt descending
           loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
           setSavedStorageItems(loaded);
         }, (error) => {
           console.warn("Firestore onSnapshot error on application_storage mapping:", error);
-          fetchSavedStorageItems();
         });
       } catch (err) {
         console.warn("Firestore subscription failed in AdminEntryMistakes, fallback:", err);
-        fetchSavedStorageItems();
       }
-    } else {
-      fetchSavedStorageItems();
-      const handleSyncUpdate = (e: Event) => {
-        const customEvent = e as CustomEvent;
-        if (customEvent.detail) {
-          if (customEvent.detail.type === 'application-storage') {
-            if (customEvent.detail.data) {
-              const data = customEvent.detail.data;
-              const loaded: any[] = data.map((d: any) => ({
-                id: d.id,
-                actionDateTime: d.actionDateTime || '',
-                mrnOrganization: d.mrnOrganization || '',
-                personNameFull: d.personNameFull || '',
-                sex: d.sex || '',
-                nationality: d.nationality || '',
-                pharmacyLocation: d.pharmacyLocation || '',
-                actionType: d.actionType || '',
-                itemNumber: d.itemNumber || '',
-                labelDescription: d.labelDescription || '',
-                dispenseQuantity: d.dispenseQuantity || '',
-                actionPersonnelPharmacy: d.actionPersonnelPharmacy || '',
-                reasons: d.reasons || [],
-                savedAt: d.savedAt || ''
-              }));
-              loaded.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
-              setSavedStorageItems(loaded);
-            } else {
-              fetchSavedStorageItems();
-            }
-          } else if (customEvent.detail.type === 'entry-mistakes') {
-            if (customEvent.detail.data) {
-              setDbState(customEvent.detail.data);
-            } else {
-              fetchDb();
-            }
-          }
-        }
-      };
-      window.addEventListener('sync-update', handleSyncUpdate);
-      return () => {
-        window.removeEventListener('sync-update', handleSyncUpdate);
-      };
     }
 
     return () => {
+      window.removeEventListener('sync-update', handleSyncUpdate);
       if (unsubscribe) {
         unsubscribe();
       }
@@ -959,6 +961,124 @@ export default function AdminEntryMistakes() {
           throw new Error(`The worksheet "${targetSheetName}" is empty or has no readable tabular records.`);
         }
 
+        // Pre-calculate duplicate groups with variances to exclude them from the Mismatch Ledger report
+        const normalizeFieldValue = (val: any): string => {
+          if (val === undefined || val === null) return '';
+          let str = String(val).trim();
+          if (str.startsWith('+') && /^\+\d+/.test(str)) {
+            str = str.substring(1);
+          }
+          if (/^\d+\.0+$/.test(str)) {
+            str = str.split('.')[0];
+          }
+          return str.toLowerCase();
+        };
+
+        const getMatchValues34 = (row: any) => {
+          return [
+            formatActionDateTime(extractFuzzyValue(row, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime'])),
+            extractFuzzyValue(row, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order']),
+            extractFuzzyValue(row, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order']),
+            extractFuzzyValue(row, ['Encounter Type', 'EncounterType', 'Encounter_Type']),
+            formatActionDateTime(extractFuzzyValue(row, ['Order Date & Time - Physician', 'Order Date & Time', 'Order Date and Time - Physician', 'Order Date & Time -Physician', 'Order Date and Time'])),
+            extractFuzzyValue(row, ['Last Update Provider', 'LastUpdateProvider', 'Last_Update_Provider', 'Provider']),
+            extractFuzzyValue(row, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization']),
+            extractFuzzyValue(row, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']),
+            extractFuzzyValue(row, ['Sex', 'Gender', 'M/F']),
+            extractFuzzyValue(row, ['Nationality', 'Nation', 'Country']),
+            extractFuzzyValue(row, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years']),
+            extractFuzzyValue(row, ['Parent Order ID', 'Parent Order Id', 'Parent_Order_ID', 'ParentOrderID']),
+            extractFuzzyValue(row, ['Order Entry Mode', 'Order Entry Mode', 'OrderEntryMode', 'Order_Entry_Mode']),
+            extractFuzzyValue(row, ['Mnemonic Name', 'MnemonicName', 'Mnemonic']),
+            extractFuzzyValue(row, ['Ordered As Mnemonic', 'Ordered As Mnemonic', 'OrderedAsMnemonic', 'Ordered As']),
+            extractFuzzyValue(row, ['Order Display Line', 'Order Display Line', 'OrderDisplayLine']),
+            extractFuzzyValue(row, ['PRN']),
+            extractFuzzyValue(row, ['OCI']),
+            extractFuzzyValue(row, ['Order Comments', 'OrderComments', 'Comments']),
+            extractFuzzyValue(row, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician']),
+            extractFuzzyValue(row, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location']),
+            extractFuzzyValue(row, ['Action Type', 'Type', 'Action_Type']),
+            extractFuzzyValue(row, ['Child Order ID', 'Child Order Id', 'Child_Order_ID', 'ChildOrderID']),
+            extractFuzzyValue(row, ['Item Id', 'ItemId', 'Item_Id']),
+            extractFuzzyValue(row, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']),
+            extractFuzzyValue(row, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name']),
+            extractFuzzyValue(row, ['Pharmacy Display Line', 'Pharmacy Display Line', 'PharmacyDisplayLine']),
+            extractFuzzyValue(row, ['Pharmacy SIG', 'PharmacySIG', 'SIG']),
+            extractFuzzyValue(row, ['Pharmacy Expanded SIG', 'Pharmacy Expanded SIG', 'PharmacyExpandedSIG', 'Expanded SIG']),
+            extractFuzzyValue(row, ['Dispense Unit', 'DispenseUnit', 'Unit']),
+            extractFuzzyValue(row, ['Bill Quantity', 'BillQuantity', 'Bill Qty']),
+            extractFuzzyValue(row, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']),
+            extractFuzzyValue(row, ['Department Order Status', 'DepartmentOrderStatus']),
+            extractFuzzyValue(row, ['Order Status', 'OrderStatus'])
+          ].map(normalizeFieldValue);
+        };
+
+        const varianceKeys5 = [
+          "Dispense Date & Time",
+          "Dispense Event Type",
+          "Product Dispense HX ID",
+          "Dispense Quantity",
+          "Tracking Item Id"
+        ];
+
+        const getVarianceValue = (row: any, vKey: string) => {
+          let raw = '';
+          if (vKey === "Dispense Date & Time") {
+            raw = formatActionDateTime(extractFuzzyValue(row, ['Dispense Date & Time', 'Dispense Date and Time', 'Dispense Date', 'Dispense Date/Time']));
+          } else if (vKey === "Dispense Event Type") {
+            raw = extractFuzzyValue(row, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event']);
+          } else if (vKey === "Product Dispense HX ID") {
+            raw = extractFuzzyValue(row, ['Product Dispense HX ID', 'Product Dispense HX Id', 'ProductDispenseHXID', 'HX ID', 'HX_ID']);
+          } else if (vKey === "Dispense Quantity") {
+            raw = extractFuzzyValue(row, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
+          } else if (vKey === "Tracking Item Id") {
+            raw = extractFuzzyValue(row, ['Tracking Item Id', 'Tracking Item ID', 'TrackingItemId', 'Tracking_Item_ID']);
+          }
+          return normalizeFieldValue(raw);
+        };
+
+        // Group indices of rawJson by the 34 order/item-level fields
+        const groups: { [key: string]: { rawRow: any; index: number }[] } = {};
+        rawJson.forEach((rawRow, index) => {
+          const values34 = getMatchValues34(rawRow);
+          const groupKey = values34.join('|||');
+          if (!groups[groupKey]) {
+            groups[groupKey] = [];
+          }
+          groups[groupKey].push({ rawRow, index });
+        });
+
+        const excludedIndices = new Set<number>();
+        for (const key of Object.keys(groups)) {
+          const groupRows = groups[key];
+          if (groupRows.length >= 2) {
+            let hasVariance = false;
+            for (const vKey of varianceKeys5) {
+               const values = groupRows.map(gr => {
+                 const val = getVarianceValue(gr.rawRow, vKey);
+                 // If comparing dispense quantities, handle positive vs negative comparison
+                 if (vKey === "Dispense Quantity") {
+                   const rawStr = String(val).trim();
+                   // Normalize both "+2" and "2" to "2", but keep "-2" as "-2"
+                   const cleanStr = rawStr.startsWith('+') ? rawStr.substring(1) : rawStr;
+                   return cleanStr.toLowerCase();
+                 }
+                 return String(val || '').trim().toLowerCase();
+               });
+               const uniqueVals = new Set(values);
+               if (uniqueVals.size > 1) {
+                 hasVariance = true;
+                 break;
+               }
+            }
+            if (hasVariance) {
+              groupRows.forEach(gr => {
+                excludedIndices.add(gr.index);
+              });
+            }
+          }
+        }
+
         // Parse each row and run evaluations
         const evaluated: WorkloadRecord[] = [];
         let recordCounter = 0;
@@ -989,49 +1109,53 @@ export default function AdminEntryMistakes() {
 
           const reasons: string[] = [];
           
-          // Evaluation 1: Action Personnel - Pharmacy is not in Pharmacist List
-          // Compare with database stored pharmacist list
-          const normalizedPharmacist = actionPersonnelPharmacy.toLowerCase().trim();
-          const pharmacistConfig = dbState.pharmacists.find(p => p.name.toLowerCase().trim() === normalizedPharmacist);
-          
-          if (!pharmacistConfig && actionPersonnelPharmacy) {
-            reasons.push(`Action Personnel "${actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
-          }
+          const isExcludedByVariance = excludedIndices.has(recordCounter - 1);
 
-          // Fetch all DB parameter entries for this specific Item Number
-          const normalizedItemNum = itemNumber.toLowerCase().trim();
-          const matchedItemDbParameters = dbState.parameters.filter(p => p.itemNumber.toLowerCase().trim() === normalizedItemNum);
-
-          if (matchedItemDbParameters.length === 0) {
-            // Item does not exist in any database configurations at all
-            if (itemNumber) {
-              reasons.push(`Item Number ${itemNumber} is not registered in base Parameter sheet`);
-            }
-          } else {
-            // Item exists. Next, find if there is a configuration for the specific Pharmacy Location of this record (Condition 3)
-            const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, pharmacyLocation));
+          if (!isExcludedByVariance) {
+            // Evaluation 1: Action Personnel - Pharmacy is not in Pharmacist List
+            // Compare with database stored pharmacist list
+            const normalizedPharmacist = actionPersonnelPharmacy.toLowerCase().trim();
+            const pharmacistConfig = dbState.pharmacists.find(p => p.name.toLowerCase().trim() === normalizedPharmacist);
             
-            if (!locationConfigWord) {
-              if (pharmacyLocation) {
-                reasons.push(`Item ${itemNumber} is not configured to be dispensed from "${pharmacyLocation}" location`);
+            if (!pharmacistConfig && actionPersonnelPharmacy) {
+              reasons.push(`Action Personnel "${actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
+            }
+
+            // Fetch all DB parameter entries for this specific Item Number
+            const normalizedItemNum = itemNumber.toLowerCase().trim();
+            const matchedItemDbParameters = dbState.parameters.filter(p => p.itemNumber.toLowerCase().trim() === normalizedItemNum);
+
+            if (matchedItemDbParameters.length === 0) {
+              // Item does not exist in any database configurations at all
+              if (itemNumber) {
+                reasons.push(`Item Number ${itemNumber} is not registered in base Parameter sheet`);
               }
             } else {
-              // Item + Location matches! Let's check the dispensed quantity parameter list (Condition 1)
-              const allowedList = locationConfigWord.allowedQuantities;
-              const normalizedDispQty = dispenseQuantity.trim();
+              // Item exists. Next, find if there is a configuration for the specific Pharmacy Location of this record (Condition 3)
+              const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, pharmacyLocation));
               
-              // Try numerical match and string match
-              const dNum = Number(normalizedDispQty);
-              const isAllowed = allowedList.some(allowVal => {
-                const aNum = Number(allowVal);
-                if (!isNaN(dNum) && !isNaN(aNum)) {
-                  return dNum === aNum;
+              if (!locationConfigWord) {
+                if (pharmacyLocation) {
+                  reasons.push(`Item ${itemNumber} is not configured to be dispensed from "${pharmacyLocation}" location`);
                 }
-                return allowVal.toLowerCase().trim() === normalizedDispQty.toLowerCase();
-              });
+              } else {
+                // Item + Location matches! Let's check the dispensed quantity parameter list (Condition 1)
+                const allowedList = locationConfigWord.allowedQuantities;
+                const normalizedDispQty = dispenseQuantity.trim();
+                
+                // Try numerical match and string match
+                const dNum = Number(normalizedDispQty);
+                const isAllowed = allowedList.some(allowVal => {
+                  const aNum = Number(allowVal);
+                  if (!isNaN(dNum) && !isNaN(aNum)) {
+                    return dNum === aNum;
+                  }
+                  return allowVal.toLowerCase().trim() === normalizedDispQty.toLowerCase();
+                });
 
-              if (!isAllowed && normalizedDispQty !== '') {
-                reasons.push(`Dispense Qty "${dispenseQuantity}" is unmatched (Allowed: [${allowedList.join(', ')}])`);
+                if (!isAllowed && normalizedDispQty !== '') {
+                  reasons.push(`Dispense Qty "${dispenseQuantity}" is unmatched (Allowed: [${allowedList.join(', ')}])`);
+                }
               }
             }
           }
@@ -1050,7 +1174,8 @@ export default function AdminEntryMistakes() {
             dispenseQuantity,
             actionPersonnelPharmacy,
             reasons,
-            isMismatch: reasons.length > 0
+            isMismatch: reasons.length > 0,
+            isExcludedByVariance
           });
         }
 

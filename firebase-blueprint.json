@@ -16,7 +16,9 @@
         "lastUpdatedAt": { "type": "string", "format": "date-time", "description": "When the item was last modified" },
         "updatedBy": { "type": "string", "description": "UID of the admin who updated" },
         "imageUrl": { "type": "string", "description": "Base64 or URL of the medication photo" },
-        "isRefrigerated": { "type": "boolean", "description": "Whether item requires refrigeration (2-8C)" }
+        "isRefrigerated": { "type": "boolean", "description": "Whether item requires refrigeration (2-8C)" },
+        "averageCost": { "type": "number", "description": "Average unit cost of the item" },
+        "totalValue": { "type": "number", "description": "Total valuation of stock on hand" }
       },
       "required": ["itemCode", "itemName", "qoh", "locationId"]
     },

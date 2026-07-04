@@ -22,7 +22,8 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isInstallGuideOpen, setIsInstallGuideOpen] = useState(false);
   const [isLocalMode, setIsLocalMode] = useState(false);
-  const { lastUpdate } = useSystemMetadata();
+  const { lastUpdate, isCloudActive } = useSystemMetadata();
+  const showAsLocalMode = isLocalMode || !isCloudActive;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -37,8 +38,10 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
     if (typeof window !== 'undefined') {
       if (isLocalMode) {
         sessionStorage.removeItem('firestore_fallback');
+        sessionStorage.removeItem('manual_local_mode');
       } else {
         sessionStorage.setItem('firestore_fallback', 'true');
+        sessionStorage.setItem('manual_local_mode', 'true');
       }
       window.location.reload();
     }
@@ -217,15 +220,15 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             <button
               onClick={handleToggleDatabaseMode}
               className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
-                isLocalMode 
+                showAsLocalMode 
                   ? 'bg-amber-50/80 border-amber-200 text-amber-700 hover:bg-amber-100' 
                   : 'bg-emerald-50/80 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
               }`}
-              title={isLocalMode ? "Switch to Cloud Firestore" : "Switch to Local Offline-First Database"}
+              title={showAsLocalMode ? "Switch to Cloud Firestore" : "Switch to Local Offline-First Database"}
             >
               <div className="flex items-center gap-1.5">
-                {isLocalMode ? <CloudOff className="w-3.5 h-3.5 text-amber-600 shrink-0" /> : <Cloud className="w-3.5 h-3.5 text-emerald-600 animate-pulse shrink-0" />}
-                <span>{isLocalMode ? 'Local Dev DB' : 'Cloud DB'}</span>
+                {showAsLocalMode ? <CloudOff className="w-3.5 h-3.5 text-amber-600 shrink-0" /> : <Cloud className="w-3.5 h-3.5 text-emerald-600 animate-pulse shrink-0" />}
+                <span>{showAsLocalMode ? 'Local Dev DB' : 'Cloud DB'}</span>
               </div>
               <span className="text-[8px] px-1 py-0.5 rounded bg-white font-extrabold border uppercase tracking-wider leading-none shrink-0">Switch</span>
             </button>
@@ -384,14 +387,14 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                       <button
                         onClick={handleToggleDatabaseMode}
                         className={`w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border ${
-                          isLocalMode 
+                          showAsLocalMode 
                             ? 'bg-amber-50 border-amber-200 text-amber-700' 
                             : 'bg-emerald-50 border-emerald-200 text-emerald-700'
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          {isLocalMode ? <CloudOff className="w-4 h-4 text-amber-600" /> : <Cloud className="w-4 h-4 text-emerald-600 animate-pulse" />}
-                          <span className="font-extrabold">DB Mode: {isLocalMode ? 'Local Dev' : 'Cloud DB'}</span>
+                          {showAsLocalMode ? <CloudOff className="w-4 h-4 text-amber-600" /> : <Cloud className="w-4 h-4 text-emerald-600 animate-pulse" />}
+                          <span className="font-extrabold">DB Mode: {showAsLocalMode ? 'Local Dev' : 'Cloud DB'}</span>
                         </div>
                         <span className="text-[9px] px-2 py-0.5 rounded bg-white font-black border uppercase tracking-widest">Switch</span>
                       </button>

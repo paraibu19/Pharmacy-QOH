@@ -4,7 +4,7 @@ import {
   ClipboardPaste, ClipboardList, AlertCircle, Info, ArrowLeftRight, Loader2,
   AlertTriangle, Filter, Settings2, CalendarClock, History, RotateCcw, Search, Sparkles, RefreshCw,
   Camera, Image as ImageIcon, CheckCircle2, ThermometerSnowflake, UploadCloud, Cloud, ChevronRight, Calendar,
-  Smartphone, QrCode, Copy
+  Smartphone, QrCode, Copy, Coins
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -25,6 +25,7 @@ import { localDb } from '../lib/localStorageDb';
 import { storage } from '../lib/storage';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 import BrandGenericReportModal from '../components/BrandGenericReportModal';
+import OracleQohModal from '../components/OracleQohModal';
 
 import { db, auth } from '../lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
@@ -51,6 +52,24 @@ export default function AdminDashboard() {
 
     const { medications, loading, error: fetchError, refresh, lastSynced, isSyncing } = useMedications(selectedLocation);
     const { medications: allMedications, refresh: refreshAll, isSyncing: isSyncingAll } = useMedications();
+
+    const medicationsByItemCode = useMemo(() => {
+      const map = new Map<string, Medication[]>();
+      if (allMedications) {
+        for (let i = 0; i < allMedications.length; i++) {
+          const med = allMedications[i];
+          if (med.itemCode) {
+            let list = map.get(med.itemCode);
+            if (!list) {
+              list = [];
+              map.set(med.itemCode, list);
+            }
+            list.push(med);
+          }
+        }
+      }
+      return map;
+    }, [allMedications]);
     const { audits, loading: auditsLoading } = useAudits(10);
     const [searchQuery, setSearchQuery] = useState('');
   const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
@@ -65,9 +84,12 @@ export default function AdminDashboard() {
   const [sourcingReportType, setSourcingReportType] = useState<'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp'>('qoh');
   const [isAdding, setIsAdding] = useState(false);
   const [isBulkMode, setIsBulkMode] = useState(false);
+  const [showOracleQoh, setShowOracleQoh] = useState(false);
   const [importPhotoStrategy, setImportPhotoStrategy] = useState<'keep' | 'remove'>('keep');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [alertThreshold, setAlertThreshold] = useState<number>(90);
+  const [stockAlertThreshold, setStockAlertThreshold] = useState<number>(20);
+  const [showOnlyThresholdAlerts, setShowOnlyThresholdAlerts] = useState<boolean>(false);
   const [hasDraft, setHasDraft] = useState(false);
   const [expSearchQuery, setExpSearchQuery] = useState('');
   const [expSearchMonth, setExpSearchMonth] = useState('');
@@ -841,7 +863,7 @@ export default function AdminDashboard() {
       // --- SHEET 1: Medications ---
       const medHeaders = [
         'ID', 'Item Code', 'Item Name', 'Generic Name', 'Pharmacy Location ID', 'Pharmacy Location Name', 
-        'QOH', 'Min Qty', 'Max Qty', 'Consumption', 'Sourcing Transfer (To)', 'Is Refrigerated',
+        'QOH', 'Min Qty', 'Max Qty', 'Consumption', 'Average Cost', 'Total Value', 'Sourcing Transfer (To)', 'Is Refrigerated',
         'Expiration 1', 'Expiration 2', 'Expiration 3', 'Original Expiry 1', 'Original Expiry 2', 'Original Expiry 3',
         'Qatari Classification', 'Restricted Status', 
         'Indications (En)', 'Indications (Ar)', 'Indications (Hi)', 'Indications (Ur)', 'Indications (Ml)', 'Indications (Bn)', 'Indications (Tl)',
@@ -858,6 +880,8 @@ export default function AdminDashboard() {
         m.minQty || 0,
         m.maxQty || 0,
         m.consumption || 0,
+        m.averageCost !== undefined ? m.averageCost : 0,
+        m.totalValue !== undefined ? m.totalValue : 0,
         m.to || '-',
         m.isRefrigerated ? 'Yes' : 'No',
         formatExpirationDate(m.expiration1) || '-',
@@ -1026,7 +1050,8 @@ export default function AdminDashboard() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const getOtherLocationsAvailability = (itemCode: string, currentLocationId: PharmacyLocation, showQoh: boolean) => {
-    const matches = (allMedications || []).filter(m => m.itemCode === itemCode && m.locationId !== currentLocationId);
+    const list = medicationsByItemCode.get(itemCode) || [];
+    const matches = list.filter(m => m.locationId !== currentLocationId);
     const otherLocs = [PharmacyLocation.ADULT, PharmacyLocation.PEDIATRIC, PharmacyLocation.MESAIEED]
       .filter(loc => loc !== currentLocationId);
 
@@ -1401,7 +1426,8 @@ export default function AdminDashboard() {
   };
 
   const getSourcingLocationsText = (itemCode: string, orderVal: number, mode: 'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp' = 'qoh') => {
-    const matches = (allMedications || []).filter(om => om.itemCode === itemCode && om.locationId !== selectedLocation);
+    const list = medicationsByItemCode.get(itemCode) || [];
+    const matches = list.filter(om => om.locationId !== selectedLocation);
     
     if (mode === 'qoh') {
       const eligible = matches.filter(om => om.qoh > 0.5 * orderVal);
@@ -1690,7 +1716,8 @@ export default function AdminDashboard() {
           if (oQty <= 0) return false;
 
           // Check if other locations have qoh > 50% of this orderQty
-          const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+          const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+          const matches = list.filter(om => om.locationId !== selectedLocation);
           return matches.some(om => om.qoh > 0.5 * oQty);
         });
       } else {
@@ -1714,7 +1741,8 @@ export default function AdminDashboard() {
           const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
           if (!expDate || expDate < start || expDate > end) return false;
 
-          const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+          const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+          const matches = list.filter(om => om.locationId !== selectedLocation);
           return matches.some(om => {
             if (om.qoh <= 0) return false;
             const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
@@ -1725,10 +1753,17 @@ export default function AdminDashboard() {
       }
     }
 
+    if (showOnlyThresholdAlerts) {
+      result = result.filter(m => {
+        const isOut = m.qoh <= 0;
+        return !isOut && m.maxQty > 0 && (m.qoh / m.maxQty) * 100 < stockAlertThreshold;
+      });
+    }
+
     return result.sort((a, b) => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       
-      if (['qoh', 'minQty', 'maxQty'].includes(sortField)) {
+      if (['qoh', 'minQty', 'maxQty', 'averageCost', 'totalValue'].includes(sortField)) {
         const valA = Number(a[sortField as keyof Medication]) || 0;
         const valB = Number(b[sortField as keyof Medication]) || 0;
         return (valA - valB) * multiplier;
@@ -1752,7 +1787,7 @@ export default function AdminDashboard() {
       if (valA > valB) return 1 * multiplier;
       return 0;
     });
-  }, [medications, sortField, sortOrder, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, searchQuery, showSourcingTransferOnly, sourcingReportType, allMedications, selectedLocation]);
+  }, [medications, sortField, sortOrder, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, searchQuery, showSourcingTransferOnly, sourcingReportType, allMedications, selectedLocation, stockAlertThreshold, showOnlyThresholdAlerts]);
 
   const filterCounts = useMemo(() => {
     const all = medications.length;
@@ -1764,9 +1799,10 @@ export default function AdminDashboard() {
     const generics = medications.filter(m => m.generic && m.generic.toLowerCase().includes('generic') && m.qoh > 0).length;
     const brands = medications.filter(m => m.generic && m.generic.toLowerCase().includes('brand') && m.qoh > 0).length;
     const refrigerated = medications.filter(m => m.isRefrigerated && m.qoh > 0).length;
+    const thresholdAlerts = medications.filter(m => m.qoh > 0 && m.maxQty > 0 && (m.qoh / m.maxQty) * 100 < stockAlertThreshold).length;
 
-    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, refrigerated };
-  }, [medications]);
+    return { all, inStock, lowStock, outOfStock, qatari, restricted, generics, brands, refrigerated, thresholdAlerts };
+  }, [medications, stockAlertThreshold]);
 
   const sourcingTransferCount = useMemo(() => {
     return (medications || []).filter(m => {
@@ -1777,10 +1813,11 @@ export default function AdminDashboard() {
       const oQty = calculateOrder(m, 1);
       if (oQty <= 0) return false;
 
-      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+      const matches = list.filter(om => om.locationId !== selectedLocation);
       return matches.some(om => om.qoh > 0.5 * oQty);
     }).length;
-  }, [medications, allMedications, selectedLocation]);
+  }, [medications, medicationsByItemCode, selectedLocation]);
 
   const currentExpSourcingCount = useMemo(() => {
     const now = new Date();
@@ -1792,7 +1829,8 @@ export default function AdminDashboard() {
       const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
       if (!expDate || expDate < start || expDate > end) return false;
 
-      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+      const matches = list.filter(om => om.locationId !== selectedLocation);
       return matches.some(om => {
         if (om.qoh <= 0) return false;
         const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
@@ -1800,7 +1838,7 @@ export default function AdminDashboard() {
         return true;
       });
     }).length;
-  }, [medications, allMedications, selectedLocation]);
+  }, [medications, medicationsByItemCode, selectedLocation]);
 
   const nextExpSourcingCount = useMemo(() => {
     const now = new Date();
@@ -1812,7 +1850,8 @@ export default function AdminDashboard() {
       const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
       if (!expDate || expDate < start || expDate > end) return false;
 
-      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+      const matches = list.filter(om => om.locationId !== selectedLocation);
       return matches.some(om => {
         if (om.qoh <= 0) return false;
         const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
@@ -1820,7 +1859,7 @@ export default function AdminDashboard() {
         return true;
       });
     }).length;
-  }, [medications, allMedications, selectedLocation]);
+  }, [medications, medicationsByItemCode, selectedLocation]);
 
   const afterNextExpSourcingCount = useMemo(() => {
     const now = new Date();
@@ -1832,7 +1871,8 @@ export default function AdminDashboard() {
       const expDate = m.expiration1 ? parseExpDate(m.expiration1) : null;
       if (!expDate || expDate < start || expDate > end) return false;
 
-      const matches = (allMedications || []).filter(om => om.itemCode === m.itemCode && om.locationId !== selectedLocation);
+      const list = m.itemCode ? (medicationsByItemCode.get(m.itemCode) || []) : [];
+      const matches = list.filter(om => om.locationId !== selectedLocation);
       return matches.some(om => {
         if (om.qoh <= 0) return false;
         const omExpDate = om.expiration1 ? parseExpDate(om.expiration1) : null;
@@ -1840,7 +1880,7 @@ export default function AdminDashboard() {
         return true;
       });
     }).length;
-  }, [medications, allMedications, selectedLocation]);
+  }, [medications, medicationsByItemCode, selectedLocation]);
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2712,6 +2752,14 @@ export default function AdminDashboard() {
           >
             <ArrowLeftRight className="w-4 h-4" />
             Bulk Import
+          </button>
+          
+          <button 
+            onClick={() => setShowOracleQoh(true)}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-xl text-xs sm:text-sm font-bold hover:from-teal-600 hover:to-emerald-600 transition-colors shadow-sm"
+          >
+            <Coins className="w-4 h-4" />
+            Oracle QOH
           </button>
           
           <button 
@@ -3924,7 +3972,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Exp dates / reset in collapsible filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-[#141414]/5">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-4 border-t border-[#141414]/5">
               <div className="space-y-1.5">
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1">
                   Exp. Range (Start)
@@ -3949,6 +3997,41 @@ export default function AdminDashboard() {
                 />
               </div>
 
+              {/* Stock Alert Threshold System */}
+              <div className="space-y-1.5 p-3 bg-red-50/20 border border-red-100 rounded-xl">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[9px] font-bold uppercase tracking-widest text-[#141414]/60">
+                    Stock Threshold Alert
+                  </label>
+                  <span className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[9px] font-black uppercase tracking-tight">
+                    &lt; {stockAlertThreshold}% of MAX
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="5"
+                    max="50"
+                    step="5"
+                    value={stockAlertThreshold}
+                    onChange={(e) => setStockAlertThreshold(Number(e.target.value))}
+                    className="flex-1 h-1 bg-[#141414]/15 rounded-lg appearance-none cursor-pointer accent-red-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowOnlyThresholdAlerts(prev => !prev)}
+                    className={`flex items-center justify-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold transition-all border whitespace-nowrap ${
+                      showOnlyThresholdAlerts
+                        ? 'bg-red-500 text-white border-red-500 shadow-sm animate-pulse'
+                        : 'bg-white text-red-600 border-red-200 hover:bg-red-50'
+                    }`}
+                  >
+                    <AlertTriangle className="w-2.5 h-2.5" />
+                    Alerts ({filterCounts.thresholdAlerts})
+                  </button>
+                </div>
+              </div>
+
               <div className="flex items-end">
                 <button
                   onClick={() => {
@@ -3960,6 +4043,7 @@ export default function AdminDashboard() {
                     setExpEnd('');
                     setSearchQuery('');
                     setShowSourcingTransferOnly(false);
+                    setShowOnlyThresholdAlerts(false);
                   }}
                   className="w-full h-10 flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 rounded-xl text-xs font-bold hover:bg-red-100 transition-all cursor-pointer"
                 >
@@ -4178,6 +4262,37 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Stock Level Threshold Alert Banner */}
+      {filterCounts.thresholdAlerts > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-4 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 text-red-600 rounded-xl animate-bounce">
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-red-800 uppercase tracking-wider">Critical Inventory Alert</h4>
+              <p className="text-xs text-red-700 font-medium">
+                There are <strong className="font-extrabold">{filterCounts.thresholdAlerts}</strong> item(s) with stock levels below your set threshold of <strong className="font-extrabold">{stockAlertThreshold}%</strong> of MAX quantity.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setShowFilters(true);
+              setShowOnlyThresholdAlerts(true);
+            }}
+            className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl shadow-sm transition-all flex items-center gap-1 uppercase tracking-wider whitespace-nowrap cursor-pointer"
+          >
+            <Filter size={12} />
+            Filter Alert Items
+          </button>
+        </motion.div>
+      )}
+
       {/* Search Input directly above items table */}
       <div className="relative group mb-4">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30 group-focus-within:text-[#F27D26] transition-colors" />
@@ -4229,6 +4344,28 @@ export default function AdminDashboard() {
               </th>
               <th 
                 className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                onClick={() => toggleSort('averageCost')}
+              >
+                <div className="flex items-center gap-1">
+                  Average Cost
+                  {sortField === 'averageCost' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
+                </div>
+              </th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
+                onClick={() => toggleSort('totalValue')}
+              >
+                <div className="flex items-center gap-1">
+                  Total Value
+                  {sortField === 'totalValue' && (
+                    sortOrder === 'asc' ? <Sparkles className="w-3 h-3 text-[#F27D26]" /> : <RefreshCw className="w-3 h-3 text-[#F27D26]" />
+                  )}
+                </div>
+              </th>
+              <th 
+                className="px-6 py-4 sticky top-0 bg-[#F9F9F9] cursor-pointer hover:bg-[#141414]/5 transition-colors"
                 onClick={() => toggleSort('minQty')}
               >
                 <div className="flex items-center gap-1">
@@ -4255,7 +4392,7 @@ export default function AdminDashboard() {
           <tbody className="divide-y divide-[#141414]/5">
             {loading && (
               <tr>
-                <td colSpan={5} className="px-6 py-10 text-center">
+                <td colSpan={7} className="px-6 py-10 text-center">
                   <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#F27D26]" />
                 </td>
               </tr>
@@ -4421,7 +4558,7 @@ export default function AdminDashboard() {
             )}
             {!loading && sortedMedications.length === 0 && (searchQuery || stockFilter !== 'all' || classificationFilter !== null || typeFilter !== null || refFilter || expStart || expEnd) && (
               <tr>
-                <td colSpan={5} className="px-6 py-20 text-center">
+                <td colSpan={7} className="px-6 py-20 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Search className="w-8 h-8 text-[#141414]/10" />
                     <p className="text-sm font-bold text-[#141414]/40 italic">No products match your search or filter.</p>
@@ -4446,6 +4583,7 @@ export default function AdminDashboard() {
             {!loading && sortedMedications.map((med, idx) => {
               const isOutOfStock = med.qoh <= 0;
               const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+              const isCriticalStock = !isOutOfStock && med.maxQty > 0 && (med.qoh / med.maxQty) * 100 < stockAlertThreshold;
               const parsedAdded = parseSafeDate(med.addedAt);
               const isNew = parsedAdded ? differenceInDays(new Date(), parsedAdded) < 10 : false;
               
@@ -4467,7 +4605,7 @@ export default function AdminDashboard() {
               }
               
               return (
-                <tr key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className={`group hover:bg-[#141414]/[0.02] transition-colors ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : '')}`}>
+                <tr key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} className={`group hover:bg-[#141414]/[0.02] transition-colors ${expirationAlertClass || (isOutOfStock ? 'bg-red-50/50' : isCriticalStock ? 'bg-red-50/20 border-l-4 border-red-500' : isLowStock ? 'bg-amber-50/30' : '')}`}>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-4">
                       {med.imageUrl ? (
@@ -4548,14 +4686,19 @@ export default function AdminDashboard() {
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold ${isOutOfStock ? 'text-red-600' : isLowStock ? 'text-amber-600' : 'text-emerald-600'}`}>{formatNumber(med.qoh)}</span>
+                        <span className={`text-sm font-bold ${isOutOfStock ? 'text-red-600' : isCriticalStock ? 'text-red-600 font-extrabold animate-pulse' : isLowStock ? 'text-amber-600' : 'text-emerald-600'}`}>{formatNumber(med.qoh)}</span>
                         <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
-                          isOutOfStock ? 'bg-red-100 text-red-600' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                          isOutOfStock ? 'bg-red-100 text-red-600' : isCriticalStock ? 'bg-red-600 text-white shadow-sm animate-pulse' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
                         }`}>
                           {isOutOfStock ? (
                             <>
                               <AlertCircle size={8} />
                               Out of Stock
+                            </>
+                          ) : isCriticalStock ? (
+                            <>
+                              <AlertTriangle size={8} className="text-white" />
+                              Critical Alert
                             </>
                           ) : isLowStock ? (
                             <>
@@ -4571,6 +4714,20 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-4 font-mono text-xs text-[#141414]/70">
+                    {med.averageCost !== undefined && med.averageCost !== null ? (
+                      <span>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(med.averageCost)}</span>
+                    ) : (
+                      <span className="text-[#141414]/20">-</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 font-mono text-xs font-bold text-[#141414]/80">
+                    {med.totalValue !== undefined && med.totalValue !== null ? (
+                      <span>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(med.totalValue)}</span>
+                    ) : (
+                      <span className="text-[#141414]/20">-</span>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col text-[10px] font-bold uppercase tracking-widest text-[#141414]/40">
@@ -4630,7 +4787,7 @@ export default function AdminDashboard() {
             
             {!loading && medications.length === 0 && !isAdding && (
               <tr>
-                <td colSpan={4} className="px-6 py-20 text-center text-[#141414]/20 font-bold italic">
+                <td colSpan={7} className="px-6 py-20 text-center text-[#141414]/20 font-bold italic">
                   No medications in this location yet. Use "+" to add some!
                 </td>
               </tr>
@@ -4674,6 +4831,7 @@ export default function AdminDashboard() {
         {!loading && sortedMedications.map((med, idx) => {
           const isOutOfStock = med.qoh <= 0;
           const isLowStock = !isOutOfStock && med.maxQty > 0 && med.qoh < med.maxQty * 0.3;
+          const isCriticalStock = !isOutOfStock && med.maxQty > 0 && (med.qoh / med.maxQty) * 100 < stockAlertThreshold;
           const parsedAdded = parseSafeDate(med.addedAt);
           const isNew = parsedAdded ? differenceInDays(new Date(), parsedAdded) < 10 : false;
           
@@ -4681,7 +4839,7 @@ export default function AdminDashboard() {
             <motion.div 
               layout
               key={`${med.id || 'med'}-${med.locationId || ''}-${idx}`} 
-              className={`p-4 space-y-4 ${isOutOfStock ? 'bg-red-50/50' : isLowStock ? 'bg-amber-50/30' : ''}`}
+              className={`p-4 space-y-4 ${isOutOfStock ? 'bg-red-50/50' : isCriticalStock ? 'bg-red-50/20 border-l-4 border-red-500' : isLowStock ? 'bg-amber-50/30' : ''}`}
               onClick={() => startEdit(med)}
             >
               <div className="flex justify-between items-start">
@@ -4747,14 +4905,16 @@ export default function AdminDashboard() {
                     <span className={`text-xl font-black ${
                       isOutOfStock 
                         ? 'text-red-600' 
+                        : isCriticalStock
+                        ? 'text-red-600 font-extrabold animate-pulse'
                         : isLowStock 
                         ? 'text-amber-600' 
                         : 'text-emerald-600'
                     }`}>{formatNumber(med.qoh)}</span>
                     <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase whitespace-nowrap ${
-                      isOutOfStock ? 'bg-red-100 text-red-600' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
+                      isOutOfStock ? 'bg-red-100 text-red-600' : isCriticalStock ? 'bg-red-600 text-white shadow-sm animate-pulse' : isLowStock ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'
                     }`}>
-                      {isOutOfStock ? 'Out of Stock' : isLowStock ? 'Low Stock' : 'In Stock'}
+                      {isOutOfStock ? 'Out of Stock' : isCriticalStock ? 'Critical Alert' : isLowStock ? 'Low Stock' : 'In Stock'}
                     </span>
                   </div>
                 </div>
@@ -4769,6 +4929,29 @@ export default function AdminDashboard() {
                        <span>{formatNumber(med.maxQty)}</span>
                      </div>
                    </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center px-3 py-2 text-[10px] bg-[#141414]/[0.01] rounded-xl border border-[#141414]/5 text-[#141414]/60">
+                <div>
+                  <span className="font-bold uppercase text-[8px] tracking-wider text-[#141414]/40 mr-1">Avg Cost:</span>
+                  <span className="font-mono font-semibold text-[#141414]">
+                    {med.averageCost !== undefined && med.averageCost !== null ? (
+                      new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(med.averageCost)
+                    ) : (
+                      '-'
+                    )}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-bold uppercase text-[8px] tracking-wider text-[#141414]/40 mr-1">Total Value:</span>
+                  <span className="font-mono font-bold text-[#141414]">
+                    {med.totalValue !== undefined && med.totalValue !== null ? (
+                      new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(med.totalValue)
+                    ) : (
+                      '-'
+                    )}
+                  </span>
                 </div>
               </div>
 
@@ -5293,6 +5476,19 @@ export default function AdminDashboard() {
         medications={medications}
         lastUpdate={lastUpdate}
         selectedLocation={selectedLocation}
+      />
+      <OracleQohModal
+        isOpen={showOracleQoh}
+        onClose={() => setShowOracleQoh(false)}
+        currentLocation={selectedLocation}
+        allMedications={allMedications}
+        onSuccess={() => {
+          setShowOracleQoh(false);
+          refresh(true);
+          if (refreshAll) {
+            refreshAll(true).catch(err => console.warn("Background refreshAll error:", err));
+          }
+        }}
       />
     </div>
   );

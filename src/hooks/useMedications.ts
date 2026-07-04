@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, where, orderBy, getDocsFromCache } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, getDocsFromCache, getDocs } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, auth } from '../lib/firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from '../lib/sharedDb';
@@ -31,13 +31,25 @@ export function useMedications(locationId?: PharmacyLocation) {
         if (showLoading) setIsSyncing(false);
       }
     } else {
-      // For Cloud DB, onSnapshot handles updates. 
-      // Manual refresh just triggers a visual "checking" state
-      if (showLoading) {
-        setTimeout(() => {
-          setLastSynced(new Date());
-          setIsSyncing(false);
-        }, 600);
+      // For Cloud DB, perform a real query to force-update and bypass any snapshot latency/cache
+      try {
+        const medsRef = collection(db, 'medications');
+        let q = query(medsRef, orderBy('itemName', 'asc'));
+        if (locationId) {
+          q = query(medsRef, where('locationId', '==', locationId), orderBy('itemName', 'asc'));
+        }
+        const snap = await getDocs(q);
+        const items: Medication[] = [];
+        snap.forEach((doc) => {
+          items.push({ id: doc.id, ...doc.data() } as Medication);
+        });
+        setMedications(items);
+        setLastSynced(new Date());
+        hasInitialData.current = true;
+      } catch (err: any) {
+        console.warn("Manual Firestore refresh failed:", err);
+      } finally {
+        if (showLoading) setIsSyncing(false);
       }
     }
   };
@@ -71,7 +83,14 @@ export function useMedications(locationId?: PharmacyLocation) {
       };
 
       window.addEventListener('sync-update', handleSyncUpdate);
-      const interval = setInterval(() => refresh(), 5000);
+      
+      const interval = setInterval(() => {
+        const isSseConnected = typeof window !== 'undefined' && (window as any).__sseStatus?.connected;
+        if (!isSseConnected) {
+          // Fallback poll if real-time stream is disconnected
+          refresh();
+        }
+      }, 15000);
 
       return () => {
         clearInterval(interval);
@@ -109,8 +128,23 @@ export function useMedications(locationId?: PharmacyLocation) {
         console.error("Firestore onSnapshot error:", err);
         setError(err.message);
         
+        const lowerMsg = err.message.toLowerCase();
+        const isQuotaOrLimit = lowerMsg.includes('quota') || 
+                               lowerMsg.includes('limit') || 
+                               lowerMsg.includes('exhausted') ||
+                               lowerMsg.includes('resource_exhausted');
+        
+        if (isQuotaOrLimit) {
+          console.warn("[Firestore Auto-Fallback] Client-side Firestore error triggered local fallback:", err.message);
+          sessionStorage.setItem('firestore_fallback', 'true');
+          // Note: We intentionally DO NOT set 'manual_local_mode' here, so that the client can auto-recover back to 
+          // Cloud mode when the quota resets or becomes available again, as managed by useSystemMetadata.ts.
+          window.location.reload();
+          return;
+        }
+
         // Try to fetch once from local cache if we hit a quota limit
-        if ((err.message.toLowerCase().includes('quota') || err.message.toLowerCase().includes('limit')) && medications.length === 0) {
+        if (lowerMsg.includes('quota') || lowerMsg.includes('limit')) {
           getDocsFromCache(q).then(cacheSnap => {
             const items: Medication[] = [];
             cacheSnap.forEach((doc) => {
