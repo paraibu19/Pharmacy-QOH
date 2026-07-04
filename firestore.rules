@@ -43,24 +43,36 @@ service cloud.firestore {
         return data.keys().hasAll(['itemCode', 'itemName', 'qoh', 'locationId']) &&
                data.itemCode is string && data.itemCode.size() <= 128 &&
                data.itemName is string && data.itemName.size() <= 512 &&
-               data.qoh is number &&
+               (data.qoh is int || data.qoh is float) &&
                data.locationId in ['adult-emergency', 'pediatric', 'mesaieed-opd'] &&
                (!('imageUrl' in data) || data.imageUrl == null || (data.imageUrl is string && data.imageUrl.size() <= 1048576)) &&
                (!('isRefrigerated' in data) || data.isRefrigerated == null || data.isRefrigerated is bool);
       }
 
       function isAuthorizedWrite() {
-        // Allow if signed in OR if it's a "system" update (fallback for when anonymous auth is not yet enabled)
-        return isSignedIn() || (incoming().get('updatedBy', '') == 'system');
+        // Allow if signed in OR if it's a authorized system, server, or Oracle update
+        return isSignedIn() || 
+               incoming().get('updatedBy', '') == 'system' ||
+               incoming().get('updatedBy', '') == 'server' ||
+               incoming().get('updatedBy', '') == 'Oracle QOH Upload' ||
+               incoming().get('updatedBy', '') == 'Oracle QOH Auto-Sync';
       }
 
       allow read, get, list: if true;
       
       allow create: if isAuthorizedWrite() && isValidId(medId) && isValidMedication(incoming()) &&
-                    (request.auth != null ? incoming().get('updatedBy', '') == request.auth.uid : true);
+                    (request.auth != null ? (incoming().get('updatedBy', '') == request.auth.uid || 
+                                             incoming().get('updatedBy', '') == 'system' ||
+                                             incoming().get('updatedBy', '') == 'server' ||
+                                             incoming().get('updatedBy', '') == 'Oracle QOH Upload' ||
+                                             incoming().get('updatedBy', '') == 'Oracle QOH Auto-Sync') : true);
 
       allow update: if isAuthorizedWrite() && isValidMedication(incoming()) &&
-                    (request.auth != null ? (incoming().get('updatedBy', '') == request.auth.uid || incoming().get('updatedBy', '') == 'system') : true) &&
+                    (request.auth != null ? (incoming().get('updatedBy', '') == request.auth.uid || 
+                                             incoming().get('updatedBy', '') == 'system' ||
+                                             incoming().get('updatedBy', '') == 'server' ||
+                                             incoming().get('updatedBy', '') == 'Oracle QOH Upload' ||
+                                             incoming().get('updatedBy', '') == 'Oracle QOH Auto-Sync') : true) &&
                     incoming().itemCode == existing().itemCode;
 
       allow delete: if true; 
@@ -78,7 +90,7 @@ service cloud.firestore {
         return data.keys().hasAll(['itemCode', 'locationId', 'physicalCount', 'auditedAt']) &&
                data.itemCode is string && data.itemCode.size() <= 100 &&
                data.locationId is string &&
-               data.physicalCount is number &&
+               (data.physicalCount is int || data.physicalCount is float) &&
                data.auditedAt is timestamp;
       }
 
@@ -127,6 +139,11 @@ service cloud.firestore {
 
     // Application Storage Collection
     match /application_storage/{storageId} {
+      allow read, write: if true;
+    }
+
+    // Entry Mistakes Configs Collection
+    match /entry_mistakes_configs/{docId} {
       allow read, write: if true;
     }
   }

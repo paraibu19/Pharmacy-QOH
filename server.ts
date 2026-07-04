@@ -228,6 +228,7 @@ const METADATA_SYNC_FILE = path.join(DATA_DIR, 'metadata_sync.json');
 const sseClients = new Set<any>();
 let isRealtimeListeningActive = false;
 let activeUnsubscribes: (() => void)[] = [];
+let reconnectTimeout: NodeJS.Timeout | null = null;
 
 function notifyClients(type: string, data?: any) {
   const payload = JSON.stringify({ type, timestamp: new Date().toISOString(), data });
@@ -820,14 +821,73 @@ async function syncAllFromFirestoreAtStartup() {
   }
 }
 
+function cleanupFirestoreListeners() {
+  console.log('[Firebase Admin Sync] Cleaning up existing listeners...');
+  for (const unsub of activeUnsubscribes) {
+    try {
+      unsub();
+    } catch (err: any) {
+      console.warn('[Firebase Admin Sync] Error unsubscribing:', err.message);
+    }
+  }
+  activeUnsubscribes = [];
+  isRealtimeListeningActive = false;
+}
+
 function setupFirestoreListeners() {
   if (!adminDb) {
     console.warn('[Firebase Admin Sync] Admin database not active. Skipping real-time listener setup.');
     return;
   }
   
+  if (isRealtimeListeningActive) {
+    console.log('[Firebase Admin Sync] Real-time listeners already active.');
+    return;
+  }
+
+  // Clear any pending reconnects
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+  
   console.log('[Firebase Admin Sync] Setting up real-time listeners for instant container synchronization...');
   
+  // Clean up any old dangling subscriptions just in case
+  cleanupFirestoreListeners();
+
+  let hasFailed = false;
+
+  const handleListenerError = (err: any, context: string) => {
+    const errMsg = err.message || String(err);
+    console.warn(`[Firebase Admin Sync] Listener error received for ${context}:`, errMsg);
+
+    // Check if we should fall back completely (e.g. permission denied)
+    const isFatal = errMsg.includes('PERMISSION_DENIED') || 
+                    errMsg.includes('insufficient permissions') || 
+                    errMsg.toLowerCase().includes('over-quota');
+
+    if (isFatal) {
+      handleAdminDbError(err, context);
+      cleanupFirestoreListeners();
+    } else {
+      // Non-fatal error (e.g., Code 13 / INTERNAL / RST_STREAM / UNAVAILABLE / stream reset)
+      // Trigger a graceful reconnection attempt if we haven't already
+      if (!hasFailed) {
+        hasFailed = true;
+        console.warn(`[Firebase Admin Sync] Non-fatal stream error (${context}). Scheduling reconnection in 5 seconds...`);
+        cleanupFirestoreListeners();
+        
+        if (!reconnectTimeout) {
+          reconnectTimeout = setTimeout(() => {
+            reconnectTimeout = null;
+            setupFirestoreListeners();
+          }, 5000);
+        }
+      }
+    }
+  };
+
   try {
     // 1. Listen to medications
     const unsubMeds = adminDb.collection('medications').onSnapshot((snapshot: any) => {
@@ -844,8 +904,7 @@ function setupFirestoreListeners() {
         console.error('[Firebase Admin Sync] Error processing medications snapshot:', err.message);
       }
     }, (err: any) => {
-      handleAdminDbError(err, 'listen medications');
-      isRealtimeListeningActive = false;
+      handleListenerError(err, 'listen medications');
     });
     activeUnsubscribes.push(unsubMeds);
     
@@ -864,8 +923,7 @@ function setupFirestoreListeners() {
         console.error('[Firebase Admin Sync] Error processing audits snapshot:', err.message);
       }
     }, (err: any) => {
-      handleAdminDbError(err, 'listen audits');
-      isRealtimeListeningActive = false;
+      handleListenerError(err, 'listen audits');
     });
     activeUnsubscribes.push(unsubAudits);
 
@@ -882,8 +940,7 @@ function setupFirestoreListeners() {
         console.error('[Firebase Admin Sync] Error processing entry mistakes config snapshot:', err.message);
       }
     }, (err: any) => {
-      handleAdminDbError(err, 'listen entry mistakes config');
-      isRealtimeListeningActive = false;
+      handleListenerError(err, 'listen entry mistakes config');
     });
     activeUnsubscribes.push(unsubMistakesConfig);
 
@@ -902,8 +959,7 @@ function setupFirestoreListeners() {
         console.error('[Firebase Admin Sync] Error processing application storage snapshot:', err.message);
       }
     }, (err: any) => {
-      handleAdminDbError(err, 'listen application storage');
-      isRealtimeListeningActive = false;
+      handleListenerError(err, 'listen application storage');
     });
     activeUnsubscribes.push(unsubAppStorage);
 
@@ -930,8 +986,7 @@ function setupFirestoreListeners() {
         console.error('[Firebase Admin Sync] Error processing system metadata snapshot:', err.message);
       }
     }, (err: any) => {
-      handleAdminDbError(err, 'listen system metadata');
-      isRealtimeListeningActive = false;
+      handleListenerError(err, 'listen system metadata');
     });
     activeUnsubscribes.push(unsubSystemMeta);
 
