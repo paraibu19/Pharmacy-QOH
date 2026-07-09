@@ -10,6 +10,9 @@ import AdminInventory from './pages/AdminInventory';
 import AdminExpiryCheck from './pages/AdminExpiryCheck';
 import AdminEntryMistakes from './pages/AdminEntryMistakes';
 import ApplicationStorage from './pages/ApplicationStorage';
+import AdminTableOcr from './pages/AdminTableOcr';
+import AdminDutyRoster from './pages/AdminDutyRoster';
+import AdminWorkload from './pages/AdminWorkload';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { storage } from './lib/storage';
@@ -224,6 +227,33 @@ export default function App() {
           element={
             isAdmin 
               ? <Layout isAdmin onLogout={adminLogout}><ApplicationStorage /></Layout> 
+              : <Navigate to="/admin/login" />
+          } 
+        />
+
+        <Route 
+          path="/admin/pdf-ocr" 
+          element={
+            isAdmin 
+              ? <Layout isAdmin onLogout={adminLogout}><AdminTableOcr /></Layout> 
+              : <Navigate to="/admin/login" />
+          } 
+        />
+
+        <Route 
+          path="/admin/duty-roster" 
+          element={
+            isAdmin 
+              ? <Layout isAdmin onLogout={adminLogout}><AdminDutyRoster /></Layout> 
+              : <Navigate to="/admin/login" />
+          } 
+        />
+
+        <Route 
+          path="/admin/workload" 
+          element={
+            isAdmin 
+              ? <Layout isAdmin onLogout={adminLogout}><AdminWorkload /></Layout> 
               : <Navigate to="/admin/login" />
           } 
         />

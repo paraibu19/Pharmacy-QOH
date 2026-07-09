@@ -2,9 +2,10 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
+import readline from 'readline';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 import { 
   initializeApp as initializeClientApp, 
   getApps, 
@@ -12,6 +13,7 @@ import {
 } from 'firebase/app';
 import { 
   getFirestore as getClientFirestore, 
+  initializeFirestore,
   collection, 
   doc, 
   getDoc, 
@@ -33,7 +35,14 @@ class ClientFirestoreAdapter {
 
   constructor(firebaseConfig: any) {
     const app = getApps().length > 0 ? getApp() : initializeClientApp(firebaseConfig);
-    this.db = getClientFirestore(app, firebaseConfig.firestoreDatabaseId);
+    try {
+      this.db = initializeFirestore(app, { 
+        experimentalForceLongPolling: true,
+        useFetchStreams: false
+      } as any, firebaseConfig.firestoreDatabaseId);
+    } catch (e) {
+      this.db = getClientFirestore(app, firebaseConfig.firestoreDatabaseId);
+    }
   }
 
   settings(settings: any) {
@@ -50,7 +59,13 @@ class ClientFirestoreAdapter {
 }
 
 class CollectionRefAdapter {
-  constructor(private db: any, private path: string) {}
+  private db: any;
+  private path: string;
+
+  constructor(db: any, path: string) {
+    this.db = db;
+    this.path = path;
+  }
 
   doc(docId: string) {
     return new DocumentRefAdapter(this.db, this.path, docId);
@@ -71,7 +86,15 @@ class CollectionRefAdapter {
 }
 
 class DocumentRefAdapter {
-  constructor(private db: any, private colPath: string, private docId: string) {}
+  private db: any;
+  private colPath: string;
+  private docId: string;
+
+  constructor(db: any, colPath: string, docId: string) {
+    this.db = db;
+    this.colPath = colPath;
+    this.docId = docId;
+  }
 
   get ref() {
     return doc(this.db, this.colPath, this.docId);
@@ -102,7 +125,11 @@ class DocumentRefAdapter {
 }
 
 class DocumentSnapshotAdapter {
-  constructor(private snap: any) {}
+  private snap: any;
+
+  constructor(snap: any) {
+    this.snap = snap;
+  }
 
   get exists() {
     return this.snap.exists();
@@ -112,13 +139,21 @@ class DocumentSnapshotAdapter {
     return this.snap.id;
   }
 
+  get ref() {
+    return this.snap.ref;
+  }
+
   data() {
     return this.snap.data();
   }
 }
 
 class QuerySnapshotAdapter {
-  constructor(private snap: any) {}
+  private snap: any;
+
+  constructor(snap: any) {
+    this.snap = snap;
+  }
 
   get docs() {
     return this.snap.docs.map((docSnap: any) => new DocumentSnapshotAdapter(docSnap));
@@ -223,6 +258,9 @@ const TRANSLATION_CACHE_FILE = path.join(DATA_DIR, 'translation_cache.json');
 const ENTRY_MISTAKES_DB_FILE = path.join(DATA_DIR, 'entry_mistakes_db.json');
 const APPLICATION_STORAGE_FILE = path.join(DATA_DIR, 'application_storage.json');
 const METADATA_SYNC_FILE = path.join(DATA_DIR, 'metadata_sync.json');
+const ROSTERS_FILE = path.join(DATA_DIR, 'rosters.json');
+const WORKLOAD_RECORDS_FILE = path.join(DATA_DIR, 'workload_records.json');
+const UPLOADED_FILES_FILE = path.join(DATA_DIR, 'uploaded_files.json');
 
 // Real-time SSE synchronization state
 const sseClients = new Set<any>();
@@ -296,7 +334,62 @@ try {
   console.warn('[Startup Sanitization] Failed to normalize location IDs:', e.message);
 }
 
+function migrateWorkloadFileToNdjson() {
+  if (fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+    try {
+      const content = fs.readFileSync(WORKLOAD_RECORDS_FILE, 'utf8').trim();
+      if (content.startsWith('[')) {
+        console.log('[Migration] Converting legacy workload records JSON array to NDJSON...');
+        let items: any[] = [];
+        try {
+          items = JSON.parse(content);
+        } catch {
+          items = [];
+        }
+        const ndjson = items.map((item: any) => JSON.stringify(item)).join('\n') + (items.length > 0 ? '\n' : '');
+        fs.writeFileSync(WORKLOAD_RECORDS_FILE, ndjson);
+        console.log(`[Migration] Legacy JSON array converted. ${items.length} records written.`);
+      }
+    } catch (e: any) {
+      console.error('[Migration Error] Failed to migrate workload file:', e.message);
+    }
+  } else {
+    fs.writeFileSync(WORKLOAD_RECORDS_FILE, '');
+  }
+}
+
+function parseRecordDateServer(dateStr: string): Date {
+  if (!dateStr) return new Date(0);
+  try {
+    if (dateStr.includes('T')) return new Date(dateStr);
+    const cleaned = dateStr.replace(/\//g, '-').trim();
+    if (cleaned.length >= 10) {
+      const parts = cleaned.split(' ');
+      const dateParts = parts[0].split('-');
+      const day = parseInt(dateParts[0], 10);
+      const month = parseInt(dateParts[1], 10) - 1;
+      const year = parseInt(dateParts[2], 10);
+      
+      if (parts.length > 1) {
+        const timeParts = parts[1].split(':');
+        const hours = parseInt(timeParts[0], 10);
+        const minutes = parseInt(timeParts[1], 10);
+        return new Date(year, month, day, hours, minutes);
+      }
+      return new Date(year, month, day);
+    }
+    return new Date(dateStr);
+  } catch {
+    return new Date(0);
+  }
+}
+
 if (!fs.existsSync(AUDITS_FILE)) fs.writeFileSync(AUDITS_FILE, '[]');
+if (!fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+  fs.writeFileSync(WORKLOAD_RECORDS_FILE, '');
+} else {
+  migrateWorkloadFileToNdjson();
+}
 if (!fs.existsSync(SETTINGS_FILE)) {
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify({
     adminPassword: 'admin123',
@@ -710,6 +803,69 @@ async function deleteEntryMistakesDbFromFirestore(): Promise<void> {
   }
 }
 
+async function syncUploadedFilesFromFirestore(): Promise<any> {
+  if (!adminDb) {
+    if (fs.existsSync(UPLOADED_FILES_FILE)) {
+      return JSON.parse(fs.readFileSync(UPLOADED_FILES_FILE, 'utf8'));
+    }
+    return [];
+  }
+  try {
+    const docRef = adminDb.collection('system').doc('uploaded_files');
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      if (Array.isArray(data.files)) {
+        fs.writeFileSync(UPLOADED_FILES_FILE, JSON.stringify(data.files, null, 2));
+        return data.files;
+      }
+    }
+  } catch (err: any) {
+    console.error('[Firebase Admin Sync] Failed to sync uploaded files:', err.message);
+  }
+  if (fs.existsSync(UPLOADED_FILES_FILE)) {
+    return JSON.parse(fs.readFileSync(UPLOADED_FILES_FILE, 'utf8'));
+  }
+  return [];
+}
+
+function logUploadedFiles(filenames: string[], recordCount: number, addedCount: number) {
+  try {
+    if (!filenames || filenames.length === 0) return;
+    let list: any[] = [];
+    if (fs.existsSync(UPLOADED_FILES_FILE)) {
+      try {
+        list = JSON.parse(fs.readFileSync(UPLOADED_FILES_FILE, 'utf8'));
+      } catch (e) {
+        list = [];
+      }
+    }
+    const now = new Date().toISOString();
+    for (const name of filenames) {
+      // Check if this file was already logged within the last 5 seconds to prevent duplicates
+      const isDuplicateSession = list.some(item => item.filename === name && Math.abs(new Date(item.uploadedAt).getTime() - new Date(now).getTime()) < 5000);
+      if (!isDuplicateSession) {
+        list.push({
+          filename: name,
+          uploadedAt: now,
+          recordCount,
+          addedCount
+        });
+      }
+    }
+    fs.writeFileSync(UPLOADED_FILES_FILE, JSON.stringify(list, null, 2));
+    
+    // Also sync to firestore if adminDb is configured
+    if (adminDb) {
+      adminDb.collection('system').doc('uploaded_files').set({ files: list }).catch((err: any) => {
+        console.error('[Firebase Admin] Failed to sync uploaded files list:', err.message);
+      });
+    }
+  } catch (err: any) {
+    console.error('[Storage] Failed to log uploaded files:', err.message);
+  }
+}
+
 async function syncApplicationStorageFromFirestore(): Promise<any[]> {
   if (!adminDb) {
     if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
@@ -725,7 +881,11 @@ async function syncApplicationStorageFromFirestore(): Promise<any[]> {
     });
     
     if (items.length > 0) {
-      items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+      items.sort((a, b) => {
+        const sa = a.savedAt || '';
+        const sb = b.savedAt || '';
+        return sa > sb ? -1 : (sa < sb ? 1 : 0);
+      });
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
     }
     return items;
@@ -801,6 +961,453 @@ async function resetApplicationStorageInFirestore(): Promise<void> {
   }
 }
 
+async function syncRostersFromFirestore(): Promise<any[]> {
+  if (!adminDb) {
+    if (fs.existsSync(ROSTERS_FILE)) {
+      try {
+        return JSON.parse(fs.readFileSync(ROSTERS_FILE, 'utf8'));
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+  try {
+    const snapshot = await adminDb.collection('rosters').get();
+    const items: any[] = [];
+    snapshot.forEach(doc => {
+      items.push(parseFirestoreDoc(doc));
+    });
+    
+    items.sort((a, b) => {
+      const sa = a.uploadedAt || '';
+      const sb = b.uploadedAt || '';
+      return sa > sb ? -1 : (sa < sb ? 1 : 0);
+    });
+    fs.writeFileSync(ROSTERS_FILE, JSON.stringify(items, null, 2));
+    return items;
+  } catch (err: any) {
+    handleAdminDbError(err, 'sync rosters');
+    if (fs.existsSync(ROSTERS_FILE)) {
+      try {
+        return JSON.parse(fs.readFileSync(ROSTERS_FILE, 'utf8'));
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+}
+
+async function saveRosterToFirestore(roster: any): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const docRef = adminDb.collection('rosters').doc(roster.id);
+    const cleaned = cleanServerUndefined(roster);
+    await docRef.set(cleaned);
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to save roster to Firestore:', err.message);
+  }
+}
+
+async function deleteRosterFromFirestore(id: string): Promise<void> {
+  if (!adminDb) return;
+  try {
+    await adminDb.collection('rosters').doc(id).delete();
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to delete roster from Firestore:', err.message);
+  }
+}
+
+let isDeduplicating = false;
+
+async function deduplicateWorkloadRecords(): Promise<{ totalBefore: number; totalAfter: number; removedCount: number }> {
+  if (isDeduplicating) {
+    console.log('[Deduplication] Already running. Skipping concurrent run.');
+    return { totalBefore: 0, totalAfter: 0, removedCount: 0 };
+  }
+  isDeduplicating = true;
+  try {
+    if (!fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+      return { totalBefore: 0, totalAfter: 0, removedCount: 0 };
+    }
+
+    const existingKeys = new Set<string>();
+    const uniqueRecords: any[] = [];
+    let totalBefore = 0;
+
+    const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    });
+
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      try {
+        const rec = JSON.parse(line);
+        totalBefore++;
+        
+        const id = rec.id || `workload-rec-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
+        const compositeKey = `${rec.mrnOrganization || ''}|||${rec.actionDateTime || ''}|||${rec.itemNumber || ''}|||${rec.pharmacyLocation || ''}`;
+        
+        const isDup = existingKeys.has(id) || existingKeys.has(compositeKey);
+        if (!isDup) {
+          rec.id = id;
+          uniqueRecords.push(rec);
+          existingKeys.add(id);
+          existingKeys.add(compositeKey);
+        }
+      } catch {}
+    }
+
+    const removedCount = totalBefore - uniqueRecords.length;
+    if (removedCount > 0) {
+      console.log(`[Deduplication] Found and removing ${removedCount} duplicates in workload records. Total before: ${totalBefore}, Total after: ${uniqueRecords.length}`);
+      const ndjson = uniqueRecords.map((item: any) => JSON.stringify(item)).join('\n') + (uniqueRecords.length > 0 ? '\n' : '');
+      fs.writeFileSync(WORKLOAD_RECORDS_FILE, ndjson);
+      
+      // Regenerate workload summary
+      await generateWorkloadSummary().catch(err => console.error('[Deduplication] Failed to generate workload summary:', err.message));
+      
+      // Save to Firestore in background
+      if (adminDb) {
+        saveWorkloadRecordsBulkToFirestoreNdjson().catch(err => {
+          console.error('[Background Firebase Sync Error during deduplication] Failed to save workload records:', err.message);
+        });
+      }
+      
+      notifyClients('workload-records', { updated: true });
+    } else {
+      console.log(`[Deduplication] No duplicates found in workload records. Total records: ${totalBefore}`);
+    }
+
+    return { totalBefore, totalAfter: uniqueRecords.length, removedCount };
+  } catch (err: any) {
+    console.error('[Deduplication Error]:', err.message);
+    return { totalBefore: 0, totalAfter: 0, removedCount: 0 };
+  } finally {
+    isDeduplicating = false;
+  }
+}
+
+function getPharmacyLocationKey(pharmacyLocation: string): string {
+  const loc = (pharmacyLocation || '').toLowerCase();
+  if (loc.includes('adult')) return 'adult-emergency';
+  if (loc.includes('pediatric')) return 'pediatric';
+  if (
+    loc.includes('mesaieed') ||
+    loc.includes('aw ms gopd rx') ||
+    loc.includes('aw ms gopd') ||
+    loc.includes('gopd') ||
+    loc.includes('ms gopd')
+  ) {
+    return 'mesaieed-opd';
+  }
+  return '';
+}
+
+async function generateWorkloadSummary(): Promise<any> {
+  const summary = {
+    total: 0,
+    mismatches: 0,
+    rate: '0.0',
+    uniqueMrnsCount: 0,
+    activeStaffCount: 0,
+    lastActionStr: 'No Data',
+    topMedications: [] as any[],
+    topStaff: [] as any[],
+    locationBreakdown: {
+      'adult-emergency': { total: 0, mismatches: 0 },
+      'pediatric': { total: 0, mismatches: 0 },
+      'mesaieed-opd': { total: 0, mismatches: 0 }
+    } as any,
+    workloadTrend: [] as any[]
+  };
+
+  if (!fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+    return summary;
+  }
+
+  const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity
+  });
+
+  const mrnsSet = new Set<string>();
+  const staffSet = new Set<string>();
+  const medCounts: Record<string, { desc: string, count: number }> = {};
+  const staffCounts: Record<string, number> = {};
+  const days: Record<string, number> = {};
+  let maxDate = new Date(0);
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    try {
+      const rec = JSON.parse(line);
+      summary.total++;
+      if (rec.isMismatch) {
+        summary.mismatches++;
+      }
+
+      if (rec.mrnOrganization) mrnsSet.add(rec.mrnOrganization);
+      if (rec.actionPersonnelPharmacy) staffSet.add(rec.actionPersonnelPharmacy);
+
+      // Location breakdown
+      const key = getPharmacyLocationKey(rec.pharmacyLocation);
+
+      if (key) {
+        summary.locationBreakdown[key].total++;
+        if (rec.isMismatch) {
+          summary.locationBreakdown[key].mismatches++;
+        }
+      }
+
+      // Med counts
+      const num = rec.itemNumber;
+      if (num) {
+        if (!medCounts[num]) {
+          medCounts[num] = { desc: rec.labelDescription || 'Unknown', count: 0 };
+        }
+        medCounts[num].count++;
+      }
+
+      // Staff counts
+      const name = rec.actionPersonnelPharmacy;
+      if (name) {
+        staffCounts[name] = (staffCounts[name] || 0) + 1;
+      }
+
+      // Trend
+      const dateStr = rec.actionDateTime;
+      if (dateStr) {
+        let formattedDay = '';
+        if (dateStr.includes('T')) {
+          formattedDay = dateStr.substring(0, 10);
+        } else {
+          const parts = dateStr.split(' ');
+          if (parts[0] && parts[0].includes('-')) {
+            const dateParts = parts[0].split('-');
+            if (dateParts.length === 3 && dateParts[2].length === 4) {
+              formattedDay = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+            }
+          }
+        }
+        if (formattedDay) {
+          days[formattedDay] = (days[formattedDay] || 0) + 1;
+        }
+
+        try {
+          const d = parseRecordDateServer(formattedDay || dateStr);
+          if (d > maxDate) {
+            maxDate = d;
+            summary.lastActionStr = dateStr;
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  summary.uniqueMrnsCount = mrnsSet.size;
+  summary.activeStaffCount = staffSet.size;
+  summary.rate = summary.total > 0 ? ((summary.mismatches / summary.total) * 100).toFixed(1) : '0.0';
+
+  // Sort and slice top meds
+  summary.topMedications = Object.entries(medCounts)
+    .map(([num, val]) => ({ itemNumber: num, desc: val.desc, count: val.count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  // Sort and slice top staff
+  summary.topStaff = Object.entries(staffCounts)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  // Workload trend
+  summary.workloadTrend = Object.entries(days)
+    .map(([day, val]) => ({ day, count: val }))
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .slice(-10);
+
+  fs.writeFileSync(path.join(DATA_DIR, 'workload_summary.json'), JSON.stringify(summary, null, 2));
+  return summary;
+}
+
+async function syncWorkloadRecordsFromFirestore(): Promise<any[]> {
+  if (!adminDb) {
+    return [];
+  }
+  try {
+    const chunksSnapshot = await adminDb.collection('workload_chunks').get();
+    if (chunksSnapshot.docs.length > 0) {
+      console.log(`[Firebase Workload Sync] Found ${chunksSnapshot.docs.length} chunks. Downloading into NDJSON store...`);
+      const writeStream = fs.createWriteStream(WORKLOAD_RECORDS_FILE);
+      
+      const docs = chunksSnapshot.docs;
+      docs.sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      });
+      
+      for (const doc of docs) {
+        const data = doc.data();
+        if (Array.isArray(data.records)) {
+          for (const rec of data.records) {
+            writeStream.write(JSON.stringify(rec) + '\n');
+          }
+        }
+      }
+      
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on('finish', () => resolve());
+        writeStream.on('error', (err) => reject(err));
+        writeStream.end();
+      });
+      
+      console.log('[Firebase Workload Sync] Hydrated local NDJSON workload records file successfully.');
+      await deduplicateWorkloadRecords().catch(err => console.error('[Sync Deduplication Error]:', err.message));
+    }
+    return [];
+  } catch (err: any) {
+    handleAdminDbError(err, 'sync workload records');
+    return [];
+  }
+}
+
+async function saveWorkloadRecordsBulkToFirestore(allItems: any[]): Promise<void> {
+  await saveWorkloadRecordsBulkToFirestoreNdjson();
+}
+
+async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const CHUNK_SIZE = 1000;
+    let chunkIdx = 0;
+    let currentChunk: any[] = [];
+    
+    if (!fs.existsSync(WORKLOAD_RECORDS_FILE)) return;
+    
+    console.log(`[Firebase Sync] Saving workload records from NDJSON file to 'workload_chunks' with chunk size ${CHUNK_SIZE}...`);
+    
+    const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity
+    });
+    
+    let batch = adminDb.batch();
+    let count = 0;
+    
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      try {
+        const rec = JSON.parse(line);
+        currentChunk.push(rec);
+        
+        if (currentChunk.length >= CHUNK_SIZE) {
+          const chunkDocId = `chunk_${chunkIdx}`;
+          const docRef = adminDb.collection('workload_chunks').doc(chunkDocId);
+          const chunkData = {
+            chunkId: chunkIdx,
+            updatedAt: new Date().toISOString(),
+            records: cleanServerUndefined(currentChunk)
+          };
+          batch.set(docRef, chunkData, { merge: false });
+          count++;
+          
+          if (count >= 400) {
+            await batch.commit();
+            batch = adminDb.batch();
+            count = 0;
+          }
+          
+          chunkIdx++;
+          currentChunk = [];
+        }
+      } catch {}
+    }
+    
+    if (currentChunk.length > 0) {
+      const chunkDocId = `chunk_${chunkIdx}`;
+      const docRef = adminDb.collection('workload_chunks').doc(chunkDocId);
+      const chunkData = {
+        chunkId: chunkIdx,
+        updatedAt: new Date().toISOString(),
+        records: cleanServerUndefined(currentChunk)
+      };
+      batch.set(docRef, chunkData, { merge: false });
+      count++;
+    }
+    
+    if (count > 0) {
+      await batch.commit();
+    }
+    
+    const lastWrittenIdx = chunkIdx;
+    let cleanupBatch = adminDb.batch();
+    let cleanupCount = 0;
+    for (let i = lastWrittenIdx + 1; i < lastWrittenIdx + 200; i++) {
+      const extraDocRef = adminDb.collection('workload_chunks').doc(`chunk_${i}`);
+      cleanupBatch.delete(extraDocRef);
+      cleanupCount++;
+      
+      if (cleanupCount >= 400) {
+        await cleanupBatch.commit().catch(() => {});
+        cleanupBatch = adminDb.batch();
+        cleanupCount = 0;
+      }
+    }
+    if (cleanupCount > 0) {
+      await cleanupBatch.commit().catch(() => {});
+    }
+    
+    console.log(`[Firebase Sync] Successfully saved ${chunkIdx + 1} chunks to 'workload_chunks'.`);
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed chunk-save workload records to Firestore:', err.message);
+  }
+}
+
+async function resetWorkloadRecordsInFirestore(): Promise<void> {
+  if (!adminDb) return;
+  try {
+    const chunksSnapshot = await adminDb.collection('workload_chunks').get();
+    let batch = adminDb.batch();
+    let count = 0;
+    for (const doc of chunksSnapshot.docs) {
+      batch.delete(doc.ref);
+      count++;
+      if (count >= 500) {
+        await batch.commit();
+        batch = adminDb.batch();
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+    
+    const legacySnapshot = await adminDb.collection('workload_records').get();
+    batch = adminDb.batch();
+    count = 0;
+    for (const doc of legacySnapshot.docs) {
+      batch.delete(doc.ref);
+      count++;
+      if (count >= 500) {
+        await batch.commit();
+        batch = adminDb.batch();
+        count = 0;
+      }
+    }
+    if (count > 0) {
+      await batch.commit();
+    }
+    console.log('[Firebase Sync] Purged both workload_chunks and legacy workload_records collections.');
+  } catch (err: any) {
+    console.error('[Firebase Sync] Failed to reset workload records in Firestore:', err.message);
+  }
+}
+
 async function syncAllFromFirestoreAtStartup() {
   if (!adminDb) {
     console.log('[Firebase Startup Sync] Firestore admin database not active. Skipping startup pull.');
@@ -813,7 +1420,10 @@ async function syncAllFromFirestoreAtStartup() {
       syncAuditsFromFirestore().catch(e => console.error('Startup audits sync failed:', e.message)),
       syncEntryMistakesDbFromFirestore().catch(e => console.error('Startup parameters DB sync failed:', e.message)),
       syncApplicationStorageFromFirestore().catch(e => console.error('Startup application storage sync failed:', e.message)),
-      syncSystemMetadataFromFirestore().catch(e => console.error('Startup system metadata sync failed:', e.message))
+      syncSystemMetadataFromFirestore().catch(e => console.error('Startup system metadata sync failed:', e.message)),
+      syncRostersFromFirestore().catch(e => console.error('Startup rosters sync failed:', e.message)),
+      syncWorkloadRecordsFromFirestore().catch(e => console.error('Startup workload records sync failed:', e.message)),
+      syncUploadedFilesFromFirestore().catch(e => console.error('Startup uploaded files sync failed:', e.message))
     ]);
     console.log('[Firebase Startup Sync] All persistent data loaded successfully!');
   } catch (err: any) {
@@ -951,7 +1561,11 @@ function setupFirestoreListeners() {
         snapshot.forEach((doc: any) => {
           items.push(parseFirestoreDoc(doc));
         });
-        items.sort((a, b) => new Date(b.savedAt || 0).getTime() - new Date(a.savedAt || 0).getTime());
+        items.sort((a, b) => {
+          const sa = a.savedAt || '';
+          const sb = b.savedAt || '';
+          return sa > sb ? -1 : (sa < sb ? 1 : 0);
+        });
         fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
         console.log(`[Firebase Admin Sync] Real-time Application Storage Sync: Updated ${items.length} items.`);
         notifyClients('application-storage', items);
@@ -989,6 +1603,42 @@ function setupFirestoreListeners() {
       handleListenerError(err, 'listen system metadata');
     });
     activeUnsubscribes.push(unsubSystemMeta);
+
+    // 6. Listen to duty rosters
+    const unsubRosters = adminDb.collection('rosters').onSnapshot((snapshot: any) => {
+      try {
+        const rosters: any[] = [];
+        snapshot.forEach((doc: any) => {
+          rosters.push(parseFirestoreDoc(doc));
+        });
+        rosters.sort((a, b) => {
+          const sa = a.uploadedAt || '';
+          const sb = b.uploadedAt || '';
+          return sa > sb ? -1 : (sa < sb ? 1 : 0);
+        });
+        fs.writeFileSync(ROSTERS_FILE, JSON.stringify(rosters, null, 2));
+        console.log(`[Firebase Admin Sync] Real-time Rosters Sync: Updated ${rosters.length} items.`);
+        notifyClients('rosters', rosters);
+      } catch (err: any) {
+        console.error('[Firebase Admin Sync] Error processing rosters snapshot:', err.message);
+      }
+    }, (err: any) => {
+      handleListenerError(err, 'listen rosters');
+    });
+    activeUnsubscribes.push(unsubRosters);
+
+    // 7. Listen to workload records chunks (only log update notifications, no local OOM sync)
+    const unsubWorkloadRecords = adminDb.collection('workload_chunks').onSnapshot((snapshot: any) => {
+      try {
+        console.log('[Firebase Admin Sync] Real-time Workload Records Sync: Notification received.');
+        notifyClients('workload-records', { updated: true });
+      } catch (err: any) {
+        console.error('[Firebase Admin Sync] Error processing workload records chunks snapshot:', err.message);
+      }
+    }, (err: any) => {
+      handleListenerError(err, 'listen workload records chunks');
+    });
+    activeUnsubscribes.push(unsubWorkloadRecords);
 
     isRealtimeListeningActive = true;
     console.log('[Firebase Admin Sync] Real-time listeners active and running.');
@@ -1514,6 +2164,483 @@ app.post('/api/system/metadata/settings', async (req, res) => {
   }
 });
 
+// Memory store to buffer incoming chunked uploads
+const pendingUploads = new Map<string, any[]>();
+
+// POST to initiate a chunked upload session
+app.post('/api/workload-records/upload/start', (req, res) => {
+  try {
+    const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    pendingUploads.set(uploadId, []);
+    console.log(`[Chunked Upload] Initialized upload session ${uploadId}`);
+    res.json({ uploadId });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to receive a chunk of workload records
+app.post('/api/workload-records/upload/chunk', (req, res) => {
+  try {
+    const { uploadId, items } = req.body;
+    if (!uploadId || !Array.isArray(items)) {
+      return res.status(400).json({ error: 'Missing uploadId or items array.' });
+    }
+    const list = pendingUploads.get(uploadId);
+    if (!list) {
+      return res.status(404).json({ error: 'Upload session not found or expired.' });
+    }
+    list.push(...items);
+    console.log(`[Chunked Upload] Session ${uploadId}: Received chunk of ${items.length} records. Total buffered: ${list.length}`);
+    res.json({ success: true, count: items.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to finalize the chunked upload, merge records, and persist
+app.post('/api/workload-records/upload/end', async (req, res) => {
+  try {
+    const { uploadId, filenames } = req.body;
+    if (!uploadId) {
+      return res.status(400).json({ error: 'Missing uploadId.' });
+    }
+    const itemsToSave = pendingUploads.get(uploadId);
+    if (!itemsToSave) {
+      return res.status(404).json({ error: 'Upload session not found or expired.' });
+    }
+    
+    pendingUploads.delete(uploadId);
+    console.log(`[Chunked Upload] Finalizing session ${uploadId} with ${itemsToSave.length} total buffered records.`);
+
+    // Read existing keys to prevent duplicates
+    const existingKeys = new Set<string>();
+    if (fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+      const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        try {
+          const x = JSON.parse(line);
+          if (x.id) existingKeys.add(x.id);
+          if (x.mrnOrganization && x.actionDateTime && x.itemNumber && x.pharmacyLocation) {
+            existingKeys.add(`${x.mrnOrganization}|||${x.actionDateTime}|||${x.itemNumber}|||${x.pharmacyLocation}`);
+          }
+        } catch {}
+      }
+    }
+    
+    let addedCount = 0;
+    const appendStream = fs.createWriteStream(WORKLOAD_RECORDS_FILE, { flags: 'a' });
+    
+    for (const item of itemsToSave) {
+      const id = item.id || `workload-rec-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
+      const compositeKey = `${item.mrnOrganization || ''}|||${item.actionDateTime || ''}|||${item.itemNumber || ''}|||${item.pharmacyLocation || ''}`;
+      
+      const isDup = existingKeys.has(id) || existingKeys.has(compositeKey);
+      
+      if (!isDup) {
+        const cleanedItem = {
+          ...item,
+          id,
+          savedAt: item.savedAt || new Date().toISOString()
+        };
+        appendStream.write(JSON.stringify(cleanedItem) + '\n');
+        existingKeys.add(id);
+        existingKeys.add(compositeKey);
+        addedCount++;
+      }
+    }
+    
+    appendStream.end();
+
+    if (Array.isArray(filenames) && filenames.length > 0) {
+      logUploadedFiles(filenames, itemsToSave.length, addedCount);
+    }
+    
+    if (addedCount > 0) {
+      await generateWorkloadSummary().catch(err => console.error(err));
+      if (adminDb) {
+        saveWorkloadRecordsBulkToFirestoreNdjson().catch(err => {
+          console.error('[Background Firebase Sync Error] Failed to save workload records:', err.message);
+        });
+      }
+      updateSystemMetadataInFirestore().catch(err => {
+        console.error('[Background Firebase Sync Error] Failed to update system metadata:', err.message);
+      });
+    }
+    
+    notifyClients('workload-records', { updated: true });
+    res.json({ success: true, added: addedCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET all stored workload records
+app.get('/api/workload-records', async (req, res) => {
+  try {
+    if (adminDb && !isRealtimeListeningActive) {
+      await syncWorkloadRecordsFromFirestore().catch(err => console.error(err));
+    }
+    
+    let uploadedFilesList: any[] = [];
+    if (fs.existsSync(UPLOADED_FILES_FILE)) {
+      try {
+        uploadedFilesList = JSON.parse(fs.readFileSync(UPLOADED_FILES_FILE, 'utf8'));
+      } catch (e) {}
+    }
+    const totalUploadedFiles = uploadedFilesList.length;
+
+    const { location, mismatchOnly, search, startDate, endDate, trendLocation } = req.query;
+    
+    const hasFilters = location || mismatchOnly === 'true' || search || startDate || endDate || (trendLocation && trendLocation !== 'all');
+    
+    // If there are no filters at all, we serve the pre-calculated summary from workload_summary.json
+    // along with the first 100 records as a fast preview!
+    if (!hasFilters) {
+      const summaryFile = path.join(DATA_DIR, 'workload_summary.json');
+      let summary: any = null;
+      if (fs.existsSync(summaryFile)) {
+        try {
+          summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+        } catch {}
+      }
+      
+      if (!summary) {
+        summary = await generateWorkloadSummary();
+      }
+      
+      const records: any[] = [];
+      if (fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+        const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
+        const rl = readline.createInterface({
+          input: fileStream,
+          crlfDelay: Infinity
+        });
+        let count = 0;
+        for await (const line of rl) {
+          if (!line.trim()) continue;
+          try {
+            records.push(JSON.parse(line));
+            count++;
+            if (count >= 100) break;
+          } catch {}
+        }
+      }
+      
+      return res.json({
+        records,
+        summary: {
+          total: summary.total,
+          mismatches: summary.mismatches,
+          rate: summary.rate,
+          uniqueMrns: summary.uniqueMrnsCount,
+          activeStaff: summary.activeStaffCount,
+          lastActionStr: summary.lastActionStr,
+          totalUploadedFiles
+        },
+        uploadedFilesList,
+        topMedications: summary.topMedications,
+        topStaff: summary.topStaff,
+        locationBreakdown: summary.locationBreakdown,
+        workloadTrend: summary.workloadTrend
+      });
+    }
+    
+    // If there are filters, we do a streaming filter pass over the NDJSON file
+    const filteredRecords: any[] = [];
+    const mrnsSet = new Set<string>();
+    const staffSet = new Set<string>();
+    const medCounts: Record<string, { desc: string, count: number }> = {};
+    const staffCounts: Record<string, number> = {};
+    const days: Record<string, number> = {};
+    let maxDate = new Date(0);
+    let lastActionStr = 'No Data';
+    let totalMismatches = 0;
+    
+    if (fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+      const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+      
+      const searchStr = typeof search === 'string' ? search.toLowerCase().trim() : '';
+      const searchTokens = searchStr ? searchStr.split(/\s+/) : [];
+      const filterLocation = typeof location === 'string' ? location.toLowerCase() : '';
+      const filterTrendLocation = typeof trendLocation === 'string' ? trendLocation.toLowerCase() : '';
+      const filterMismatchOnly = mismatchOnly === 'true';
+      const startDateTime = startDate ? new Date(startDate + 'T00:00:00') : null;
+      const endDateTime = endDate ? new Date(endDate + 'T23:59:59') : null;
+      
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        try {
+          const rec = JSON.parse(line);
+          
+          if (filterLocation && filterLocation !== 'all') {
+            const key = getPharmacyLocationKey(rec.pharmacyLocation);
+            const matched = (filterLocation === 'adult' && key === 'adult-emergency') ||
+                            (filterLocation === 'pediatric' && key === 'pediatric') ||
+                            (filterLocation === 'mesaieed' && key === 'mesaieed-opd');
+            if (!matched) continue;
+          }
+          
+          if (filterMismatchOnly && !rec.isMismatch) continue;
+          
+          if (searchTokens.length > 0) {
+            const matchAll = searchTokens.every(token => 
+              (rec.personNameFull || '').toLowerCase().includes(token) ||
+              (rec.mrnOrganization || '').toLowerCase().includes(token) ||
+              (rec.itemNumber || '').toLowerCase().includes(token) ||
+              (rec.labelDescription || '').toLowerCase().includes(token) ||
+              (rec.actionPersonnelPharmacy || '').toLowerCase().includes(token) ||
+              (rec.actionType || '').toLowerCase().includes(token)
+            );
+            if (!matchAll) continue;
+          }
+          
+          let recDateObj: Date | null = null;
+          if (startDateTime || endDateTime) {
+            recDateObj = parseRecordDateServer(rec.actionDateTime);
+            if (recDateObj.getTime() === 0) continue;
+            
+            if (startDateTime && recDateObj < startDateTime) continue;
+            if (endDateTime && recDateObj > endDateTime) continue;
+          }
+          
+          if (rec.isMismatch) totalMismatches++;
+          if (rec.mrnOrganization) mrnsSet.add(rec.mrnOrganization);
+          if (rec.actionPersonnelPharmacy) staffSet.add(rec.actionPersonnelPharmacy);
+          
+          const num = rec.itemNumber;
+          if (num) {
+            if (!medCounts[num]) {
+              medCounts[num] = { desc: rec.labelDescription || 'Unknown', count: 0 };
+            }
+            medCounts[num].count++;
+          }
+          
+          const name = rec.actionPersonnelPharmacy;
+          if (name) {
+            staffCounts[name] = (staffCounts[name] || 0) + 1;
+          }
+          
+          const dateStr = rec.actionDateTime;
+          if (dateStr) {
+            let formattedDay = '';
+            if (dateStr.includes('T')) {
+              formattedDay = dateStr.substring(0, 10);
+            } else {
+              const parts = dateStr.split(' ');
+              if (parts[0] && parts[0].includes('-')) {
+                const dateParts = parts[0].split('-');
+                if (dateParts.length === 3 && dateParts[2].length === 4) {
+                  formattedDay = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+                }
+              }
+            }
+            if (formattedDay) {
+              let matchesTrend = true;
+              if (filterTrendLocation && filterTrendLocation !== 'all') {
+                const key = getPharmacyLocationKey(rec.pharmacyLocation);
+                const matched = (filterTrendLocation === 'adult' && key === 'adult-emergency') ||
+                                (filterTrendLocation === 'pediatric' && key === 'pediatric') ||
+                                (filterTrendLocation === 'mesaieed' && key === 'mesaieed-opd');
+                if (!matched) {
+                  matchesTrend = false;
+                }
+              }
+              if (matchesTrend) {
+                days[formattedDay] = (days[formattedDay] || 0) + 1;
+              }
+            }
+            
+            try {
+              const d = recDateObj || parseRecordDateServer(dateStr);
+              if (d > maxDate) {
+                maxDate = d;
+                lastActionStr = dateStr;
+              }
+            } catch {}
+          }
+          
+          // Return up to 5,000 matches safely over HTTP
+          if (filteredRecords.length < 5000) {
+            filteredRecords.push(rec);
+          }
+        } catch {}
+      }
+    }
+    
+    const topMedications = Object.entries(medCounts)
+      .map(([num, val]) => ({ itemNumber: num, desc: val.desc, count: val.count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+      
+    const topStaff = Object.entries(staffCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+      
+    const workloadTrend = Object.entries(days)
+      .map(([day, val]) => ({ day, count: val }))
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .slice(-10);
+      
+    const locationBreakdown = {
+      'adult-emergency': { total: 0, mismatches: 0 },
+      'pediatric': { total: 0, mismatches: 0 },
+      'mesaieed-opd': { total: 0, mismatches: 0 }
+    };
+    for (const rec of filteredRecords) {
+      const key = getPharmacyLocationKey(rec.pharmacyLocation);
+      
+      if (key) {
+        locationBreakdown[key as keyof typeof locationBreakdown].total++;
+        if (rec.isMismatch) {
+          locationBreakdown[key as keyof typeof locationBreakdown].mismatches++;
+        }
+      }
+    }
+    
+    const total = filteredRecords.length;
+    const rate = total > 0 ? ((totalMismatches / total) * 100).toFixed(1) : '0.0';
+    
+    res.json({
+      records: filteredRecords,
+      summary: {
+        total,
+        mismatches: totalMismatches,
+        rate,
+        uniqueMrns: mrnsSet.size,
+        activeStaff: staffSet.size,
+        lastActionStr,
+        totalUploadedFiles
+      },
+      uploadedFilesList,
+      topMedications,
+      topStaff,
+      locationBreakdown,
+      workloadTrend
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to bulk save workload records (append-only style with duplicate checks)
+app.post('/api/workload-records', async (req, res) => {
+  try {
+    const body = req.body;
+    let itemsToSave: any[] = [];
+    let filenames: string[] = [];
+    
+    if (Array.isArray(body)) {
+      itemsToSave = body;
+    } else if (body && Array.isArray(body.records)) {
+      itemsToSave = body.records;
+      filenames = body.filenames || [];
+    } else if (body) {
+      itemsToSave = [body];
+    }
+    
+    const existingKeys = new Set<string>();
+    if (fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+      const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
+      const rl = readline.createInterface({
+        input: fileStream,
+        crlfDelay: Infinity
+      });
+      for await (const line of rl) {
+        if (!line.trim()) continue;
+        try {
+          const x = JSON.parse(line);
+          if (x.id) existingKeys.add(x.id);
+          if (x.mrnOrganization && x.actionDateTime && x.itemNumber && x.pharmacyLocation) {
+            existingKeys.add(`${x.mrnOrganization}|||${x.actionDateTime}|||${x.itemNumber}|||${x.pharmacyLocation}`);
+          }
+        } catch {}
+      }
+    }
+    
+    let addedCount = 0;
+    const appendStream = fs.createWriteStream(WORKLOAD_RECORDS_FILE, { flags: 'a' });
+    
+    for (const item of itemsToSave) {
+      const id = item.id || `workload-rec-${Math.random().toString(36).substring(2, 15)}-${Date.now()}`;
+      const compositeKey = `${item.mrnOrganization || ''}|||${item.actionDateTime || ''}|||${item.itemNumber || ''}|||${item.pharmacyLocation || ''}`;
+      
+      const isDup = existingKeys.has(id) || existingKeys.has(compositeKey);
+      
+      if (!isDup) {
+        const cleanedItem = {
+          ...item,
+          id,
+          savedAt: item.savedAt || new Date().toISOString()
+        };
+        appendStream.write(JSON.stringify(cleanedItem) + '\n');
+        existingKeys.add(id);
+        existingKeys.add(compositeKey);
+        addedCount++;
+      }
+    }
+    
+    appendStream.end();
+
+    if (filenames.length > 0) {
+      logUploadedFiles(filenames, itemsToSave.length, addedCount);
+    }
+    
+    if (addedCount > 0) {
+      await generateWorkloadSummary().catch(err => console.error(err));
+      if (adminDb) {
+        saveWorkloadRecordsBulkToFirestoreNdjson().catch(err => {
+          console.error('[Background Firebase Sync Error] Failed to save workload records:', err.message);
+        });
+      }
+    }
+    
+    notifyClients('workload-records', { updated: true });
+    res.json({ success: true, added: addedCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to reset/clear all stored workload records
+app.post('/api/workload-records/reset', async (req, res) => {
+  try {
+    const { adminPassword } = req.body;
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    if (adminPassword !== settings.adminPassword) {
+      return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
+    }
+    
+    fs.writeFileSync(WORKLOAD_RECORDS_FILE, '');
+    const summaryFile = path.join(DATA_DIR, 'workload_summary.json');
+    if (fs.existsSync(summaryFile)) {
+      try {
+        fs.unlinkSync(summaryFile);
+      } catch {}
+    }
+    
+    if (adminDb) {
+      await resetWorkloadRecordsInFirestore().catch(err => console.error(err));
+    }
+    
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    notifyClients('workload-records', { updated: true });
+    res.json({ success: true, message: 'All workload records purged successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET all stored application mistakes
 app.get('/api/application-storage', async (req, res) => {
   try {
@@ -1539,19 +2666,37 @@ app.post('/api/application-storage', async (req, res) => {
     
     let items = [];
     if (fs.existsSync(APPLICATION_STORAGE_FILE)) {
-      items = JSON.parse(fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8'));
+      try {
+        const fileContent = fs.readFileSync(APPLICATION_STORAGE_FILE, 'utf8');
+        if (fileContent.trim()) {
+          const parsed = JSON.parse(fileContent);
+          if (Array.isArray(parsed)) {
+            items = parsed;
+          }
+        }
+      } catch (e: any) {
+        console.warn('[Storage] Failed to parse APPLICATION_STORAGE_FILE:', e.message);
+      }
+    }
+    
+    // Build a Set of existing composite keys for fast O(1) lookup
+    const existingKeys = new Set<string>();
+    for (const x of items) {
+      if (x && x.id) {
+        existingKeys.add(x.id);
+      }
+      if (x && x.mrnOrganization && x.actionDateTime && x.itemNumber) {
+        existingKeys.add(`${x.mrnOrganization}|||${x.actionDateTime}|||${x.itemNumber}`);
+      }
     }
     
     let addedCount = 0;
     const newlyAddedItems: any[] = [];
     for (const item of itemsToSave) {
-      // De-duplicate items by id or composite key (mrn + date + itemNumber)
-      const isDup = items.some((x: any) => 
-        x.id === item.id || 
-        (x.mrnOrganization === item.mrnOrganization && 
-         x.actionDateTime === item.actionDateTime && 
-         x.itemNumber === item.itemNumber)
-      );
+      if (!item) continue;
+      const compositeKey = `${item.mrnOrganization || ''}|||${item.actionDateTime || ''}|||${item.itemNumber || ''}`;
+      
+      const isDup = (item.id && existingKeys.has(item.id)) || existingKeys.has(compositeKey);
       
       if (!isDup) {
         const itemWithTime = {
@@ -1560,6 +2705,10 @@ app.post('/api/application-storage', async (req, res) => {
         };
         items.push(itemWithTime);
         newlyAddedItems.push(itemWithTime);
+        if (item.id) {
+          existingKeys.add(item.id);
+        }
+        existingKeys.add(compositeKey);
         addedCount++;
       }
     }
@@ -1720,12 +2869,15 @@ app.post('/api/translate', async (req, res) => {
       "unique_1": { ... }
     }`;
 
-    console.log(`Translating ${uniqueItems.length} newly added unique items with Gemini API...`);
+    console.log(`Translating ${uniqueItems.length} newly added unique items with Gemini API (optimized speed)...`);
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.MINIMAL
+        }
       }
     });
 
@@ -1813,6 +2965,400 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
+// PDF Table OCR and Excel Merger API Route
+app.post('/api/pdf-ocr/parse', async (req, res) => {
+  try {
+    const { base64, filename, mimeType } = req.body;
+    if (!base64) {
+      return res.status(400).json({ error: "Missing base64 PDF data." });
+    }
+
+    const ai = getGeminiClient();
+    
+    const filePart = {
+      inlineData: {
+        mimeType: mimeType || "application/pdf",
+        data: base64
+      }
+    };
+
+    const prompt = `You are a high-precision pharmaceutical inventory OCR system. 
+Your job is to read this entire PDF document, find any and all tables containing medication or drug inventories, packing lists, invoices, or stock reports, and extract every single row and column exactly.
+
+We need you to extract the tabular data as a clean, standardized JSON array of objects.
+
+Make a best effort to identify and map common medication table headers into these standardized column keys:
+- "itemCode" (representing product code, item code, barcode, or ID)
+- "itemName" (representing name, description, drug name, or product name)
+- "qoh" (representing quantity, quantity on hand, physical count, or stock)
+- "expiryDate" (representing expiry, expiration date, exp)
+- "batchNo" (representing batch, lot, batch number, or lot number)
+- "price" (representing cost, price, rate, or unit price)
+
+If a column doesn't match any of these standard headers, keep its original name exactly (as a custom header).
+
+Return a JSON object structured exactly like this:
+{
+  "headers": ["itemCode", "itemName", "qoh", "expiryDate", "batchNo", "price"],
+  "rows": [
+    {
+      "itemCode": "Value",
+      "itemName": "Value",
+      "qoh": 100, // as a clean number if possible, or string
+      "expiryDate": "Value",
+      "batchNo": "Value",
+      "price": 10.5 // as a clean number if possible, or string
+    }
+  ]
+}
+
+If other custom columns are found, you may append them to the "headers" list and include them in the "rows" objects.
+
+CRITICAL RULES:
+1. Extract ALL rows in the tables. Do not omit, truncate, or summarize anything.
+2. Be extremely precise. Double-check all numbers and spelling.
+3. If some rows don't have certain values, map them as null or empty string.
+4. Output MUST be valid, parseable JSON conforming to the structure above. No markdown wrap.`;
+
+    console.log(`[PDF OCR] Processing file "${filename}" with Gemini 3.5 Flash (optimized speed)...`);
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [filePart, prompt],
+      config: {
+        responseMimeType: "application/json",
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.MINIMAL
+        }
+      }
+    });
+
+    let responseText = response.text || '{}';
+    if (responseText.includes('```')) {
+      responseText = responseText.replace(/```json\n?|```/g, '').trim();
+    }
+
+    try {
+      const result = JSON.parse(responseText);
+      res.json(result);
+    } catch (parseError) {
+      console.error("[PDF OCR Parsing Failed] Raw Response was:", responseText);
+      throw new Error("Gemini returned invalid JSON: " + responseText.substring(0, 200));
+    }
+  } catch (error: any) {
+    console.error("[PDF OCR Error]", error);
+    res.status(500).json({ error: error.message || "Failed to process PDF table OCR" });
+  }
+});
+
+// GET all stored duty rosters
+app.get('/api/rosters', async (req, res) => {
+  try {
+    if (adminDb && !isRealtimeListeningActive) {
+      await syncRostersFromFirestore().catch(err => console.error(err));
+    }
+    if (fs.existsSync(ROSTERS_FILE)) {
+      const data = fs.readFileSync(ROSTERS_FILE, 'utf8');
+      res.json(JSON.parse(data));
+    } else {
+      res.json([]);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to save a duty roster
+app.post('/api/rosters', async (req, res) => {
+  try {
+    const roster = req.body;
+    if (!roster || !roster.id) {
+      return res.status(400).json({ error: "Invalid roster data" });
+    }
+
+    if (roster.entries && Array.isArray(roster.entries)) {
+      roster.entries.sort((a: any, b: any) => (a.date || '').localeCompare(b.date || ''));
+    }
+
+    let rosters = [];
+    if (fs.existsSync(ROSTERS_FILE)) {
+      try {
+        rosters = JSON.parse(fs.readFileSync(ROSTERS_FILE, 'utf8'));
+      } catch {
+        rosters = [];
+      }
+    }
+
+    // Overwrite if same ID or add new
+    rosters = rosters.filter((r: any) => r.id !== roster.id);
+    roster.uploadedAt = roster.uploadedAt || new Date().toISOString();
+    rosters.unshift(roster);
+
+    fs.writeFileSync(ROSTERS_FILE, JSON.stringify(rosters, null, 2));
+
+    if (adminDb) {
+      await saveRosterToFirestore(roster).catch(err => console.error(err));
+    }
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    notifyClients('rosters', rosters);
+
+    res.json({ success: true, count: rosters.length, roster });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to parse a Monthly Pharmacist Duty Roster PDF using Gemini OCR
+app.post('/api/rosters/parse', async (req, res) => {
+  try {
+    const { base64, filename, mimeType } = req.body;
+    if (!base64) {
+      return res.status(400).json({ error: "Missing base64 PDF data." });
+    }
+
+    const ai = getGeminiClient();
+
+    const filePart = {
+      inlineData: {
+        mimeType: mimeType || "application/pdf",
+        data: base64
+      }
+    };
+
+    const prompt = `You are a professional, high-precision medical scheduling and pharmacist duty roster parsing system.
+Your job is to read this Monthly Pharmacists Duty Roster PDF, extract all shifts and assignments for EVERY SINGLE pharmacist listed across ALL pages of the document, and output a clean, standardized, compact JSON format.
+
+CRITICAL INSTRUCTIONS:
+1. There are usually around 35 to 50 unique pharmacists listed in the duty roster document (e.g., 42 pharmacists) across multiple pages.
+2. Scan EVERY SINGLE page of the PDF sequentially from page 1 to the end. Every page contains rows of different pharmacists. Do NOT stop after the first page or the first few rows! Keep scanning and compiling all rows until you have extracted EVERY single pharmacist listed in the roster.
+3. We need ALL 42+ pharmacists. Under no circumstances should you truncate, summarize, or skip names. Every name and their corresponding roster of daily shifts is extremely important.
+4. Do NOT stop after the first page or first 3 rows. If there are 42 pharmacists in the PDF, your returned JSON "pharmacists" array MUST contain all 42 elements. Under-extraction is a critical failure.
+5. Represent the daily shifts for each pharmacist as a compact SPACE-SEPARATED string of shift abbreviation codes for days 1 to 30 or 31 (e.g., "O O Aa Ba Ca L SL O"). This saves massive output token space, prevents the AI from getting lazy or cutting off early, and ensures we can load all 42+ pharmacists successfully.
+
+SHIFT ABBREVIATION CODES REFERENCE:
+- Aa  --> Morning Shift Adult Pharmacy
+- Ap  --> Morning Shift Pediatric Pharmacy
+- Ba  --> Evening Shift Adult Pharmacy
+- Bp  --> Evening Shift Pediatric Pharmacy (1-9 PM)
+- Ca  --> Night Shift Adult Pharmacy
+- Cp  --> Night Shift Pediatric Pharmacy
+- Ao  --> Morning Shift AWH OPD Pharmacy
+- Amo --> Morning Shift Mesaieed OPD Pharmacy
+- Ai  --> Morning Shift Inpatient Pharmacy
+- Av  --> Morning Shift IV Pharmacy
+- Ar  --> Morning Extemporaneous Preparations
+- An  --> Morning Narcotic Pharmacy
+- Bi  --> Evening Shift Inpatient Pharmacy
+- Ci  --> Night Shift Inpatient Pharmacy
+- L   --> Annual Leave
+- A*  --> Casual Leave
+- SL  --> Sick Leave
+- O   --> OFF Day / No Shift
+
+If there are days with no shifts or when a pharmacist is OFF, use "O" as the shift code.`;
+
+    console.log(`[Duty Roster OCR] Parsing PDF "${filename}" with Gemini 3.5 Flash...`);
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [filePart, prompt],
+      config: {
+        systemInstruction: "You are a professional, high-precision medical scheduling and pharmacist duty roster parsing system. Your absolute highest priority is complete coverage: you must extract and output EVERY SINGLE pharmacist listed in the duty roster document across all pages. Never truncate or stop early. There are normally 35 to 50 unique pharmacists listed. Scan EVERY SINGLE PAGE of the PDF. If you output fewer than 35 pharmacists, you have failed the task.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            month: {
+              type: Type.STRING,
+              description: "The month and year of the roster (e.g. 'July 2026'). If not specified, default to 'July 2026'."
+            },
+            pharmacists: {
+              type: Type.ARRAY,
+              description: "The complete list of all pharmacists found across ALL pages of the PDF. Do not skip any names or truncate this array. Must contain every single pharmacist listed on every page (usually 35 to 50 pharmacists).",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  pharmacistName: {
+                    type: Type.STRING,
+                    description: "Full name of the pharmacist as written in the roster."
+                  },
+                  shifts: {
+                    type: Type.STRING,
+                    description: "A space-separated string of shift abbreviation codes for each day of the month (e.g. 'O O Aa Ba Ca L SL O O ...'). Must contain exactly 30 or 31 shift codes."
+                  }
+                },
+                required: ["pharmacistName", "shifts"]
+              }
+            }
+          },
+          required: ["month", "pharmacists"]
+        },
+        temperature: 0.0,
+        maxOutputTokens: 8192,
+        thinkingConfig: {
+          thinkingLevel: ThinkingLevel.MINIMAL
+        }
+      }
+    });
+
+    let responseText = response.text || '{}';
+    if (responseText.includes('```')) {
+      responseText = responseText.replace(/```json\n?|```/g, '').trim();
+    }
+
+    try {
+      const result = JSON.parse(responseText);
+      
+      // Expand compact layout into flat array for frontend backward compatibility
+      const monthStr = result.month || "July 2026";
+      let year = 2026;
+      let monthIndex = 6; // July
+      const monthNames = [
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december"
+      ];
+      
+      const lowerMonthStr = monthStr.toLowerCase();
+      for (let i = 0; i < 12; i++) {
+        if (lowerMonthStr.includes(monthNames[i])) {
+          monthIndex = i;
+          break;
+        }
+      }
+      const yearMatch = monthStr.match(/\d{4}/);
+      if (yearMatch) {
+        year = parseInt(yearMatch[0]);
+      }
+      
+      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+      
+      const shiftDict: Record<string, string> = {
+        "Aa": "Morning Shift Adult Pharmacy",
+        "Ap": "Morning Shift Pediatric Pharmacy",
+        "Ba": "Evening Shift Adult Pharmacy",
+        "Bp": "Evening Shift Pediatric Pharmacy",
+        "Ca": "Night Shift Adult Pharmacy",
+        "Cp": "Night Shift Pediatric Pharmacy",
+        "Ao": "Morning Shift AWH OPD Pharmacy",
+        "Amo": "Morning Shift Mesaieed OPD Pharmacy",
+        "Ai": "Morning Shift Inpatient Pharmacy",
+        "Av": "Morning Shift IV Pharmacy",
+        "Ar": "Morning Extemporaneous Preparations",
+        "An": "Morning Narcotic Pharmacy",
+        "Bi": "Evening Shift Inpatient Pharmacy",
+        "Ci": "Night Shift Inpatient Pharmacy",
+        "L": "Annual Leave",
+        "A*": "Casual Leave",
+        "SL": "Sick Leave",
+        "O": "OFF Day",
+        "OFF": "OFF Day"
+      };
+
+      const entries: any[] = [];
+      const pharmacistsArray = result.pharmacists || [];
+      
+      for (const ph of pharmacistsArray) {
+        const phName = ph.pharmacistName || "Unknown Pharmacist";
+        const rawShifts = ph.shifts;
+        let shifts: string[] = [];
+        
+        if (Array.isArray(rawShifts)) {
+          shifts = rawShifts;
+        } else if (typeof rawShifts === 'string') {
+          // split by spaces, commas or any whitespace sequence
+          shifts = rawShifts.split(/[\s,]+/).map((s: string) => s.trim()).filter(Boolean);
+        }
+        
+        for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+          const shiftCode = shifts[dayNum - 1] || "O";
+          
+          let shiftName = shiftDict[shiftCode] || shiftCode || "OFF Day";
+          if (shiftName === "" || shiftName === "O" || shiftName === "OFF") {
+            shiftName = "OFF Day";
+          }
+          
+          let location = "Al Wakra";
+          if (shiftCode.toLowerCase().includes("mo")) {
+            location = "Mesaieed";
+          } else if (shiftName === "OFF Day" || shiftCode === "O" || shiftCode === "OFF") {
+            location = "None";
+          }
+          
+          const dd = String(dayNum).padStart(2, '0');
+          const mm = String(monthIndex + 1).padStart(2, '0');
+          const dateStr = `${year}-${mm}-${dd}`;
+          
+          const dateObj = new Date(year, monthIndex, dayNum);
+          const dayNamesOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+          const dayName = dayNamesOfWeek[dateObj.getDay()];
+          
+          entries.push({
+            date: dateStr,
+            day: dayName,
+            pharmacistName: phName,
+            shift: shiftName,
+            location: location,
+            notes: ""
+          });
+        }
+      }
+      
+      entries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+      const suggestedFilters = {
+        pharmacists: Array.from(new Set(entries.map(e => e.pharmacistName).filter(Boolean))),
+        shifts: Array.from(new Set(entries.map(e => e.shift).filter(Boolean))),
+        locations: Array.from(new Set(entries.map(e => e.location).filter(Boolean)))
+      };
+      
+      const expandedResult = {
+        month: monthStr,
+        entries: entries,
+        suggestedFilters: suggestedFilters
+      };
+
+      res.json(expandedResult);
+    } catch (parseError) {
+      console.error("[Duty Roster Parsing Failed] Raw Response was:", responseText);
+      throw new Error("Gemini returned invalid duty roster JSON");
+    }
+  } catch (error: any) {
+    console.error("[Duty Roster OCR Error]", error);
+    res.status(500).json({ error: error.message || "Failed to process duty roster PDF OCR" });
+  }
+});
+
+// POST to delete a duty roster (Requires Admin Password)
+app.post('/api/rosters/delete', async (req, res) => {
+  try {
+    const { id, adminPassword } = req.body;
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    if (adminPassword !== settings.adminPassword) {
+      return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
+    }
+
+    if (!fs.existsSync(ROSTERS_FILE)) {
+      return res.status(400).json({ error: 'Rosters storage file does not exist.' });
+    }
+
+    let rosters = JSON.parse(fs.readFileSync(ROSTERS_FILE, 'utf8'));
+    const itemToDelete = rosters.find((r: any) => r.id === id);
+
+    if (itemToDelete) {
+      rosters = rosters.filter((r: any) => r.id !== id);
+      fs.writeFileSync(ROSTERS_FILE, JSON.stringify(rosters, null, 2));
+
+      if (adminDb) {
+        await deleteRosterFromFirestore(id).catch(err => console.error(err));
+      }
+      await updateSystemMetadataInFirestore().catch(err => console.error(err));
+      notifyClients('rosters', rosters);
+    }
+
+    res.json({ success: true, count: rosters.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Static assets from public folder (fallback)
 app.use(express.static(path.join(process.cwd(), 'public'), {
   setHeaders: (res, path) => {
@@ -1825,13 +3371,21 @@ app.use(express.static(path.join(process.cwd(), 'public'), {
 async function startServer() {
   const isProd = process.env.NODE_ENV === "production" && fs.existsSync(path.join(process.cwd(), 'dist/index.html'));
 
-  // Run startup sync to fetch persistent Firestore state down into local cache
-  await syncAllFromFirestoreAtStartup().catch(err => {
-    console.error('[Firebase Startup Sync Init] Failed to run startup fetch:', err.message);
-  });
-
-  // Setup real-time Firestore listeners for immediate bidirectional synchronization
-  setupFirestoreListeners();
+  // Run startup sync to fetch persistent Firestore state down into local cache asynchronously so it never blocks the server from listening
+  syncAllFromFirestoreAtStartup()
+    .then(async () => {
+      // Setup real-time Firestore listeners after initial sync completes
+      setupFirestoreListeners();
+      // Automatically clean and deduplicate stored workload records on startup
+      await deduplicateWorkloadRecords().catch(err => console.error('[Startup Deduplication Error]:', err.message));
+    })
+    .catch(async err => {
+      console.error('[Firebase Startup Sync Init] Failed to run startup fetch:', err.message);
+      // Ensure listeners are still set up even if startup fetch fails
+      setupFirestoreListeners();
+      // Automatically clean and deduplicate stored workload records on startup even on sync failure
+      await deduplicateWorkloadRecords().catch(err => console.error('[Startup Deduplication Error]:', err.message));
+    });
 
   // Vite middleware for development
   if (!isProd) {

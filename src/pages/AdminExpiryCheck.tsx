@@ -3,7 +3,7 @@ import {
   Plus, Upload, Trash2, Edit2, Check, FileSpreadsheet, 
   AlertCircle, Info, Loader2, AlertTriangle, Search, RefreshCw, 
   UploadCloud, Cloud, ChevronRight, FileText, Download, ArrowLeft, 
-  Calendar, CheckSquare, Square, CheckCircle2, X
+  Calendar, CheckSquare, Square, CheckCircle2, X, Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { useMedications } from '../hooks/useMedications';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 import { formatNumber, formatExpirationDate } from '../lib/formatters';
 import { medicationOps } from '../lib/firebaseOperations';
+import { storage } from '../lib/storage';
 
 interface ExcelGroupedRow {
   itemCode: string;
@@ -25,6 +26,7 @@ interface ExcelGroupedRow {
   lotSerials: string[];
   dates: string[]; // unique date strings parsed DD/MM/YYYY
   totalQty: number;
+  isBackordered?: boolean;
 }
 
 interface MismatchedItem {
@@ -52,7 +54,17 @@ interface LocationExcelState {
   rawSheetNames: string[];
 }
 
-export default function AdminExpiryCheck() {
+interface AdminExpiryCheckProps {
+  isTechnicianView?: boolean;
+  onNavigateToPdfOcr?: () => void;
+  onBackToOrderView?: () => void;
+}
+
+export default function AdminExpiryCheck({
+  isTechnicianView = false,
+  onNavigateToPdfOcr,
+  onBackToOrderView
+}: AdminExpiryCheckProps = {}) {
   const { isMesaieedHidden } = useSystemMetadata();
 
   // Load ALL medications from Firestore across all locations
@@ -83,10 +95,24 @@ export default function AdminExpiryCheck() {
   // Uploaded Excel States (separated per location)
   const [activeUploadLocation, setActiveUploadLocation] = useState<PharmacyLocation | null>(null);
   const [draggingLocation, setDraggingLocation] = useState<PharmacyLocation | null>(null);
-  const [locationExcelData, setLocationExcelData] = useState<Record<PharmacyLocation, LocationExcelState>>({
-    [PharmacyLocation.ADULT]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
-    [PharmacyLocation.PEDIATRIC]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
-    [PharmacyLocation.MESAIEED]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] }
+  const [locationExcelData, setLocationExcelData] = useState<Record<PharmacyLocation, LocationExcelState>>(() => {
+    const loadOcrData = (loc: PharmacyLocation): LocationExcelState => {
+      try {
+        const stored = storage.getItem(`ocr_import_${loc}`);
+        if (stored) {
+          return JSON.parse(stored);
+        }
+      } catch (e) {
+        console.error('Failed to load stored OCR data for ' + loc, e);
+      }
+      return { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] };
+    };
+
+    return {
+      [PharmacyLocation.ADULT]: loadOcrData(PharmacyLocation.ADULT),
+      [PharmacyLocation.PEDIATRIC]: loadOcrData(PharmacyLocation.PEDIATRIC),
+      [PharmacyLocation.MESAIEED]: loadOcrData(PharmacyLocation.MESAIEED)
+    };
   });
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -395,6 +421,15 @@ export default function AdminExpiryCheck() {
           if (isNaN(qty)) qty = 0;
         }
 
+        // Check if any field in the excel row represents or contains "backorder"
+        let rowHasBackorder = false;
+        for (const val of Object.values(row)) {
+          if (val && String(val).toLowerCase().includes('backorder')) {
+            rowHasBackorder = true;
+            break;
+          }
+        }
+
         if (!rowsByItem[item]) {
           rowsByItem[item] = {
             itemCode: item,
@@ -403,11 +438,16 @@ export default function AdminExpiryCheck() {
             uom,
             lotSerials: [],
             dates: [],
-            totalQty: 0
+            totalQty: 0,
+            isBackordered: false
           };
         }
 
         const group = rowsByItem[item];
+        if (rowHasBackorder) {
+          group.isBackordered = true;
+        }
+
         if (lot && !group.lotSerials.includes(lot)) {
           group.lotSerials.push(lot);
         }
@@ -460,6 +500,9 @@ export default function AdminExpiryCheck() {
   };
 
   const resetLocationUploader = (locId: PharmacyLocation) => {
+    try {
+      storage.removeItem(`ocr_import_${locId}`);
+    } catch (e) {}
     setLocationExcelData(prev => ({
       ...prev,
       [locId]: {
@@ -518,6 +561,28 @@ export default function AdminExpiryCheck() {
 
         (Object.values(sourceExcel) as ExcelGroupedRow[]).forEach(excelGroup => {
           const systemMed = locMeds.find(m => isItemCodeMatch(m.itemCode, excelGroup.itemCode));
+
+          // Skip if the item is backordered (either in the system database or from the excel sheet)
+          const isSystemBackordered = systemMed && (
+            String(systemMed.restriction || '').toLowerCase().includes('backorder') ||
+            String(systemMed.generic || '').toLowerCase().includes('backorder') ||
+            String(systemMed.itemName || '').toLowerCase().includes('backorder')
+          );
+
+          const isExcelBackordered = 
+            String(excelGroup.description || '').toLowerCase().includes('backorder') ||
+            String(excelGroup.brand || '').toLowerCase().includes('backorder') ||
+            !!excelGroup.isBackordered;
+
+          if (isSystemBackordered || isExcelBackordered) {
+            return;
+          }
+
+          // Skip if the item doesn't have any Delivered Date1, Date2, Date3, Date4 or Date5
+          const hasDeliveredDates = excelGroup.dates && excelGroup.dates.filter(Boolean).length > 0;
+          if (!hasDeliveredDates) {
+            return;
+          }
 
           if (!systemMed) {
             // If it is a cross-location match and we don't find it in our system records,
@@ -980,6 +1045,11 @@ export default function AdminExpiryCheck() {
   };
 
   const resetAllUploaders = () => {
+    try {
+      storage.removeItem(`ocr_import_${PharmacyLocation.ADULT}`);
+      storage.removeItem(`ocr_import_${PharmacyLocation.PEDIATRIC}`);
+      storage.removeItem(`ocr_import_${PharmacyLocation.MESAIEED}`);
+    } catch (e) {}
     setLocationExcelData({
       [PharmacyLocation.ADULT]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
       [PharmacyLocation.PEDIATRIC]: { fileName: null, excelDataGroups: null, parseError: null, isProcessing: false, rawSheetNames: [] },
@@ -996,11 +1066,20 @@ export default function AdminExpiryCheck() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#141414]/10 pb-6">
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-[#F27D26] uppercase tracking-[0.2em] mb-2">
-            <Link to="/admin/dashboard" className="hover:underline flex items-center gap-1">
-              <ArrowLeft className="w-3 h-3" /> Dashboard
-            </Link>
+            {isTechnicianView ? (
+              <button 
+                onClick={onBackToOrderView} 
+                className="hover:underline flex items-center gap-1 font-bold text-[#F27D26] cursor-pointer"
+              >
+                <ArrowLeft className="w-3 h-3" /> Order View
+              </button>
+            ) : (
+              <Link to="/admin/dashboard" className="hover:underline flex items-center gap-1">
+                <ArrowLeft className="w-3 h-3" /> Dashboard
+              </Link>
+            )}
             <ChevronRight className="w-3 h-3 text-[#141414]/20" />
-            <span>IT Operations</span>
+            <span>{isTechnicianView ? 'Technician Portal' : 'IT Operations'}</span>
           </div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-[#141414]">
             Expiration Verification Report
@@ -1010,7 +1089,25 @@ export default function AdminExpiryCheck() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {isTechnicianView ? (
+            <button
+              onClick={onNavigateToPdfOcr}
+              className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl text-sm font-bold text-amber-700 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <Sparkles className="w-4 h-4 text-amber-600 animate-pulse" />
+              <span>PDF OCR & Excel Merger</span>
+            </button>
+          ) : (
+            <Link
+              to="/admin/pdf-ocr"
+              className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl text-sm font-bold text-amber-700 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+            >
+              <Sparkles className="w-4 h-4 text-amber-600 animate-pulse" />
+              <span>PDF OCR & Excel Merger</span>
+            </Link>
+          )}
+
           <button 
             onClick={() => refresh()}
             disabled={loadingMeds}
@@ -1100,6 +1197,28 @@ export default function AdminExpiryCheck() {
               Upload the physical delivered stock spreadsheet specifically for each location portal. The application will unpack each file, looking for a sheet named EXACTLY <strong className="font-semibold text-[#141414]">"Combined Unified Table"</strong>.
             </p>
 
+            {/* PDF Table OCR Helper Option */}
+            <div className="mb-6 p-4 bg-amber-50/50 border border-amber-200/60 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-amber-100 text-amber-700 rounded-xl shrink-0">
+                  <Sparkles className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-[#141414] uppercase tracking-wider">Have PDF Stock Sheets instead of Excel?</h3>
+                  <p className="text-[#141414]/60 text-[11px] mt-1 leading-relaxed">
+                    Use our AI-powered <strong>PDF Table OCR & Excel Merger</strong> to instantly read medication tables from PDF invoices, packing lists, or reports, and easily merge or export them.
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/admin/pdf-ocr"
+                className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+              >
+                <span>Launch PDF OCR Tool</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
             {/* General Hidden File Selector */}
             <input 
               type="file"
@@ -1161,7 +1280,7 @@ export default function AdminExpiryCheck() {
                           <p className="text-[10px] font-mono text-[#141414]/40 uppercase tracking-widest mt-0.5">{loc}</p>
                           {state.excelDataGroups ? (
                             <p className="text-xs text-emerald-600 font-bold mt-1">
-                              Ready: Unpacked {Object.keys(state.excelDataGroups).length} unique items
+                              Excel is uploaded
                             </p>
                           ) : isParsing ? (
                             <div className="flex items-center gap-1.5 text-xs text-[#F27D26] font-bold mt-1">
@@ -1178,12 +1297,17 @@ export default function AdminExpiryCheck() {
 
                       <div className="flex items-center gap-2">
                         {state.excelDataGroups ? (
-                          <button
-                            onClick={() => resetLocationUploader(loc)}
-                            className="px-3 py-1.5 bg-white hover:bg-red-50 hover:text-red-600 border border-zinc-200 text-zinc-600 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
-                          >
-                            Clear
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-black rounded-lg">
+                              Excel is uploaded
+                            </span>
+                            <button
+                              onClick={() => resetLocationUploader(loc)}
+                              className="px-3 py-1.5 bg-white hover:bg-red-50 hover:text-red-600 border border-zinc-200 text-zinc-600 rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          </div>
                         ) : (
                           <button
                             onClick={() => triggerUploadForLocation(loc)}
@@ -1275,9 +1399,22 @@ export default function AdminExpiryCheck() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <button
+                    onClick={() => {
+                      exportPDF();
+                      setTimeout(() => exportExcel(), 250);
+                      setTimeout(() => exportCSV(), 500);
+                    }}
+                    disabled={itemsToExport.length === 0}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#F27D26] to-[#e06c15] hover:opacity-90 text-white rounded-xl text-xs font-black transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer border-2 border-orange-300"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
+                    <span>Generate All Discrepancy Reports</span>
+                  </button>
+
+                  <button
                     onClick={exportPDF}
                     disabled={itemsToExport.length === 0}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#F27D26] hover:bg-[#e06c15] text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-[#141414]/5 hover:bg-[#141414]/10 text-[#141414] rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Print {activeTab === 'all' ? 'All' : 'Location'} PDF</span>

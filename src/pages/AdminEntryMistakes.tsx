@@ -70,6 +70,13 @@ interface WorkloadRecord {
   isMismatch: boolean;
   dismissedBrandVsGeneric?: boolean;
   isExcludedByVariance?: boolean;
+
+  facilityOrder?: string;
+  nursingLocationOrder?: string;
+  encounterType?: string;
+  ageYearsVisit?: string;
+  physicianOrdering?: string;
+  dispenseEventType?: string;
 }
 
 function formatActionDateTime(val: any): string {
@@ -278,6 +285,14 @@ export default function AdminEntryMistakes() {
       return false;
     }
   });
+  const [uploadedTotalCount, setUploadedTotalCount] = useState<number>(() => {
+    try {
+      const saved = sessionStorage.getItem('uploaded_total_count');
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
   
   // Custom dialog modals to bypass iframe popup blocking
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -297,6 +312,26 @@ export default function AdminEntryMistakes() {
   const [selectedReason, setSelectedReason] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
   const [selectedPharmacist, setSelectedPharmacist] = useState('all');
+  const [filterMismatchesOnly, setFilterMismatchesOnly] = useState<boolean>(() => {
+    try {
+      const saved = sessionStorage.getItem('filter_mismatches_only');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleFilterMismatchesOnly = () => {
+    setFilterMismatchesOnly(prev => {
+      const next = !prev;
+      try {
+        sessionStorage.setItem('filter_mismatches_only', String(next));
+      } catch (e) {
+        console.warn(e);
+      }
+      return next;
+    });
+  };
 
   // Pagination states to prevent DOM rendering blockage "hanging" during search queries
   const [currentPage, setCurrentPage] = useState(1);
@@ -341,17 +376,20 @@ export default function AdminEntryMistakes() {
       sessionStorage.setItem('daily_workload_records', JSON.stringify(workloadRecords));
       sessionStorage.setItem('daily_workload_uploaded', workloadUploaded ? 'true' : 'false');
       sessionStorage.setItem('daily_workload_report_type', activeReportType);
+      sessionStorage.setItem('uploaded_total_count', String(uploadedTotalCount));
     } catch (e) {
       console.warn('Failed to sync workload with sessionStorage:', e);
     }
-  }, [workloadRecords, workloadUploaded, activeReportType]);
+  }, [workloadRecords, workloadUploaded, activeReportType, uploadedTotalCount]);
 
   const resetWorkload = () => {
     setWorkloadRecords([]);
     setWorkloadUploaded(false);
+    setUploadedTotalCount(0);
     try {
       sessionStorage.removeItem('daily_workload_records');
       sessionStorage.removeItem('daily_workload_uploaded');
+      sessionStorage.removeItem('uploaded_total_count');
     } catch (e) {
       console.warn('Failed to clear workload from sessionStorage:', e);
     }
@@ -394,7 +432,13 @@ export default function AdminEntryMistakes() {
           }
         } else if (customEvent.detail.type === 'entry-mistakes') {
           if (customEvent.detail.data) {
-            setDbState(customEvent.detail.data);
+            const data = customEvent.detail.data;
+            setDbState({
+              configured: !!data?.configured,
+              parameters: Array.isArray(data?.parameters) ? data.parameters : [],
+              pharmacists: Array.isArray(data?.pharmacists) ? data.pharmacists : [],
+              lastUpdated: data?.lastUpdated
+            });
           } else {
             fetchDb();
           }
@@ -516,7 +560,12 @@ export default function AdminEntryMistakes() {
       const res = await fetch('/api/entry-mistakes/db');
       if (res.ok) {
         const data = await res.json();
-        setDbState(data);
+        setDbState({
+          configured: !!data?.configured,
+          parameters: Array.isArray(data?.parameters) ? data.parameters : [],
+          pharmacists: Array.isArray(data?.pharmacists) ? data.pharmacists : [],
+          lastUpdated: data?.lastUpdated
+        });
       }
     } catch (err) {
       console.error('Failed to load database parameters:', err);
@@ -600,19 +649,20 @@ export default function AdminEntryMistakes() {
     setIsDraggingWorkload(false);
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      parseAndProcessWorkload(files[0]);
+      parseAndProcessWorkload(files);
     }
   };
 
   const handleFileChangeWorkload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      parseAndProcessWorkload(files[0]);
+      parseAndProcessWorkload(files);
     }
   };
 
   // Parses parameters file (Parameters + Pharmacists list)
   const parseAndSaveDbFile = (file: File) => {
+    extractFuzzyValueCache.current = {};
     setDbLoading(true);
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -700,7 +750,13 @@ export default function AdminEntryMistakes() {
 
         if (res.ok) {
           const resData = await res.json();
-          setDbState(resData.dbState);
+          const dbData = resData?.dbState;
+          setDbState({
+            configured: !!dbData?.configured,
+            parameters: Array.isArray(dbData?.parameters) ? dbData.parameters : [],
+            pharmacists: Array.isArray(dbData?.pharmacists) ? dbData.pharmacists : [],
+            lastUpdated: dbData?.lastUpdated
+          });
         } else {
           throw new Error('Backend failed to persist database parameters.');
         }
@@ -714,11 +770,21 @@ export default function AdminEntryMistakes() {
     reader.readAsArrayBuffer(file);
   };
 
+  const extractFuzzyValueCache = useRef<Record<string, string>>({});
+
   // Helper fuzzy matcher for workload keys to support minor layout modifications in HBKMC reports
   const extractFuzzyValue = (row: any, candidates: string[]): string => {
+    if (!row) return '';
+    const cacheKey = candidates[0];
+    const cachedField = extractFuzzyValueCache.current[cacheKey];
+    if (cachedField !== undefined) {
+      return cachedField ? String(row[cachedField] || '').trim() : '';
+    }
+
     // Exact match first
     for (const cand of candidates) {
       if (row[cand] !== undefined && row[cand] !== null) {
+        extractFuzzyValueCache.current[cacheKey] = cand;
         return String(row[cand]).trim();
       }
     }
@@ -729,6 +795,7 @@ export default function AdminEntryMistakes() {
       for (const k of keys) {
         const normK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (normK === normCand) {
+          extractFuzzyValueCache.current[cacheKey] = k;
           return String(row[k]).trim();
         }
       }
@@ -739,10 +806,12 @@ export default function AdminEntryMistakes() {
       for (const k of keys) {
         const normK = k.toLowerCase();
         if (normK.includes(normCand) || normCand.includes(normK)) {
+          extractFuzzyValueCache.current[cacheKey] = k;
           return String(row[k]).trim();
         }
       }
     }
+    extractFuzzyValueCache.current[cacheKey] = '';
     return '';
   };
 
@@ -793,7 +862,10 @@ export default function AdminEntryMistakes() {
         cleanVal.includes('mesaieed') || 
         cleanVal.includes('mesai') || 
         cleanVal.includes('msd') || 
-        cleanVal.includes('mes')
+        cleanVal.includes('mes') ||
+        cleanVal.includes('gopd') ||
+        cleanVal.includes('aw ms gopd rx') ||
+        cleanVal.includes('aw ms gopd')
       ) {
         return 'mesaieed';
       }
@@ -907,136 +979,169 @@ export default function AdminEntryMistakes() {
     return dataRows;
   };
 
-  // Parses HBKMC workload and runs mismatch logic
-  const parseAndProcessWorkload = (file: File) => {
-    setWorkloadLoading(true);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const ab = e.target?.result;
-        const wb = XLSX.read(ab, { type: 'array' });
+  // Helper to parse a single workload file asynchronously
+  const parseSingleWorkloadFile = (file: File): Promise<any[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const ab = e.target?.result;
+          const wb = XLSX.read(ab, { type: 'array' });
 
-        // Let's find "Yesterday HBKMC Workload (Detai" sheet fuzzy
-        let targetSheetName = wb.SheetNames.find(n => {
-          const sName = n.trim().toLowerCase();
-          return sName.includes('yesterday hbkmc workload') || 
-                 (sName.includes('yesterday') && sName.includes('workload') && sName.includes('detai')) ||
-                 sName.includes('hbkmc workload') ||
-                 sName.includes('yesterday hbkmc');
-        });
-
-        // Fallback 1: sheet containing "detai"
-        if (!targetSheetName) {
-          targetSheetName = wb.SheetNames.find(n => n.trim().toLowerCase().includes('detai'));
-        }
-
-        // Fallback 2: sheet containing "workload" but NOT location and NOT staff
-        if (!targetSheetName) {
-          targetSheetName = wb.SheetNames.find(n => {
+          // Let's find "Yesterday HBKMC Workload (Detai" sheet fuzzy
+          let targetSheetName = wb.SheetNames.find(n => {
             const sName = n.trim().toLowerCase();
-            return sName.includes('workload') && !sName.includes('location') && !sName.includes('staff');
+            return sName.includes('yesterday hbkmc workload') || 
+                   (sName.includes('yesterday') && sName.includes('workload') && sName.includes('detai')) ||
+                   sName.includes('hbkmc workload') ||
+                   sName.includes('yesterday hbkmc');
           });
-        }
 
-        // Fallback 3: use the 3rd sheet (since user says Yesterday HBKMC Workload is the 3rd sheet)
-        if (!targetSheetName && wb.SheetNames.length >= 3) {
-          targetSheetName = wb.SheetNames[2];
-        }
-
-        // Fallback 4: use the last sheet
-        if (!targetSheetName && wb.SheetNames.length > 0) {
-          targetSheetName = wb.SheetNames[wb.SheetNames.length - 1];
-        }
-
-        if (!targetSheetName) {
-          throw new Error('Your file does not contain a worksheet starting with Yesterday HBKMC Workload (such as Yesterday HBKMC Workload (Detai). Available worksheets: ' + wb.SheetNames.join(', '));
-        }
-
-        const ws = wb.Sheets[targetSheetName];
-        
-        // Use our dynamic header parser rather than simple sheet_to_json which breaks on top spaces/banner rows
-        const rawJson = parseSheetWithDynamicHeader(ws);
-
-        if (rawJson.length === 0) {
-          throw new Error(`The worksheet "${targetSheetName}" is empty or has no readable tabular records.`);
-        }
-
-        // Pre-calculate duplicate groups with variances to exclude them from the Mismatch Ledger report
-        const normalizeFieldValue = (val: any): string => {
-          if (val === undefined || val === null) return '';
-          let str = String(val).trim();
-          if (str.startsWith('+') && /^\+\d+/.test(str)) {
-            str = str.substring(1);
+          // Fallback 1: sheet containing "detai"
+          if (!targetSheetName) {
+            targetSheetName = wb.SheetNames.find(n => n.trim().toLowerCase().includes('detai'));
           }
-          if (/^\d+\.0+$/.test(str)) {
-            str = str.split('.')[0];
+
+          // Fallback 2: sheet containing "workload" but NOT location and NOT staff
+          if (!targetSheetName) {
+            targetSheetName = wb.SheetNames.find(n => {
+              const sName = n.trim().toLowerCase();
+              return sName.includes('workload') && !sName.includes('location') && !sName.includes('staff');
+            });
           }
-          return str.toLowerCase();
-        };
 
-        const getMatchValues34 = (row: any) => {
-          return [
-            formatActionDateTime(extractFuzzyValue(row, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime'])),
-            extractFuzzyValue(row, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order']),
-            extractFuzzyValue(row, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order']),
-            extractFuzzyValue(row, ['Encounter Type', 'EncounterType', 'Encounter_Type']),
-            formatActionDateTime(extractFuzzyValue(row, ['Order Date & Time - Physician', 'Order Date & Time', 'Order Date and Time - Physician', 'Order Date & Time -Physician', 'Order Date and Time'])),
-            extractFuzzyValue(row, ['Last Update Provider', 'LastUpdateProvider', 'Last_Update_Provider', 'Provider']),
-            extractFuzzyValue(row, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization']),
-            extractFuzzyValue(row, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']),
-            extractFuzzyValue(row, ['Sex', 'Gender', 'M/F']),
-            extractFuzzyValue(row, ['Nationality', 'Nation', 'Country']),
-            extractFuzzyValue(row, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years']),
-            extractFuzzyValue(row, ['Parent Order ID', 'Parent Order Id', 'Parent_Order_ID', 'ParentOrderID']),
-            extractFuzzyValue(row, ['Order Entry Mode', 'Order Entry Mode', 'OrderEntryMode', 'Order_Entry_Mode']),
-            extractFuzzyValue(row, ['Mnemonic Name', 'MnemonicName', 'Mnemonic']),
-            extractFuzzyValue(row, ['Ordered As Mnemonic', 'Ordered As Mnemonic', 'OrderedAsMnemonic', 'Ordered As']),
-            extractFuzzyValue(row, ['Order Display Line', 'Order Display Line', 'OrderDisplayLine']),
-            extractFuzzyValue(row, ['PRN']),
-            extractFuzzyValue(row, ['OCI']),
-            extractFuzzyValue(row, ['Order Comments', 'OrderComments', 'Comments']),
-            extractFuzzyValue(row, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician']),
-            extractFuzzyValue(row, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location']),
-            extractFuzzyValue(row, ['Action Type', 'Type', 'Action_Type']),
-            extractFuzzyValue(row, ['Child Order ID', 'Child Order Id', 'Child_Order_ID', 'ChildOrderID']),
-            extractFuzzyValue(row, ['Item Id', 'ItemId', 'Item_Id']),
-            extractFuzzyValue(row, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']),
-            extractFuzzyValue(row, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name']),
-            extractFuzzyValue(row, ['Pharmacy Display Line', 'Pharmacy Display Line', 'PharmacyDisplayLine']),
-            extractFuzzyValue(row, ['Pharmacy SIG', 'PharmacySIG', 'SIG']),
-            extractFuzzyValue(row, ['Pharmacy Expanded SIG', 'Pharmacy Expanded SIG', 'PharmacyExpandedSIG', 'Expanded SIG']),
-            extractFuzzyValue(row, ['Dispense Unit', 'DispenseUnit', 'Unit']),
-            extractFuzzyValue(row, ['Bill Quantity', 'BillQuantity', 'Bill Qty']),
-            extractFuzzyValue(row, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']),
-            extractFuzzyValue(row, ['Department Order Status', 'DepartmentOrderStatus']),
-            extractFuzzyValue(row, ['Order Status', 'OrderStatus'])
-          ].map(normalizeFieldValue);
-        };
-
-        const varianceKeys5 = [
-          "Dispense Date & Time",
-          "Dispense Event Type",
-          "Product Dispense HX ID",
-          "Dispense Quantity",
-          "Tracking Item Id"
-        ];
-
-        const getVarianceValue = (row: any, vKey: string) => {
-          let raw = '';
-          if (vKey === "Dispense Date & Time") {
-            raw = formatActionDateTime(extractFuzzyValue(row, ['Dispense Date & Time', 'Dispense Date and Time', 'Dispense Date', 'Dispense Date/Time']));
-          } else if (vKey === "Dispense Event Type") {
-            raw = extractFuzzyValue(row, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event']);
-          } else if (vKey === "Product Dispense HX ID") {
-            raw = extractFuzzyValue(row, ['Product Dispense HX ID', 'Product Dispense HX Id', 'ProductDispenseHXID', 'HX ID', 'HX_ID']);
-          } else if (vKey === "Dispense Quantity") {
-            raw = extractFuzzyValue(row, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
-          } else if (vKey === "Tracking Item Id") {
-            raw = extractFuzzyValue(row, ['Tracking Item Id', 'Tracking Item ID', 'TrackingItemId', 'Tracking_Item_ID']);
+          // Fallback 3: use the 3rd sheet (since user says Yesterday HBKMC Workload is the 3rd sheet)
+          if (!targetSheetName && wb.SheetNames.length >= 3) {
+            targetSheetName = wb.SheetNames[2];
           }
-          return normalizeFieldValue(raw);
-        };
 
+          // Fallback 4: use the last sheet
+          if (!targetSheetName && wb.SheetNames.length > 0) {
+            targetSheetName = wb.SheetNames[wb.SheetNames.length - 1];
+          }
+
+          if (!targetSheetName) {
+            throw new Error(`The file "${file.name}" does not contain a worksheet starting with Yesterday HBKMC Workload (such as Yesterday HBKMC Workload (Detai). Available worksheets: ${wb.SheetNames.join(', ')}`);
+          }
+
+          const ws = wb.Sheets[targetSheetName];
+          
+          // Use our dynamic header parser rather than simple sheet_to_json which breaks on top spaces/banner rows
+          const rawJson = parseSheetWithDynamicHeader(ws);
+
+          if (rawJson.length === 0) {
+            throw new Error(`The worksheet "${targetSheetName}" in file "${file.name}" is empty or has no readable tabular records.`);
+          }
+
+          resolve(rawJson);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  // Parses HBKMC workload and runs mismatch logic
+  const parseAndProcessWorkload = async (files: FileList | File[]) => {
+    extractFuzzyValueCache.current = {};
+    setWorkloadLoading(true);
+    try {
+      const fileArray = Array.from(files);
+      if (fileArray.length === 0) {
+        setWorkloadLoading(false);
+        return;
+      }
+
+      // Read all files and compile combined rows
+      const results = await Promise.all(
+        fileArray.map(file => parseSingleWorkloadFile(file))
+      );
+
+      const rawJson = results.flat();
+      if (rawJson.length === 0) {
+        throw new Error('All uploaded files had empty workloads.');
+      }
+
+      // Pre-calculate duplicate groups with variances to exclude them from the Mismatch Ledger report
+      const normalizeFieldValue = (val: any): string => {
+        if (val === undefined || val === null) return '';
+        let str = String(val).trim();
+        if (str.startsWith('+') && /^\+\d+/.test(str)) {
+          str = str.substring(1);
+        }
+        if (/^\d+\.0+$/.test(str)) {
+          str = str.split('.')[0];
+        }
+        return str.toLowerCase();
+      };
+
+      const getMatchValues34 = (row: any) => {
+        return [
+          formatActionDateTime(extractFuzzyValue(row, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime'])),
+          extractFuzzyValue(row, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order']),
+          extractFuzzyValue(row, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order']),
+          extractFuzzyValue(row, ['Encounter Type', 'EncounterType', 'Encounter_Type']),
+          formatActionDateTime(extractFuzzyValue(row, ['Order Date & Time - Physician', 'Order Date & Time', 'Order Date and Time - Physician', 'Order Date & Time -Physician', 'Order Date and Time'])),
+          extractFuzzyValue(row, ['Last Update Provider', 'LastUpdateProvider', 'Last_Update_Provider', 'Provider']),
+          extractFuzzyValue(row, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization']),
+          extractFuzzyValue(row, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']),
+          extractFuzzyValue(row, ['Sex', 'Gender', 'M/F']),
+          extractFuzzyValue(row, ['Nationality', 'Nation', 'Country']),
+          extractFuzzyValue(row, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years']),
+          extractFuzzyValue(row, ['Parent Order ID', 'Parent Order Id', 'Parent_Order_ID', 'ParentOrderID']),
+          extractFuzzyValue(row, ['Order Entry Mode', 'Order Entry Mode', 'OrderEntryMode', 'Order_Entry_Mode']),
+          extractFuzzyValue(row, ['Mnemonic Name', 'MnemonicName', 'Mnemonic']),
+          extractFuzzyValue(row, ['Ordered As Mnemonic', 'Ordered As Mnemonic', 'OrderedAsMnemonic', 'Ordered As']),
+          extractFuzzyValue(row, ['Order Display Line', 'Order Display Line', 'OrderDisplayLine']),
+          extractFuzzyValue(row, ['PRN']),
+          extractFuzzyValue(row, ['OCI']),
+          extractFuzzyValue(row, ['Order Comments', 'OrderComments', 'Comments']),
+          extractFuzzyValue(row, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician']),
+          extractFuzzyValue(row, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location']),
+          extractFuzzyValue(row, ['Action Type', 'Type', 'Action_Type']),
+          extractFuzzyValue(row, ['Child Order ID', 'Child Order Id', 'Child_Order_ID', 'ChildOrderID']),
+          extractFuzzyValue(row, ['Item Id', 'ItemId', 'Item_Id']),
+          extractFuzzyValue(row, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']),
+          extractFuzzyValue(row, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name']),
+          extractFuzzyValue(row, ['Pharmacy Display Line', 'Pharmacy Display Line', 'PharmacyDisplayLine']),
+          extractFuzzyValue(row, ['Pharmacy SIG', 'PharmacySIG', 'SIG']),
+          extractFuzzyValue(row, ['Pharmacy Expanded SIG', 'Pharmacy Expanded SIG', 'PharmacyExpandedSIG', 'Expanded SIG']),
+          extractFuzzyValue(row, ['Dispense Unit', 'DispenseUnit', 'Unit']),
+          extractFuzzyValue(row, ['Bill Quantity', 'BillQuantity', 'Bill Qty']),
+          extractFuzzyValue(row, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']),
+          extractFuzzyValue(row, ['Department Order Status', 'DepartmentOrderStatus']),
+          extractFuzzyValue(row, ['Order Status', 'OrderStatus'])
+        ].map(normalizeFieldValue);
+      };
+
+      const varianceKeys5 = [
+        "Dispense Date & Time",
+        "Dispense Event Type",
+        "Product Dispense HX ID",
+        "Dispense Quantity",
+        "Tracking Item Id"
+      ];
+
+      const getVarianceValue = (row: any, vKey: string) => {
+        let raw = '';
+        if (vKey === "Dispense Date & Time") {
+          raw = formatActionDateTime(extractFuzzyValue(row, ['Dispense Date & Time', 'Dispense Date and Time', 'Dispense Date', 'Dispense Date/Time']));
+        } else if (vKey === "Dispense Event Type") {
+          raw = extractFuzzyValue(row, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event']);
+        } else if (vKey === "Product Dispense HX ID") {
+          raw = extractFuzzyValue(row, ['Product Dispense HX ID', 'Product Dispense HX Id', 'ProductDispenseHXID', 'HX ID', 'HX_ID']);
+        } else if (vKey === "Dispense Quantity") {
+          raw = extractFuzzyValue(row, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
+        } else if (vKey === "Tracking Item Id") {
+          raw = extractFuzzyValue(row, ['Tracking Item Id', 'Tracking Item ID', 'TrackingItemId', 'Tracking_Item_ID']);
+        }
+        return normalizeFieldValue(raw);
+      };
+
+      const excludedIndices = new Set<number>();
+      {
         // Group indices of rawJson by the 34 order/item-level fields
         const groups: { [key: string]: { rawRow: any; index: number }[] } = {};
         rawJson.forEach((rawRow, index) => {
@@ -1048,7 +1153,6 @@ export default function AdminEntryMistakes() {
           groups[groupKey].push({ rawRow, index });
         });
 
-        const excludedIndices = new Set<number>();
         for (const key of Object.keys(groups)) {
           const groupRows = groups[key];
           if (groupRows.length >= 2) {
@@ -1078,112 +1182,185 @@ export default function AdminEntryMistakes() {
             }
           }
         }
+      }
 
-        // Parse each row and run evaluations
-        const evaluated: WorkloadRecord[] = [];
-        let recordCounter = 0;
-        
-        for (const rawRow of rawJson) {
-          recordCounter++;
-          const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime']);
-          const actionDateTime = formatActionDateTime(actionDateTimeRaw);
-          const mrnOrganization = extractFuzzyValue(rawRow, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization']);
-          const personNameFull = extractFuzzyValue(rawRow, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']);
-          const sex = extractFuzzyValue(rawRow, ['Sex', 'Gender', 'M/F']);
-          const nationality = extractFuzzyValue(rawRow, ['Nationality', 'Nation', 'Country']);
-          const pharmacyLocation = extractFuzzyValue(rawRow, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location']);
-          const actionType = extractFuzzyValue(rawRow, ['Action Type', 'Type', 'Action_Type']);
-          const itemNumber = extractFuzzyValue(rawRow, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']);
-          const labelDescription = extractFuzzyValue(rawRow, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name']);
-          const dispenseQuantity = extractFuzzyValue(rawRow, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
-          const actionPersonnelPharmacy = extractFuzzyValue(rawRow, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']);
+      // Parse each row and run evaluations
+      const evaluated: WorkloadRecord[] = [];
+      let recordCounter = 0;
+      
+      for (const rawRow of rawJson) {
+        recordCounter++;
+        const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime']);
+        const actionDateTime = formatActionDateTime(actionDateTimeRaw);
+        const mrnOrganization = extractFuzzyValue(rawRow, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization']);
+        const personNameFull = extractFuzzyValue(rawRow, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']);
+        const sex = extractFuzzyValue(rawRow, ['Sex', 'Gender', 'M/F']);
+        const nationality = extractFuzzyValue(rawRow, ['Nationality', 'Nation', 'Country']);
+        const pharmacyLocation = extractFuzzyValue(rawRow, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location']);
+        const actionType = extractFuzzyValue(rawRow, ['Action Type', 'Type', 'Action_Type']);
+        const itemNumber = extractFuzzyValue(rawRow, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']);
+        const labelDescription = extractFuzzyValue(rawRow, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name']);
+        const dispenseQuantity = extractFuzzyValue(rawRow, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
+        const actionPersonnelPharmacy = extractFuzzyValue(rawRow, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']);
 
-          // If the row is totally empty or missing critical columns, skip
-          if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) continue;
+        const facilityOrder = extractFuzzyValue(rawRow, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order']);
+        const nursingLocationOrder = extractFuzzyValue(rawRow, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order']);
+        const encounterType = extractFuzzyValue(rawRow, ['Encounter Type', 'EncounterType', 'Encounter_Type']);
+        const ageYearsVisit = extractFuzzyValue(rawRow, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years']);
+        const physicianOrdering = extractFuzzyValue(rawRow, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician']);
+        const dispenseEventType = extractFuzzyValue(rawRow, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event']);
 
-          // Ignore rows representing negative (minus) dispensed QTY
-          const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
-          if (!isNaN(parsedDispenseQty) && parsedDispenseQty < 0) {
-            continue;
-          }
+        // If the row is totally empty or missing critical columns, skip
+        if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) continue;
 
-          const reasons: string[] = [];
-          
-          const isExcludedByVariance = excludedIndices.has(recordCounter - 1);
-
-          if (!isExcludedByVariance) {
-            // Evaluation 1: Action Personnel - Pharmacy is not in Pharmacist List
-            // Compare with database stored pharmacist list
-            const normalizedPharmacist = actionPersonnelPharmacy.toLowerCase().trim();
-            const pharmacistConfig = dbState.pharmacists.find(p => p.name.toLowerCase().trim() === normalizedPharmacist);
-            
-            if (!pharmacistConfig && actionPersonnelPharmacy) {
-              reasons.push(`Action Personnel "${actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
-            }
-
-            // Fetch all DB parameter entries for this specific Item Number
-            const normalizedItemNum = itemNumber.toLowerCase().trim();
-            const matchedItemDbParameters = dbState.parameters.filter(p => p.itemNumber.toLowerCase().trim() === normalizedItemNum);
-
-            if (matchedItemDbParameters.length === 0) {
-              // Item does not exist in any database configurations at all
-              if (itemNumber) {
-                reasons.push(`Item Number ${itemNumber} is not registered in base Parameter sheet`);
-              }
-            } else {
-              // Item exists. Next, find if there is a configuration for the specific Pharmacy Location of this record (Condition 3)
-              const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, pharmacyLocation));
-              
-              if (!locationConfigWord) {
-                if (pharmacyLocation) {
-                  reasons.push(`Item ${itemNumber} is not configured to be dispensed from "${pharmacyLocation}" location`);
-                }
-              } else {
-                // Item + Location matches! Let's check the dispensed quantity parameter list (Condition 1)
-                const allowedList = locationConfigWord.allowedQuantities;
-                const normalizedDispQty = dispenseQuantity.trim();
-                
-                // Try numerical match and string match
-                const dNum = Number(normalizedDispQty);
-                const isAllowed = allowedList.some(allowVal => {
-                  const aNum = Number(allowVal);
-                  if (!isNaN(dNum) && !isNaN(aNum)) {
-                    return dNum === aNum;
-                  }
-                  return allowVal.toLowerCase().trim() === normalizedDispQty.toLowerCase();
-                });
-
-                if (!isAllowed && normalizedDispQty !== '') {
-                  reasons.push(`Dispense Qty "${dispenseQuantity}" is unmatched (Allowed: [${allowedList.join(', ')}])`);
-                }
-              }
-            }
-          }
-
-          evaluated.push({
-            id: `workload-rec-${recordCounter}-${Date.now()}`,
-            actionDateTime,
-            mrnOrganization,
-            personNameFull,
-            sex,
-            nationality,
-            pharmacyLocation,
-            actionType,
-            itemNumber,
-            labelDescription,
-            dispenseQuantity,
-            actionPersonnelPharmacy,
-            reasons,
-            isMismatch: reasons.length > 0,
-            isExcludedByVariance
-          });
+        // Ignore rows representing negative (minus) dispensed QTY
+        const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
+        if (!isNaN(parsedDispenseQty) && parsedDispenseQty < 0) {
+          continue;
         }
 
-        const mismatchOnly = evaluated.filter(r => r.isMismatch);
-        setWorkloadRecords(evaluated);
-        setWorkloadUploaded(true);
+        const reasons: string[] = [];
+        
+        const isExcludedByVariance = excludedIndices.has(recordCounter - 1);
 
-        // Auto-save discovered mismatches to Application Storage forever (admin can delete individual items)
+        if (!isExcludedByVariance) {
+          // Evaluation 1: Action Personnel - Pharmacy is not in Pharmacist List
+          // Compare with database stored pharmacist list
+          const normalizedPharmacist = actionPersonnelPharmacy.toLowerCase().trim();
+          const pharmacistConfig = (dbState.pharmacists || []).find(p => p.name.toLowerCase().trim() === normalizedPharmacist);
+          
+          if (!pharmacistConfig && actionPersonnelPharmacy) {
+            reasons.push(`Action Personnel "${actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
+          }
+
+          // Fetch all DB parameter entries for this specific Item Number
+          const normalizedItemNum = itemNumber.toLowerCase().trim();
+          const matchedItemDbParameters = (dbState.parameters || []).filter(p => p.itemNumber.toLowerCase().trim() === normalizedItemNum);
+
+          if (matchedItemDbParameters.length === 0) {
+            // Item does not exist in any database configurations at all
+            if (itemNumber) {
+              reasons.push(`Item Number ${itemNumber} is not registered in base Parameter sheet`);
+            }
+          } else {
+            // Item exists. Next, find if there is a configuration for the specific Pharmacy Location of this record (Condition 3)
+            const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, pharmacyLocation));
+            
+            if (!locationConfigWord) {
+              if (pharmacyLocation) {
+                reasons.push(`Item ${itemNumber} is not configured to be dispensed from "${pharmacyLocation}" location`);
+              }
+            } else {
+              // Item + Location matches! Let's check the dispensed quantity parameter list (Condition 1)
+              const allowedList = locationConfigWord.allowedQuantities;
+              const normalizedDispQty = dispenseQuantity.trim();
+              
+              // Try numerical match and string match
+              const dNum = Number(normalizedDispQty);
+              const isAllowed = allowedList.some(allowVal => {
+                const aNum = Number(allowVal);
+                if (!isNaN(dNum) && !isNaN(aNum)) {
+                  return dNum === aNum;
+                }
+                return allowVal.toLowerCase().trim() === normalizedDispQty.toLowerCase();
+              });
+
+              if (!isAllowed && normalizedDispQty !== '') {
+                reasons.push(`Dispense Qty "${dispenseQuantity}" is unmatched (Allowed: [${allowedList.join(', ')}])`);
+              }
+            }
+          }
+        }
+
+        evaluated.push({
+          id: `workload-rec-${recordCounter}-${Date.now()}`,
+          actionDateTime,
+          mrnOrganization,
+          personNameFull,
+          sex,
+          nationality,
+          pharmacyLocation,
+          actionType,
+          itemNumber,
+          labelDescription,
+          dispenseQuantity,
+          actionPersonnelPharmacy,
+          reasons,
+          isMismatch: reasons.length > 0,
+          isExcludedByVariance,
+          facilityOrder,
+          nursingLocationOrder,
+          encounterType,
+          ageYearsVisit,
+          physicianOrdering,
+          dispenseEventType
+        });
+      }
+
+      const mismatchOnly = evaluated.filter(r => r.isMismatch);
+      setUploadedTotalCount(evaluated.length);
+      if (filterMismatchesOnly) {
+        setWorkloadRecords(evaluated);
+      } else {
+        // Keep list limited in page memory for fast rendering when Mismatch Filter is CLOSED/Deactive.
+        // The full evaluated array is still sent in the POST body to be stored forever on the server!
+        setWorkloadRecords(evaluated.slice(0, 100));
+      }
+      setWorkloadUploaded(true);
+
+      const uploadFilenames = fileArray.map(f => f.name);
+
+      // Auto-save all parsed workload records to the server for persistent analysis in the Workload Page
+      try {
+        if (evaluated.length <= 5000) {
+          const saveRes = await fetch('/api/workload-records', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ records: evaluated, filenames: uploadFilenames })
+          });
+          if (saveRes.ok) {
+            console.log('Workload records successfully persisted on the server.');
+          } else {
+            console.error('Failed to auto-save workload records to server.');
+          }
+        } else {
+          console.log(`Starting chunked upload of ${evaluated.length} records...`);
+          const startRes = await fetch('/api/workload-records/upload/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          if (!startRes.ok) throw new Error('Failed to start chunked upload session.');
+          const { uploadId } = await startRes.json();
+          
+          const CHUNK_SIZE = 10000;
+          for (let i = 0; i < evaluated.length; i += CHUNK_SIZE) {
+            const chunkItems = evaluated.slice(i, i + CHUNK_SIZE);
+            console.log(`Uploading chunk ${Math.floor(i / CHUNK_SIZE) + 1}...`);
+            const chunkRes = await fetch('/api/workload-records/upload/chunk', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uploadId, items: chunkItems })
+            });
+            if (!chunkRes.ok) throw new Error(`Failed to upload chunk starting at index ${i}`);
+          }
+          
+          const endRes = await fetch('/api/workload-records/upload/end', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uploadId, filenames: uploadFilenames })
+          });
+          if (endRes.ok) {
+            console.log('Chunked workload records successfully persisted on the server.');
+          } else {
+            console.error('Failed to finalize chunked workload records on the server.');
+          }
+        }
+      } catch (saveErr: any) {
+        console.error('Network error saving workload records to server:', saveErr?.message || saveErr);
+      }
+
+      // Auto-save discovered mismatches to Application Storage forever upon upload
+      {
         const standardMismatches = evaluated.filter(r => r.isMismatch);
         const brandVsGenericMismatches = evaluated.map(rec => {
           const outcome = isNonQatariBrandMistake(rec, medications, isLocationMatches);
@@ -1197,13 +1374,31 @@ export default function AdminEntryMistakes() {
           return null;
         }).filter(Boolean) as WorkloadRecord[];
 
-      } catch (err: any) {
-        alert(`Error parsing workload Excel: ${err.message}`);
-      } finally {
-        setWorkloadLoading(false);
+        const allMismatchesToSave = [...standardMismatches, ...brandVsGenericMismatches];
+        if (allMismatchesToSave.length > 0) {
+          try {
+            const appStorageRes = await fetch('/api/application-storage', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(allMismatchesToSave)
+            });
+            if (appStorageRes.ok) {
+              console.log('Successfully auto-saved mismatches to application storage.');
+              fetchSavedStorageItems();
+            } else {
+              console.error('Failed to auto-save mismatches to application storage.');
+            }
+          } catch (err) {
+            console.error('Network error auto-saving mismatches to application storage:', err);
+          }
+        }
       }
-    };
-    reader.readAsArrayBuffer(file);
+
+    } catch (err: any) {
+      alert(`Error parsing workload Excel: ${err.message}`);
+    } finally {
+      setWorkloadLoading(false);
+    }
   };
 
   // Dynamically calculate brand vs generic policy mistake records
@@ -1235,7 +1430,7 @@ export default function AdminEntryMistakes() {
   // Filter records
   const filteredRecords = React.useMemo(() => {
     const baseList = activeReportType === 'standard' 
-      ? workloadRecords.filter(r => r.isMismatch)
+      ? (filterMismatchesOnly ? workloadRecords.filter(r => r.isMismatch) : workloadRecords)
       : brandVsGenericRecords;
 
     return baseList.filter(rec => {
@@ -1269,7 +1464,7 @@ export default function AdminEntryMistakes() {
 
       return queryMatches && reasonMatches && locationMatches && pharmacistMatches;
     });
-  }, [workloadRecords, brandVsGenericRecords, activeReportType, searchQuery, selectedReason, selectedLocation, selectedPharmacist]);
+  }, [workloadRecords, brandVsGenericRecords, activeReportType, searchQuery, selectedReason, selectedLocation, selectedPharmacist, filterMismatchesOnly]);
 
   // Paginated chunk for hyper-fast UI rendering
   const paginatedRecords = React.useMemo(() => {
@@ -1332,7 +1527,7 @@ export default function AdminEntryMistakes() {
 
       if (!map[key]) {
         // Look up registered phone number in parameter db
-        const matchingDbPharma = dbState.pharmacists.find(p => p.name.toLowerCase().trim() === key.toLowerCase());
+        const matchingDbPharma = (dbState.pharmacists || []).find(p => p.name.toLowerCase().trim() === key.toLowerCase());
         map[key] = {
           pharmacist: key,
           whatsapp: matchingDbPharma?.whatsappNumber || '',
@@ -1632,11 +1827,11 @@ export default function AdminEntryMistakes() {
                 <div className="mt-4 space-y-2 font-semibold">
                   <div className="flex items-center justify-between text-xs text-[#141414]/80">
                     <span className="flex items-center gap-1.5"><FileSpreadsheet className="w-4 h-4 text-[#141414]/40" /> Parameters Mappings:</span>
-                    <span className="font-extrabold text-[#141414] bg-[#141414]/5 px-2 py-0.5 rounded-md">{dbState.parameters.length} Records</span>
+                    <span className="font-extrabold text-[#141414] bg-[#141414]/5 px-2 py-0.5 rounded-md">{(dbState.parameters || []).length} Records</span>
                   </div>
                   <div className="flex items-center justify-between text-xs text-[#141414]/80">
                     <span className="flex items-center gap-1.5"><Users className="w-4 h-4 text-[#141414]/40" /> Registered Pharmacists:</span>
-                    <span className="font-extrabold text-[#141414] bg-[#141414]/5 px-2 py-0.5 rounded-md">{dbState.pharmacists.length} Personnel</span>
+                    <span className="font-extrabold text-[#141414] bg-[#141414]/5 px-2 py-0.5 rounded-md">{(dbState.pharmacists || []).length} Personnel</span>
                   </div>
                   {dbState.lastUpdated && (
                     <div className="text-[10px] text-[#141414]/45 font-mono pt-2 border-t border-[#141414]/5 mt-2">
@@ -1660,7 +1855,30 @@ export default function AdminEntryMistakes() {
             {/* Daily Workload Excel Uploader */}
             <div className="bg-white border border-[#141414]/10 rounded-2xl p-6 lg:col-span-2 shadow-sm flex flex-col justify-between">
               <div>
-                <h3 className="text-lg font-black text-[#141414] uppercase tracking-wide">Upload Daily HBKMC Workload</h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                  <h3 className="text-lg font-black text-[#141414] uppercase tracking-wide">Upload Daily HBKMC Workload</h3>
+                  
+                  {/* OPEN / CLOSE BUTTON FOR MISMATCH PARAMETERS FILTER */}
+                  <button
+                    onClick={toggleFilterMismatchesOnly}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border cursor-pointer active:scale-95 ${
+                      filterMismatchesOnly 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
+                        : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                    }`}
+                    title={filterMismatchesOnly ? "Deactivate mismatch filtering (Show all records)" : "Activate mismatch filtering (Show mismatches only)"}
+                  >
+                    <span className="relative flex h-2 w-2">
+                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                        filterMismatchesOnly ? 'bg-emerald-400' : 'bg-amber-400'
+                      }`}></span>
+                      <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                        filterMismatchesOnly ? 'bg-emerald-500' : 'bg-amber-500'
+                      }`}></span>
+                    </span>
+                    <span>Mismatch Filter: {filterMismatchesOnly ? 'OPEN (Active)' : 'CLOSED (Deactive)'}</span>
+                  </button>
+                </div>
                 <p className="text-xs text-[#141414]/60 mt-1 mb-4">
                   Upload yesterday's workload file containing the detailed dispensing items table worksheets. We'll search inside "Yesterday HBKMC Workload (Detai" to filter out records based on mismatch parameters.
                 </p>
@@ -1689,21 +1907,27 @@ export default function AdminEntryMistakes() {
                       ref={fileInputWorkloadRef} 
                       className="hidden" 
                       accept=".xlsx, .xls"
+                      multiple
                       onChange={handleFileChangeWorkload}
                     />
                     <Upload className="w-6 h-6 text-[#141414]/40 mx-auto mb-2 animate-bounce" />
-                    <p className="text-xs font-bold text-[#141414]">Drag & Drop Workload Excel or browse file</p>
+                    <p className="text-xs font-bold text-[#141414]">Drag & Drop Workload Excel file(s) or browse files</p>
                     <p className="text-[10px] text-[#141414]/40 mt-0.5">Expects sheet name: "Yesterday HBKMC Workload (Detai"</p>
                   </div>
 
-                  {workloadUploaded && (
+                   {workloadUploaded && (
                     <div className="bg-emerald-50/50 border border-emerald-500/15 rounded-xl p-4 flex flex-col justify-between items-center text-center">
                       <div className="space-y-1.5 my-auto">
                         <CheckCircle2 className="w-7 h-7 text-emerald-600 mx-auto" />
                         <h4 className="text-xs font-black text-emerald-800 uppercase tracking-widest">Active Ledger Data</h4>
                         <p className="text-[10px] text-emerald-700/80 font-semibold leading-normal">
-                          Yesterday's HBKMC Workload parsed with <span className="font-extrabold text-emerald-900">{workloadRecords.length} records</span>.
+                          Yesterday's HBKMC Workload parsed with <span className="font-extrabold text-emerald-900">{(uploadedTotalCount || workloadRecords.length).toLocaleString()} records</span>.
                         </p>
+                        {!filterMismatchesOnly && (
+                          <p className="text-[9px] text-amber-700 font-bold mt-1 max-w-[200px]">
+                            ⚡ Fast preview mode active (100 rows loaded in UI, full dataset saved to Server Workload Database).
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={(e) => {
@@ -1765,7 +1989,7 @@ export default function AdminEntryMistakes() {
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-white border border-[#141414]/10 rounded-2xl p-4 text-center shadow-sm">
                       <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-wider block">Total Ledger Elements</span>
-                      <span className="text-2xl font-black text-[#141414] mt-1 block">{totalProcessed}</span>
+                      <span className="text-2xl font-black text-[#141414] mt-1 block">{(uploadedTotalCount || totalProcessed).toLocaleString()}</span>
                       <span className="text-[9px] font-semibold text-[#141414]/50 mt-1 block">Rows processed</span>
                     </div>
 
@@ -1798,7 +2022,7 @@ export default function AdminEntryMistakes() {
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-white border border-[#141414]/10 rounded-2xl p-4 text-center shadow-sm">
                       <span className="text-[10px] font-bold text-[#141414]/40 uppercase tracking-wider block">Total Ledger Elements</span>
-                      <span className="text-2xl font-black text-[#141414] mt-1 block">{totalProcessed}</span>
+                      <span className="text-2xl font-black text-[#141414] mt-1 block">{(uploadedTotalCount || totalProcessed).toLocaleString()}</span>
                       <span className="text-[9px] font-semibold text-[#141414]/50 mt-1 block">Rows processed</span>
                     </div>
 
@@ -1992,7 +2216,14 @@ export default function AdminEntryMistakes() {
                             );
                             
                             return (
-                              <tr key={`${r.id || 'mistake-row'}-${idx}`} className="hover:bg-red-50/20 group transition-colors">
+                              <tr 
+                                key={`${r.id || 'mistake-row'}-${idx}`} 
+                                className={`group transition-colors ${
+                                  r.isMismatch 
+                                    ? 'hover:bg-red-50/20 bg-red-50/[0.01]' 
+                                    : 'hover:bg-emerald-50/10 bg-emerald-50/[0.01]'
+                                }`}
+                              >
                                 <td className="p-3 font-bold text-indigo-600">{r.actionPersonnelPharmacy || 'N/A'}</td>
                                 <td className="p-3 font-mono text-[11px] font-medium text-[#141414]/70">{r.actionDateTime || 'N/A'}</td>
                                 <td className="p-3 font-mono text-[11px] font-bold text-[#141414]/80">{r.mrnOrganization || 'N/A'}</td>
@@ -2006,48 +2237,60 @@ export default function AdminEntryMistakes() {
                                 <td className="p-3 text-center font-extrabold text-[#F27D26] font-mono bg-[#F27D26]/5">{r.dispenseQuantity || 'N/A'}</td>
                                 <td className="p-3 min-w-[280px] max-w-[360px] whitespace-normal break-words">
                                   <div className="space-y-1">
-                                    {r.reasons.map((re, reIdx) => (
-                                      <span key={`reason-${r.id || 'row'}-${reIdx}`} className="inline-flex items-start justify-between gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-[10px] font-semibold px-2.5 py-1.5 rounded-md leading-normal shadow-sm flex w-full">
-                                        <span className="flex items-start gap-1.5 min-w-0 whitespace-normal break-words py-0.5">
-                                          <AlertTriangle className="w-2.5 h-2.5 text-red-500 shrink-0 mt-0.5" />
-                                          <span className="whitespace-normal break-words" title={re}>{re}</span>
-                                        </span>
-                                        <button
-                                          onClick={() => handleDeleteReason(r.id, re)}
-                                          title="Delete this mismatch detail"
-                                          className="text-red-400 hover:text-red-700 hover:bg-red-200/50 p-0.5 rounded cursor-pointer transition-colors ml-1 shrink-0 self-start"
-                                        >
-                                          <X className="w-2.5 h-2.5" />
-                                        </button>
+                                    {r.reasons.length === 0 ? (
+                                      <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider px-2 py-1 rounded shadow-sm">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Match Perfect
                                       </span>
-                                    ))}
+                                    ) : (
+                                      r.reasons.map((re, reIdx) => (
+                                        <span key={`reason-${r.id || 'row'}-${reIdx}`} className="inline-flex items-start justify-between gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-[10px] font-semibold px-2.5 py-1.5 rounded-md leading-normal shadow-sm flex w-full">
+                                          <span className="flex items-start gap-1.5 min-w-0 whitespace-normal break-words py-0.5">
+                                            <AlertTriangle className="w-2.5 h-2.5 text-red-500 shrink-0 mt-0.5" />
+                                            <span className="whitespace-normal break-words" title={re}>{re}</span>
+                                          </span>
+                                          <button
+                                            onClick={() => handleDeleteReason(r.id, re)}
+                                            title="Delete this mismatch detail"
+                                            className="text-red-400 hover:text-red-700 hover:bg-red-200/50 p-0.5 rounded cursor-pointer transition-colors ml-1 shrink-0 self-start"
+                                          >
+                                            <X className="w-2.5 h-2.5" />
+                                          </button>
+                                        </span>
+                                      ))
+                                    )}
                                   </div>
                                 </td>
                                 <td className="p-3 text-center whitespace-nowrap">
-                                  {isSaved ? (
-                                    <div className="flex flex-col items-center gap-1.5 justify-center">
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black uppercase tracking-wider">
-                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Saved
-                                      </span>
+                                  {r.isMismatch ? (
+                                    isSaved ? (
+                                      <div className="flex flex-col items-center gap-1.5 justify-center">
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] font-black uppercase tracking-wider">
+                                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Saved
+                                        </span>
+                                        <button
+                                          onClick={() => {
+                                            setPasswordTargetItem(r);
+                                            setAdminPasswordInput('');
+                                            setPasswordError('');
+                                            setPasswordModalOpen(true);
+                                          }}
+                                          className="text-[9px] font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100/60 px-2 py-0.5 rounded border border-red-200 transition-colors"
+                                        >
+                                          Remove
+                                        </button>
+                                      </div>
+                                    ) : (
                                       <button
-                                        onClick={() => {
-                                          setPasswordTargetItem(r);
-                                          setAdminPasswordInput('');
-                                          setPasswordError('');
-                                          setPasswordModalOpen(true);
-                                        }}
-                                        className="text-[9px] font-bold text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100/60 px-2 py-0.5 rounded border border-red-200 transition-colors"
+                                        onClick={() => handleSaveToStorage(r)}
+                                        className="px-2.5 py-1.5 rounded bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[10px] font-black uppercase tracking-wider transition-colors inline-flex items-center gap-1"
                                       >
-                                        Remove
+                                        <Upload className="w-3 h-3" /> Save To DB
                                       </button>
-                                    </div>
+                                    )
                                   ) : (
-                                    <button
-                                      onClick={() => handleSaveToStorage(r)}
-                                      className="px-2.5 py-1.5 rounded bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[10px] font-black uppercase tracking-wider transition-colors inline-flex items-center gap-1"
-                                    >
-                                      <Upload className="w-3 h-3" /> Save To DB
-                                    </button>
+                                    <span className="text-[10px] font-extrabold text-[#141414]/30 uppercase tracking-widest select-none">
+                                      -
+                                    </span>
                                   )}
                                 </td>
                               </tr>

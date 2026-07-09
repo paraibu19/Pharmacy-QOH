@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { localDb } from './localStorageDb';
-import { storage } from './storage';
+import { storage, sessionStorage, safeReload } from './storage';
 
 export function useSystemMetadata() {
   const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
@@ -86,12 +86,14 @@ export function useSystemMetadata() {
           if (data && data.firebaseActive === false && db && !isDevOrIframe) {
             console.warn("[Firebase Auto-Fallback] Server is running in local storage mode. Switching client to match.");
             sessionStorage.setItem('firestore_fallback', 'true');
-            window.location.reload();
+            sessionStorage.setItem('server_fallback', 'true');
+            safeReload("server_fallback_triggered");
             return;
-          } else if (data && data.firebaseActive === true && !db && sessionStorage.getItem('manual_local_mode') !== 'true') {
+          } else if (data && data.firebaseActive === true && !db && sessionStorage.getItem('server_fallback') === 'true') {
             console.info("[Firebase Auto-Recovery] Server's Firestore is active. Switching client back to Cloud DB Mode.");
             sessionStorage.removeItem('firestore_fallback');
-            window.location.reload();
+            sessionStorage.removeItem('server_fallback');
+            safeReload("server_recovery_triggered");
             return;
           }
         })

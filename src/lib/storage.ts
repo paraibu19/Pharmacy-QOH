@@ -131,3 +131,22 @@ export const sessionStorage = {
   }
 };
 
+export function safeReload(reason: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const now = Date.now();
+    const lastReload = Number(sessionStorage.getItem('last_auto_reload_time') || 0);
+    if (now - lastReload < 15000) {
+      console.error(`[Safeguard] Prevented rapid reload loop for: ${reason}. Last reload was ${(now - lastReload)/1000}s ago.`);
+      return;
+    }
+    sessionStorage.setItem('last_auto_reload_time', String(now));
+    console.warn(`[Safeguard] Auto-reloading page: ${reason}`);
+    window.location.reload();
+  } catch (e) {
+    console.error('safeReload failed:', e);
+    window.location.reload();
+  }
+}
+
+

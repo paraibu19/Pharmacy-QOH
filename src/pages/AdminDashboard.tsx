@@ -71,6 +71,7 @@ export default function AdminDashboard() {
       return map;
     }, [allMedications]);
     const { audits, loading: auditsLoading } = useAudits(10);
+    const { audits: allAudits } = useAudits(10000);
     const [searchQuery, setSearchQuery] = useState('');
   const [showBrandGenericReport, setShowBrandGenericReport] = useState(false);
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
@@ -4228,15 +4229,58 @@ export default function AdminDashboard() {
         <div className={`grid grid-cols-1 ${isMesaieedHidden ? 'md:grid-cols-2' : 'md:grid-cols-3'} gap-3`}>
           {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => {
             const medCount = (allMedications || []).filter(m => m.locationId === loc.id).length;
+            
+            // Calculate total values
+            const locationMeds = (allMedications || []).filter(m => m.locationId === loc.id);
+            const totalQohValue = locationMeds.reduce((sum, m) => {
+              const medVal = typeof m.totalValue === 'number' ? m.totalValue : ((m.qoh || 0) * (m.averageCost || 0));
+              return sum + (medVal || 0);
+            }, 0);
+
+            const locationAudits = (allAudits || []).filter(a => a.locationId === loc.id);
+            const totalVarianceValue = locationAudits.reduce((sum, a) => {
+              const med = (allMedications || []).find(m => m.itemCode === a.itemCode && m.locationId === loc.id);
+              const cost = med ? (med.averageCost || 0) : 0;
+              return sum + ((a.variance || 0) * cost);
+            }, 0);
+
+            const totalValueAfterVariance = totalQohValue + totalVarianceValue;
+
             return (
-              <div key={loc.id} className="bg-[#141414]/[0.01] border border-[#141414]/5 rounded-2xl p-4 flex flex-col justify-between gap-3 hover:bg-[#141414]/[0.02] transition-colors">
+              <div key={loc.id} className="bg-white border border-[#141414]/10 rounded-2xl p-5 flex flex-col justify-between gap-3 shadow-sm hover:shadow-md transition-all">
                 <div>
-                  <h4 className="text-xs font-extrabold text-[#141414]/80 uppercase tracking-wide truncate">{loc.name.replace('Aw-', '')}</h4>
-                  <span className="text-[10px] font-bold text-[#141414]/40 bg-[#141414]/5 px-2.5 py-0.5 rounded-full mt-1.5 inline-block">
-                    {medCount} medications
-                  </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-xs font-extrabold text-[#141414]/80 uppercase tracking-wide truncate">{loc.name.replace('Aw-', '')}</h4>
+                    <span className="text-[10px] font-bold text-[#141414]/40 bg-[#141414]/5 px-2.5 py-0.5 rounded-full">
+                      {medCount} medications
+                    </span>
+                  </div>
+
+                  {/* Financial Values breakdown */}
+                  <div className="mt-4 pt-3 border-t border-[#141414]/5 space-y-2">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="text-[#141414]/50 font-bold uppercase tracking-wider">Available QOH Value:</span>
+                      <span className="font-mono font-bold text-[#141414]">
+                        {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(totalQohValue)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span className="text-[#141414]/50 font-bold uppercase tracking-wider">Inventory Variance Value:</span>
+                      <span className={`font-mono font-black ${totalVarianceValue > 0 ? 'text-emerald-600' : totalVarianceValue < 0 ? 'text-red-500' : 'text-[#141414]/40'}`}>
+                        {totalVarianceValue > 0 ? '+' : ''}
+                        {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(totalVarianceValue)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] pt-2 border-t border-dashed border-[#141414]/5">
+                      <span className="text-[#141414]/70 font-black uppercase tracking-wider">Value After Variance:</span>
+                      <span className="font-mono font-extrabold text-[#F27D26]">
+                        {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'QAR' }).format(totalValueAfterVariance)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-1.5">
+                
+                <div className="flex gap-1.5 mt-2 pt-2 border-t border-[#141414]/5">
                   <button
                     onClick={() => downloadFullLocationCSV(loc.id as PharmacyLocation)}
                     className="flex-1 py-1.5 border border-[#141414]/10 hover:bg-[#141414]/5 text-[#141414]/80 rounded-xl text-[10px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"

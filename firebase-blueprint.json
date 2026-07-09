@@ -48,7 +48,7 @@
       "required": ["password"]
     },
     "StoredMistake": {
-      "title": "Stored Mistake",
+      "title": "Stored Dispensing Mistake",
       "description": "Represents a stored dispensing mismatch/fault",
       "type": "object",
       "properties": {
@@ -68,6 +68,44 @@
         "savedAt": { "type": "string" }
       },
       "required": ["id", "mrnOrganization", "itemNumber"]
+    },
+    "SavedRoster": {
+      "title": "Pharmacists Duty Roster",
+      "description": "Represents a monthly pharmacists duty roster schedule",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "month": { "type": "string" },
+        "filename": { "type": "string" },
+        "uploadedAt": { "type": "string" },
+        "entries": { "type": "array" },
+        "suggestedFilters": { "type": "object" }
+      },
+      "required": ["id", "month", "entries"]
+    },
+    "WorkloadRecord": {
+      "title": "Daily HBKMC Workload Record",
+      "description": "Represents a parsed single record from the uploaded Daily HBKMC Workload",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "actionDateTime": { "type": "string" },
+        "mrnOrganization": { "type": "string" },
+        "personNameFull": { "type": "string" },
+        "sex": { "type": "string" },
+        "nationality": { "type": "string" },
+        "pharmacyLocation": { "type": "string" },
+        "actionType": { "type": "string" },
+        "itemNumber": { "type": "string" },
+        "labelDescription": { "type": "string" },
+        "dispenseQuantity": { "type": "string" },
+        "actionPersonnelPharmacy": { "type": "string" },
+        "reasons": { "type": "array" },
+        "isMismatch": { "type": "boolean" },
+        "isExcludedByVariance": { "type": "boolean" },
+        "savedAt": { "type": "string" }
+      },
+      "required": ["id", "actionDateTime", "mrnOrganization", "itemNumber"]
     }
   },
   "firestore": {
@@ -86,6 +124,14 @@
     "application_storage": {
       "schema": "StoredMistake",
       "description": "Log of dispensing mistakes & mismatches"
+    },
+    "rosters": {
+      "schema": "SavedRoster",
+      "description": "Log of uploaded monthly pharmacists duty rosters"
+    },
+    "workload_records": {
+      "schema": "WorkloadRecord",
+      "description": "Log of all uploaded Daily HBKMC Workload records for analysis dashboard"
     }
   }
 }

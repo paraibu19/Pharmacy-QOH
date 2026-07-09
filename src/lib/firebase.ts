@@ -27,7 +27,10 @@ export const app = isConfigValid
   : null;
 
 export const db = app 
-  ? initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId) 
+  ? initializeFirestore(app, { 
+      experimentalForceLongPolling: true,
+      useFetchStreams: false
+    } as any, firebaseConfig.firestoreDatabaseId) 
   : null;
 export const auth = app ? getAuth(app) : null;
 export const googleProvider = new GoogleAuthProvider();

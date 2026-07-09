@@ -3,7 +3,7 @@ import {
   Search, Download, MapPin, Sparkles, Filter, Loader2, X as XIcon, 
   RefreshCw, ArrowUpDown, AlertTriangle, Lock, LogIn, Edit3, Save, FileSpreadsheet,
   Eye, EyeOff, Settings, Key, LogOut, KeyRound, ThermometerSnowflake, UploadCloud,
-  ArrowRightLeft, ClipboardList, Calendar, Coins
+  ArrowRightLeft, ClipboardList, Calendar, Coins, ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PharmacyLocation, PHARMACY_NAMES, Medication } from '../types';
@@ -20,6 +20,8 @@ import MultiLocationLookupModal from '../components/MultiLocationLookupModal';
 import BrandGenericReportModal from '../components/BrandGenericReportModal';
 import OracleQohModal from '../components/OracleQohModal';
 import AdminInventory from './AdminInventory';
+import AdminTableOcr from './AdminTableOcr';
+import AdminExpiryCheck from './AdminExpiryCheck';
 import { localDb } from '../lib/localStorageDb';
 import { useSystemMetadata } from '../lib/useSystemMetadata';
 
@@ -31,6 +33,8 @@ export default function OrderView() {
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showInventoryAudit, setShowInventoryAudit] = useState(false);
+  const [showPdfOcr, setShowPdfOcr] = useState(false);
+  const [showExpiryCheck, setShowExpiryCheck] = useState(false);
   const [password, setPassword] = useState('');
   const [persistedPassword, setPersistedPassword] = useState('pharmacist123');
   const [showPassword, setShowPassword] = useState(false);
@@ -48,6 +52,7 @@ export default function OrderView() {
   const [showAdminPassword, setShowAdminPassword] = useState(false);
 
   const [selectedLocation, setSelectedLocation] = useState<PharmacyLocation>(PharmacyLocation.ADULT);
+  const [isLocationListExpanded, setIsLocationListExpanded] = useState<boolean>(false);
 
   // Auto-switch away from Mesaieed if it gets hidden
   useEffect(() => {
@@ -66,7 +71,7 @@ export default function OrderView() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortField, setSortField] = useState<SortField>('itemName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
-  const [orderTarget, setOrderTarget] = useState<number>(1);
+  const [orderTarget, setOrderTarget] = useState<number>(0);
   const [showSourcingTransferOnly, setShowSourcingTransferOnly] = useState(false);
   const [sourcingReportType, setSourcingReportType] = useState<'qoh' | 'current_exp' | 'next_exp' | 'after_next_exp'>('qoh');
   const [stockAlertThreshold, setStockAlertThreshold] = useState<number>(20);
@@ -101,7 +106,7 @@ export default function OrderView() {
     const isCurrentlyActive = showSourcingTransferOnly && sourcingReportType === type;
     if (isCurrentlyActive) {
       setShowSourcingTransferOnly(false);
-      setOrderTarget(1);
+      setOrderTarget(0);
       refresh(true);
       if (refreshAll) {
         refreshAll(true).catch(err => console.warn("Background refreshAll error:", err));
@@ -117,7 +122,7 @@ export default function OrderView() {
       setSearchQuery('');
       
       if (type === 'qoh') {
-        setOrderTarget(1);
+        setOrderTarget(0);
       } else {
         setOrderTarget(0);
       }
@@ -1461,6 +1466,42 @@ export default function OrderView() {
     );
   }
 
+  if (showPdfOcr) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6 md:space-y-8 animate-in fade-in duration-300">
+        <AdminTableOcr 
+          isTechnicianView={true}
+          onNavigateToExpiryCheck={() => {
+            setShowPdfOcr(false);
+            setShowExpiryCheck(true);
+          }}
+          onBackToOrderView={() => {
+            setShowPdfOcr(false);
+            refresh(true);
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (showExpiryCheck) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6 md:space-y-8 animate-in fade-in duration-300">
+        <AdminExpiryCheck 
+          isTechnicianView={true}
+          onNavigateToPdfOcr={() => {
+            setShowExpiryCheck(false);
+            setShowPdfOcr(true);
+          }}
+          onBackToOrderView={() => {
+            setShowExpiryCheck(false);
+            refresh(true);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-12 space-y-6 md:space-y-8">
       {/* Header */}
@@ -1512,41 +1553,19 @@ export default function OrderView() {
             {showSyncPulse ? 'Live Update' : `Synced ${format(lastSynced, 'HH:mm')}`}
           </button>
 
-          <div className="flex w-full md:w-auto items-center gap-1 bg-[#141414]/5 p-1 rounded-full border border-[#141414]/10">
-            <button 
-              onClick={() => {
-                setIsChangingPassword(true);
-                setIsAdminVerified(false);
-                setAdminPasswordAttempt('');
-                setChangeError('');
-              }}
-              title="Security Settings"
-              className="flex-1 md:flex-none p-2 hover:bg-[#F27D26]/10 hover:text-[#F27D26] rounded-full transition-colors text-[#141414]/40"
-            >
-              <KeyRound className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={downloadCSV}
-              className="flex-1 md:flex-none px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all shadow-sm flex items-center justify-center gap-2 border border-[#141414]/5"
-            >
-              <FileSpreadsheet className="w-3 h-3" />
-              CSV
-            </button>
-            <button 
-              onClick={downloadPDF}
-              className="flex-1 md:flex-none px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-red-50 hover:text-red-600 transition-all shadow-sm flex items-center justify-center gap-2 border border-[#141414]/5"
-            >
-              <Download className="w-3 h-3" />
-              PDF
-            </button>
-            <button 
-              onClick={downloadExcel}
-              className="flex-1 md:flex-none px-4 py-2 bg-white text-[#141414] rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all shadow-sm flex items-center justify-center gap-2 border border-[#141414]/5"
-            >
-              <FileSpreadsheet className="w-3 h-3 text-[#F27D26]" />
-              EXCEL
-            </button>
-          </div>
+          <button 
+            onClick={() => {
+              setIsChangingPassword(true);
+              setIsAdminVerified(false);
+              setAdminPasswordAttempt('');
+              setChangeError('');
+            }}
+            title="Security Settings"
+            className="flex-1 md:flex-none px-4 py-2.5 bg-white text-[#141414]/60 hover:text-[#F27D26] border border-[#141414]/10 hover:border-[#F27D26]/20 hover:bg-[#F27D26]/5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            Security Settings
+          </button>
 
           <button 
             onClick={() => setShowBrandGenericReport(true)}
@@ -1568,6 +1587,20 @@ export default function OrderView() {
           >
             <ClipboardList className="w-3.5 h-3.5" />
             Inventory Audit
+          </button>
+          <button 
+            onClick={() => setShowPdfOcr(true)}
+            className="flex-1 md:flex-none px-4 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest hover:from-amber-600 hover:to-yellow-600 transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+            PDF OCR & Merger
+          </button>
+          <button 
+            onClick={() => setShowExpiryCheck(true)}
+            className="flex-1 md:flex-none px-4 py-2.5 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full text-[10px] font-extrabold uppercase tracking-widest hover:from-rose-600 hover:to-pink-600 transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            Expiry Verification
           </button>
         </div>
       </div>
@@ -1652,7 +1685,7 @@ export default function OrderView() {
             </span>
           )}
           <button 
-            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter('all'); setConsumptionFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(1); setShowSourcingTransferOnly(false); setSourcingReportType('qoh'); }}
+            onClick={() => { setStockFilter('all'); setClassificationFilter(null); setTypeFilter(null); setRefFilter('all'); setConsumptionFilter('all'); setExpStart(''); setExpEnd(''); setOrderTarget(0); setShowSourcingTransferOnly(false); setSourcingReportType('qoh'); }}
             className="ml-auto text-[10px] font-bold text-red-500 hover:underline"
           >
             Clear All
@@ -1664,7 +1697,7 @@ export default function OrderView() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#141414]/5 pb-4">
           <div className="space-y-1">
             <span className="text-[10px] font-bold text-[#F27D26] uppercase tracking-widest block font-mono">DEPARTMENT SCOPE</span>
-            <h2 className="text-base font-black text-[#141414] uppercase tracking-wider">Pharmacy Location Selection</h2>
+            <h2 className="text-base font-black text-[#141414] uppercase tracking-wider">PHARMACY LOCATION SELECTION</h2>
             <p className="text-[11px] text-[#141414]/50 font-medium">Select a dispensary segment to browse and analyze store stock or build automatic orders.</p>
           </div>
           <div className="flex items-center gap-1.5 font-mono text-[10px] font-bold px-3 py-1.5 bg-[#141414]/5 rounded-xl border border-[#141414]/10 text-[#141414]/60">
@@ -1673,32 +1706,67 @@ export default function OrderView() {
           </div>
         </div>
 
-        {/* Pharmacy Locations Selector - Styled responsive grid */}
-        <div className={`grid grid-cols-1 ${isMesaieedHidden ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full`}>
-          {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => {
-            const isActive = selectedLocation === loc.id;
-            return (
-              <button
-                key={loc.id}
-                onClick={() => setSelectedLocation(loc.id as PharmacyLocation)}
-                className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all text-center select-none flex items-center justify-center gap-2 ${
-                  isActive 
-                    ? loc.id === PharmacyLocation.ADULT
+        {/* Pharmacy Locations Selector - Styled responsive grid or collapsed view */}
+        {!isLocationListExpanded ? (
+          <div className="flex items-center gap-2 w-full">
+            <button
+              onClick={() => setIsLocationListExpanded(true)}
+              className="p-3 bg-white hover:bg-[#141414]/5 text-[#141414]/70 border border-[#141414]/10 rounded-xl transition-all flex items-center justify-center shadow-sm"
+              title="Show all locations"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            {LOCATIONS.filter(loc => loc.id === selectedLocation).map(loc => {
+              return (
+                <button
+                  key={loc.id}
+                  onClick={() => setIsLocationListExpanded(true)}
+                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all text-center select-none flex items-center justify-center gap-2 ${
+                    loc.id === PharmacyLocation.ADULT
                       ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 shadow-sm'
                       : loc.id === PharmacyLocation.PEDIATRIC
                         ? 'bg-sky-100 text-sky-700 border border-sky-300 shadow-sm'
                         : loc.id === PharmacyLocation.MESAIEED
                           ? 'bg-orange-100 text-orange-700 border border-orange-300 shadow-sm'
                           : 'bg-[#141414] text-white shadow-lg'
-                    : 'bg-white text-[#141414]/50 hover:text-[#141414] hover:bg-white/80 border border-[#141414]/5'
-                }`}
-              >
-                <MapPin className={`w-3.5 h-3.5 opacity-70 ${isActive ? 'animate-bounce' : ''}`} />
-                {loc.name.replace('Aw-', '')}
-              </button>
-            );
-          })}
-        </div>
+                  }`}
+                >
+                  <MapPin className="w-3.5 h-3.5 opacity-70 animate-bounce" />
+                  {loc.name.replace('Aw-', '')}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className={`grid grid-cols-1 ${isMesaieedHidden ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-2 p-1 bg-[#141414]/5 rounded-2xl w-full`}>
+            {LOCATIONS.filter(loc => !(isMesaieedHidden && loc.id === PharmacyLocation.MESAIEED)).map(loc => {
+              const isActive = selectedLocation === loc.id;
+              return (
+                <button
+                  key={loc.id}
+                  onClick={() => {
+                    setSelectedLocation(loc.id as PharmacyLocation);
+                    setIsLocationListExpanded(false);
+                  }}
+                  className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all text-center select-none flex items-center justify-center gap-2 ${
+                    isActive 
+                      ? loc.id === PharmacyLocation.ADULT
+                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-300 shadow-sm'
+                        : loc.id === PharmacyLocation.PEDIATRIC
+                          ? 'bg-sky-100 text-sky-700 border border-sky-300 shadow-sm'
+                          : loc.id === PharmacyLocation.MESAIEED
+                            ? 'bg-orange-100 text-orange-700 border border-orange-300 shadow-sm'
+                            : 'bg-[#141414] text-white shadow-lg'
+                      : 'bg-white text-[#141414]/50 hover:text-[#141414] hover:bg-white/80 border border-[#141414]/5'
+                  }`}
+                >
+                  <MapPin className={`w-3.5 h-3.5 opacity-70 ${isActive ? 'animate-bounce' : ''}`} />
+                  {loc.name.replace('Aw-', '')}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Section 2: Catalog Search & Multi-Criteria Filtering */}
@@ -2045,7 +2113,7 @@ export default function OrderView() {
                       setExpStart('');
                       setExpEnd('');
                       setSearchQuery('');
-                      setOrderTarget(1);
+                      setOrderTarget(0);
                       setShowOnlyThresholdAlerts(false);
                     }}
                     className="flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-all px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer"
@@ -2065,14 +2133,14 @@ export default function OrderView() {
       <div className="bg-white p-5 md:p-6 rounded-3xl border border-[#141414]/10 shadow-sm space-y-5">
         <div className="border-b border-[#141414]/5 pb-4">
           <span className="text-[10px] font-bold text-[#F27D26] uppercase tracking-widest block font-mono">REPLENISHMENT CONFIGURATION</span>
-          <h2 className="text-base font-black text-[#141414] uppercase tracking-wider">Replenishment Targets & Smart Sourcing</h2>
+          <h2 className="text-base font-black text-[#141414] uppercase tracking-wider">REPLENISHMENT TARGETS & SMART SOURCING</h2>
           <p className="text-[11px] text-[#141414]/50 font-medium">Configure calculation bounds relative to maximum quantities, or engage cross-location sourcing to search other dispensary divisions.</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Purchase Multiplier */}
           <div className="lg:col-span-4 space-y-3">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">Restock Quantity Multiplier</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-[#141414]/40 ml-1 block">RESTOCK QUANTITY MULTIPLIER</span>
             <div className="flex flex-col bg-[#141414]/5 p-1 rounded-2xl border border-[#141414]/5">
               {[
                 { label: 'All Medications', value: 0, count: medications.length },
@@ -2204,6 +2272,42 @@ export default function OrderView() {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Export Options Bar */}
+      <div className="bg-white border border-[#141414]/10 rounded-3xl p-5 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-[#F27D26]/10 rounded-2xl">
+            <Download className="w-5 h-5 text-[#F27D26]" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-[#141414] uppercase tracking-wider">Export Current Roster & Calculations</h3>
+            <p className="text-[11px] text-[#141414]/50 font-medium">Export the active smart sourcing calculations into CSV, Excel, or PDF report formats.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <button 
+            onClick={downloadCSV}
+            className="flex-1 md:flex-none px-5 py-3 bg-[#141414]/5 hover:bg-emerald-50 text-[#141414] hover:text-emerald-700 border border-transparent hover:border-emerald-200 rounded-2xl text-[10px] font-extrabold uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            Download CSV
+          </button>
+          <button 
+            onClick={downloadExcel}
+            className="flex-1 md:flex-none px-5 py-3 bg-[#141414]/5 hover:bg-emerald-50 text-[#141414] hover:text-emerald-700 border border-transparent hover:border-emerald-200 rounded-2xl text-[10px] font-extrabold uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-[#F27D26]" />
+            Download EXCEL
+          </button>
+          <button 
+            onClick={downloadPDF}
+            className="flex-1 md:flex-none px-5 py-3 bg-[#141414]/5 hover:bg-red-50 text-[#141414] hover:text-red-700 border border-transparent hover:border-red-200 rounded-2xl text-[10px] font-extrabold uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5 text-red-500" />
+            Download PDF
+          </button>
         </div>
       </div>
 
@@ -2908,6 +3012,7 @@ export default function OrderView() {
         isOpen={showOracleQoh}
         onClose={() => setShowOracleQoh(false)}
         currentLocation={selectedLocation}
+        allMedications={allMedications}
         onSuccess={() => {
           setShowOracleQoh(false);
           refresh(true);

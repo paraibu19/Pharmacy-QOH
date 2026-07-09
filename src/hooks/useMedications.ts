@@ -3,7 +3,7 @@ import { collection, onSnapshot, query, where, orderBy, getDocsFromCache, getDoc
 import { db, handleFirestoreError, OperationType, auth } from '../lib/firebase';
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from '../lib/sharedDb';
-import { storage, sessionStorage } from '../lib/storage';
+import { storage, sessionStorage, safeReload } from '../lib/storage';
 
 export function useMedications(locationId?: PharmacyLocation) {
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -139,7 +139,7 @@ export function useMedications(locationId?: PharmacyLocation) {
           sessionStorage.setItem('firestore_fallback', 'true');
           // Note: We intentionally DO NOT set 'manual_local_mode' here, so that the client can auto-recover back to 
           // Cloud mode when the quota resets or becomes available again, as managed by useSystemMetadata.ts.
-          window.location.reload();
+          safeReload("client_quota_limit_fallback");
           return;
         }
 

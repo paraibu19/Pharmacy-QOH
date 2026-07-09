@@ -59,3 +59,29 @@ export interface InventoryAudit {
   itemName?: string; // Denormalized for display
   correctionTimestamp?: string;
 }
+
+export interface WorkloadRecord {
+  id: string;
+  actionDateTime: string;
+  mrnOrganization: string;
+  personNameFull: string;
+  sex: string;
+  nationality: string;
+  pharmacyLocation: string;
+  actionType: string;
+  itemNumber: string;
+  labelDescription: string;
+  dispenseQuantity: string;
+  actionPersonnelPharmacy: string;
+  reasons: string[];
+  isMismatch: boolean;
+  isExcludedByVariance?: boolean;
+  savedAt?: string;
+  facilityOrder?: string;
+  nursingLocationOrder?: string;
+  encounterType?: string;
+  ageYearsVisit?: string;
+  physicianOrdering?: string;
+  dispenseEventType?: string;
+}
+

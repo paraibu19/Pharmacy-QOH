@@ -146,5 +146,15 @@ service cloud.firestore {
     match /entry_mistakes_configs/{docId} {
       allow read, write: if true;
     }
+
+    // Rosters Collection
+    match /rosters/{rosterId} {
+      allow read, write: if true;
+    }
+
+    // Workload Records Collection
+    match /workload_records/{recordId} {
+      allow read, write: if true;
+    }
   }
 }

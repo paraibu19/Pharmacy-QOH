@@ -1,6 +1,6 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud, Smartphone, AlertCircle } from 'lucide-react';
+import { Pill, ShieldCheck, ClipboardList, LayoutDashboard, CloudOff, Cloud, Wrench, CalendarDays, Menu, X as XIcon, LogOut, RefreshCw, UploadCloud, Smartphone, AlertCircle, Sparkles, BarChart3 } from 'lucide-react';
 import { format } from 'date-fns';
 import { PharmacyLocation, PHARMACY_NAMES } from '../types';
 import { db } from '../lib/firebase';
@@ -182,6 +182,48 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
             >
               <ShieldCheck className="w-4 h-4 text-indigo-600 animate-pulse shrink-0" />
               <span>Application Storage</span>
+            </NavLink>
+            <NavLink 
+              to="/admin/pdf-ocr" 
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={({ isActive }) => 
+                `flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${isVertical ? 'w-full' : ''} ${
+                  isActive 
+                    ? 'bg-[#141414] text-white shadow-sm' 
+                    : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.01]'
+                }`
+              }
+            >
+              <Sparkles className="w-4 h-4 text-amber-500 animate-pulse shrink-0" />
+              <span>PDF Table OCR</span>
+            </NavLink>
+            <NavLink 
+              to="/admin/duty-roster" 
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={({ isActive }) => 
+                `flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${isVertical ? 'w-full' : ''} ${
+                  isActive 
+                    ? 'bg-[#141414] text-white shadow-sm' 
+                    : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.01]'
+                }`
+              }
+            >
+              <CalendarDays className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Monthly Duty Roster</span>
+            </NavLink>
+            <NavLink 
+              to="/admin/workload" 
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={({ isActive }) => 
+                `flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${isVertical ? 'w-full' : ''} ${
+                  isActive 
+                    ? 'bg-[#141414] text-white shadow-sm' 
+                    : 'hover:bg-[#141414]/5 text-[#141414]/60 bg-[#141414]/[0.01]'
+                }`
+              }
+            >
+              <BarChart3 className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>Workload Page</span>
             </NavLink>
           </>
         )}
