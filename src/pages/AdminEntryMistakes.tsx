@@ -269,6 +269,8 @@ export default function AdminEntryMistakes() {
   const [isDraggingDb, setIsDraggingDb] = useState(false);
   const [isDraggingWorkload, setIsDraggingWorkload] = useState(false);
   const [workloadLoading, setWorkloadLoading] = useState(false);
+  const [workloadProgressMsg, setWorkloadProgressMsg] = useState('');
+  const [workloadProgressPercent, setWorkloadProgressPercent] = useState<number | null>(null);
   const [workloadRecords, setWorkloadRecords] = useState<WorkloadRecord[]>(() => {
     try {
       const saved = sessionStorage.getItem('daily_workload_records');
@@ -400,6 +402,11 @@ export default function AdminEntryMistakes() {
     fetchDb();
     fetchSavedStorageItems();
     
+    const localRecords = sessionStorage.getItem('daily_workload_records');
+    if (!localRecords || JSON.parse(localRecords).length === 0) {
+      fetchSavedWorkload();
+    }
+    
     let unsubscribe: (() => void) | undefined = undefined;
 
     // Always set up SSE sync listener
@@ -499,6 +506,31 @@ export default function AdminEntryMistakes() {
       }
     } catch (err) {
       console.error('Failed to load application storage data:', err);
+    }
+  };
+
+  const fetchSavedWorkload = async () => {
+    try {
+      setWorkloadLoading(true);
+      const res = await fetch('/api/workload-records?mismatchOnly=true');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.summary) {
+          const totalVal = data.summary.total || 0;
+          setUploadedTotalCount(totalVal);
+          sessionStorage.setItem('uploaded_total_count', String(totalVal));
+        }
+        if (data.records && data.records.length > 0) {
+          setWorkloadRecords(data.records);
+          setWorkloadUploaded(true);
+          sessionStorage.setItem('daily_workload_records', JSON.stringify(data.records));
+          sessionStorage.setItem('daily_workload_uploaded', 'true');
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load saved workload from server:', err);
+    } finally {
+      setWorkloadLoading(false);
     }
   };
 
@@ -1047,21 +1079,58 @@ export default function AdminEntryMistakes() {
   const parseAndProcessWorkload = async (files: FileList | File[]) => {
     extractFuzzyValueCache.current = {};
     setWorkloadLoading(true);
+    setWorkloadProgressMsg('Starting parser session...');
+    setWorkloadProgressPercent(0);
     try {
       const fileArray = Array.from(files);
       if (fileArray.length === 0) {
         setWorkloadLoading(false);
+        setWorkloadProgressPercent(null);
         return;
       }
 
-      // Read all files and compile combined rows
-      const results = await Promise.all(
-        fileArray.map(file => parseSingleWorkloadFile(file))
-      );
+      // Helper to process loops in chunks with UI yielding and specific percent ranges
+      const chunkedForEach = async <T,>(
+        array: T[],
+        chunkSize: number,
+        progressMsg: string,
+        startPct: number,
+        endPct: number,
+        callback: (item: T, index: number) => void
+      ) => {
+        for (let i = 0; i < array.length; i += chunkSize) {
+          const ratio = i / array.length;
+          const pct = Math.round(startPct + ratio * (endPct - startPct));
+          setWorkloadProgressPercent(pct);
+          setWorkloadProgressMsg(`${progressMsg} (${Math.round(ratio * 100)}%)...`);
+          await new Promise(resolve => setTimeout(resolve, 5));
+          const end = Math.min(i + chunkSize, array.length);
+          for (let j = i; j < end; j++) {
+            callback(array[j], j);
+          }
+        }
+      };
+
+      // Read all files sequentially to avoid high memory usage and main thread starvation
+      const results: any[][] = [];
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
+        const pct = Math.round((i / fileArray.length) * 25);
+        setWorkloadProgressPercent(pct);
+        setWorkloadProgressMsg(`Parsing file ${i + 1} of ${fileArray.length} (${file.name})...`);
+        await new Promise(resolve => setTimeout(resolve, 15));
+        try {
+          const singleResult = await parseSingleWorkloadFile(file);
+          results.push(singleResult);
+        } catch (singleErr: any) {
+          console.warn(`Error parsing file ${file.name}:`, singleErr);
+          // Proceed with other files to be resilient and robust
+        }
+      }
 
       const rawJson = results.flat();
       if (rawJson.length === 0) {
-        throw new Error('All uploaded files had empty workloads.');
+        throw new Error('All uploaded files had empty workloads or failed to parse.');
       }
 
       // Pre-calculate duplicate groups with variances to exclude them from the Mismatch Ledger report
@@ -1144,7 +1213,8 @@ export default function AdminEntryMistakes() {
       {
         // Group indices of rawJson by the 34 order/item-level fields
         const groups: { [key: string]: { rawRow: any; index: number }[] } = {};
-        rawJson.forEach((rawRow, index) => {
+        
+        await chunkedForEach(rawJson, 1500, "Analyzing variance exclusions", 25, 35, (rawRow, index) => {
           const values34 = getMatchValues34(rawRow);
           const groupKey = values34.join('|||');
           if (!groups[groupKey]) {
@@ -1153,7 +1223,8 @@ export default function AdminEntryMistakes() {
           groups[groupKey].push({ rawRow, index });
         });
 
-        for (const key of Object.keys(groups)) {
+        const keys = Object.keys(groups);
+        await chunkedForEach(keys, 2000, "Checking variance boundaries", 35, 50, (key) => {
           const groupRows = groups[key];
           if (groupRows.length >= 2) {
             let hasVariance = false;
@@ -1181,14 +1252,14 @@ export default function AdminEntryMistakes() {
               });
             }
           }
-        }
+        });
       }
 
       // Parse each row and run evaluations
       const evaluated: WorkloadRecord[] = [];
       let recordCounter = 0;
       
-      for (const rawRow of rawJson) {
+      await chunkedForEach(rawJson, 1000, "Evaluating parameters & database match constraints", 50, 75, (rawRow, index) => {
         recordCounter++;
         const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime']);
         const actionDateTime = formatActionDateTime(actionDateTimeRaw);
@@ -1211,12 +1282,12 @@ export default function AdminEntryMistakes() {
         const dispenseEventType = extractFuzzyValue(rawRow, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event']);
 
         // If the row is totally empty or missing critical columns, skip
-        if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) continue;
+        if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) return;
 
         // Ignore rows representing negative (minus) dispensed QTY
         const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
         if (!isNaN(parsedDispenseQty) && parsedDispenseQty < 0) {
-          continue;
+          return;
         }
 
         const reasons: string[] = [];
@@ -1295,7 +1366,7 @@ export default function AdminEntryMistakes() {
           physicianOrdering,
           dispenseEventType
         });
-      }
+      });
 
       const mismatchOnly = evaluated.filter(r => r.isMismatch);
       setUploadedTotalCount(evaluated.length);
@@ -1313,6 +1384,9 @@ export default function AdminEntryMistakes() {
       // Auto-save all parsed workload records to the server for persistent analysis in the Workload Page
       try {
         if (evaluated.length <= 5000) {
+          setWorkloadProgressPercent(85);
+          setWorkloadProgressMsg(`Saving ${evaluated.length} records to server database...`);
+          await new Promise(resolve => setTimeout(resolve, 10));
           const saveRes = await fetch('/api/workload-records', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1323,8 +1397,14 @@ export default function AdminEntryMistakes() {
           } else {
             console.error('Failed to auto-save workload records to server.');
           }
+          setWorkloadProgressPercent(100);
+          setWorkloadProgressMsg('Records saved successfully!');
+          await new Promise(resolve => setTimeout(resolve, 500));
         } else {
           console.log(`Starting chunked upload of ${evaluated.length} records...`);
+          setWorkloadProgressPercent(75);
+          setWorkloadProgressMsg(`Initializing database bulk upload session...`);
+          await new Promise(resolve => setTimeout(resolve, 10));
           const startRes = await fetch('/api/workload-records/upload/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
@@ -1333,9 +1413,17 @@ export default function AdminEntryMistakes() {
           const { uploadId } = await startRes.json();
           
           const CHUNK_SIZE = 10000;
+          const totalChunks = Math.ceil(evaluated.length / CHUNK_SIZE);
           for (let i = 0; i < evaluated.length; i += CHUNK_SIZE) {
             const chunkItems = evaluated.slice(i, i + CHUNK_SIZE);
-            console.log(`Uploading chunk ${Math.floor(i / CHUNK_SIZE) + 1}...`);
+            const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
+            const ratio = i / evaluated.length;
+            const pct = Math.round(75 + ratio * 20); // range 75 to 95
+            setWorkloadProgressPercent(pct);
+            setWorkloadProgressMsg(`Saving database: chunk ${chunkIndex} of ${totalChunks} (${Math.round(ratio * 100)}%)...`);
+            await new Promise(resolve => setTimeout(resolve, 10));
+            
+            console.log(`Uploading chunk ${chunkIndex}...`);
             const chunkRes = await fetch('/api/workload-records/upload/chunk', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1344,6 +1432,9 @@ export default function AdminEntryMistakes() {
             if (!chunkRes.ok) throw new Error(`Failed to upload chunk starting at index ${i}`);
           }
           
+          setWorkloadProgressPercent(95);
+          setWorkloadProgressMsg(`Finalizing database upload and running cloud deduplication...`);
+          await new Promise(resolve => setTimeout(resolve, 10));
           const endRes = await fetch('/api/workload-records/upload/end', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1354,6 +1445,9 @@ export default function AdminEntryMistakes() {
           } else {
             console.error('Failed to finalize chunked workload records on the server.');
           }
+          setWorkloadProgressPercent(100);
+          setWorkloadProgressMsg('Records saved successfully!');
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
       } catch (saveErr: any) {
         console.error('Network error saving workload records to server:', saveErr?.message || saveErr);
@@ -1398,6 +1492,8 @@ export default function AdminEntryMistakes() {
       alert(`Error parsing workload Excel: ${err.message}`);
     } finally {
       setWorkloadLoading(false);
+      setWorkloadProgressMsg('');
+      setWorkloadProgressPercent(null);
     }
   };
 
@@ -1885,9 +1981,32 @@ export default function AdminEntryMistakes() {
               </div>
 
               {workloadLoading ? (
-                <div className="flex flex-col items-center justify-center p-8 bg-[#141414]/[0.02] border border-dashed border-[#141414]/15 rounded-xl">
-                  <div className="w-8 h-8 border-3 border-[#141414]/10 border-t-[#F27D26] rounded-full animate-spin mb-3" />
-                  <p className="text-xs font-bold text-[#141414]/60">Processing workload ledger matrices and evaluating mismatch constraints...</p>
+                <div className="flex flex-col items-center justify-center p-8 bg-[#141414]/[0.02] border border-dashed border-[#141414]/15 rounded-xl space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 border-2 border-[#141414]/10 border-t-[#F27D26] rounded-full animate-spin" />
+                    <p className="text-xs font-black text-[#141414]">Processing Daily HBKMC Workload...</p>
+                  </div>
+
+                  {workloadProgressPercent !== null && (
+                    <div className="w-full max-w-md space-y-1.5">
+                      <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-[#141414]/50">
+                        <span>Parser Progress</span>
+                        <span className="font-mono text-[#F27D26] bg-[#F27D26]/5 px-1.5 py-0.5 rounded border border-[#F27D26]/10">{workloadProgressPercent}%</span>
+                      </div>
+                      <div className="w-full h-2.5 bg-[#141414]/5 rounded-full overflow-hidden border border-[#141414]/5">
+                        <div 
+                          className="h-full bg-linear-to-r from-[#F27D26] to-[#e06611] rounded-full transition-all duration-300"
+                          style={{ width: `${workloadProgressPercent}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {workloadProgressMsg && (
+                    <p className="text-[10px] font-mono font-bold text-[#F27D26] bg-[#F27D26]/5 px-3 py-2 rounded-lg border border-[#F27D26]/10 text-center max-w-md truncate">
+                      {workloadProgressMsg}
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">

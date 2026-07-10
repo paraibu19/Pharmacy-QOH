@@ -1240,12 +1240,12 @@ async function syncWorkloadRecordsFromFirestore(): Promise<any[]> {
     return [];
   }
   try {
-    const chunksSnapshot = await adminDb.collection('workload_chunks').get();
-    if (chunksSnapshot.docs.length > 0) {
-      console.log(`[Firebase Workload Sync] Found ${chunksSnapshot.docs.length} chunks. Downloading into NDJSON store...`);
+    const chunksSnapshot = await adminDb.collection('workload_records').get();
+    const docs = chunksSnapshot.docs.filter((d: any) => d.id.startsWith('chunk_'));
+    if (docs.length > 0) {
+      console.log(`[Firebase Workload Sync] Found ${docs.length} chunks. Downloading into NDJSON store...`);
       const writeStream = fs.createWriteStream(WORKLOAD_RECORDS_FILE);
       
-      const docs = chunksSnapshot.docs;
       docs.sort((a, b) => {
         return a.id.localeCompare(b.id);
       });
@@ -1288,7 +1288,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
     
     if (!fs.existsSync(WORKLOAD_RECORDS_FILE)) return;
     
-    console.log(`[Firebase Sync] Saving workload records from NDJSON file to 'workload_chunks' with chunk size ${CHUNK_SIZE}...`);
+    console.log(`[Firebase Sync] Saving workload records from NDJSON file to 'workload_records' (as chunks) with chunk size ${CHUNK_SIZE}...`);
     
     const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
     const rl = readline.createInterface({
@@ -1307,7 +1307,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
         
         if (currentChunk.length >= CHUNK_SIZE) {
           const chunkDocId = `chunk_${chunkIdx}`;
-          const docRef = adminDb.collection('workload_chunks').doc(chunkDocId);
+          const docRef = adminDb.collection('workload_records').doc(chunkDocId);
           const chunkData = {
             chunkId: chunkIdx,
             updatedAt: new Date().toISOString(),
@@ -1330,7 +1330,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
     
     if (currentChunk.length > 0) {
       const chunkDocId = `chunk_${chunkIdx}`;
-      const docRef = adminDb.collection('workload_chunks').doc(chunkDocId);
+      const docRef = adminDb.collection('workload_records').doc(chunkDocId);
       const chunkData = {
         chunkId: chunkIdx,
         updatedAt: new Date().toISOString(),
@@ -1348,7 +1348,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
     let cleanupBatch = adminDb.batch();
     let cleanupCount = 0;
     for (let i = lastWrittenIdx + 1; i < lastWrittenIdx + 200; i++) {
-      const extraDocRef = adminDb.collection('workload_chunks').doc(`chunk_${i}`);
+      const extraDocRef = adminDb.collection('workload_records').doc(`chunk_${i}`);
       cleanupBatch.delete(extraDocRef);
       cleanupCount++;
       
@@ -1362,7 +1362,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
       await cleanupBatch.commit().catch(() => {});
     }
     
-    console.log(`[Firebase Sync] Successfully saved ${chunkIdx + 1} chunks to 'workload_chunks'.`);
+    console.log(`[Firebase Sync] Successfully saved ${chunkIdx + 1} chunks to 'workload_records'.`);
   } catch (err: any) {
     console.error('[Firebase Sync] Failed chunk-save workload records to Firestore:', err.message);
   }
@@ -1371,7 +1371,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
 async function resetWorkloadRecordsInFirestore(): Promise<void> {
   if (!adminDb) return;
   try {
-    const chunksSnapshot = await adminDb.collection('workload_chunks').get();
+    const chunksSnapshot = await adminDb.collection('workload_records').get();
     let batch = adminDb.batch();
     let count = 0;
     for (const doc of chunksSnapshot.docs) {
@@ -1386,23 +1386,7 @@ async function resetWorkloadRecordsInFirestore(): Promise<void> {
     if (count > 0) {
       await batch.commit();
     }
-    
-    const legacySnapshot = await adminDb.collection('workload_records').get();
-    batch = adminDb.batch();
-    count = 0;
-    for (const doc of legacySnapshot.docs) {
-      batch.delete(doc.ref);
-      count++;
-      if (count >= 500) {
-        await batch.commit();
-        batch = adminDb.batch();
-        count = 0;
-      }
-    }
-    if (count > 0) {
-      await batch.commit();
-    }
-    console.log('[Firebase Sync] Purged both workload_chunks and legacy workload_records collections.');
+    console.log('[Firebase Sync] Purged all items and chunks from the workload_records collection.');
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to reset workload records in Firestore:', err.message);
   }
@@ -1628,7 +1612,7 @@ function setupFirestoreListeners() {
     activeUnsubscribes.push(unsubRosters);
 
     // 7. Listen to workload records chunks (only log update notifications, no local OOM sync)
-    const unsubWorkloadRecords = adminDb.collection('workload_chunks').onSnapshot((snapshot: any) => {
+    const unsubWorkloadRecords = adminDb.collection('workload_records').onSnapshot((snapshot: any) => {
       try {
         console.log('[Firebase Admin Sync] Real-time Workload Records Sync: Notification received.');
         notifyClients('workload-records', { updated: true });
@@ -2622,6 +2606,8 @@ app.post('/api/workload-records/reset', async (req, res) => {
     }
     
     fs.writeFileSync(WORKLOAD_RECORDS_FILE, '');
+    fs.writeFileSync(UPLOADED_FILES_FILE, '[]');
+    
     const summaryFile = path.join(DATA_DIR, 'workload_summary.json');
     if (fs.existsSync(summaryFile)) {
       try {
@@ -2631,12 +2617,68 @@ app.post('/api/workload-records/reset', async (req, res) => {
     
     if (adminDb) {
       await resetWorkloadRecordsInFirestore().catch(err => console.error(err));
+      await adminDb.collection('system').doc('uploaded_files').set({ files: [] }).catch((err: any) => {
+        console.error('[Firebase Reset Error] Failed to reset uploaded files in Firestore:', err.message);
+      });
     }
     
     await updateSystemMetadataInFirestore().catch(err => console.error(err));
     notifyClients('workload-records', { updated: true });
-    res.json({ success: true, message: 'All workload records purged successfully.' });
+    res.json({ success: true, message: 'All workload records and uploaded logs purged successfully.' });
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to generate AI analytical reporting insights
+app.post('/api/workload-records/ai-analysis', async (req, res) => {
+  try {
+    const { total, mismatches, rate, location, startDate, endDate, topMedications, topStaff, mismatchSamples } = req.body;
+    
+    const client = getGeminiClient();
+    
+    const contextStr = `
+Pharmacy Location Filter: ${location || 'All'}
+Date Range: ${startDate || 'None'} to ${endDate || 'None'}
+Total Audited Workloads: ${total || 0}
+Total Discrepancies/Mismatches: ${mismatches || 0}
+Error / Mismatch Rate: ${rate || '0.0'}%
+
+Top Dispensed Medications:
+${(topMedications || []).map((m: any, idx: number) => `${idx + 1}. ${m.desc} (Code: ${m.itemNumber}) - ${m.count} actions`).join('\n')}
+
+Top Active Staff Personnel:
+${(topStaff || []).map((s: any, idx: number) => `${idx + 1}. ${s.name} - ${s.count} actions`).join('\n')}
+
+Sample Discrepancy Incidents:
+${(mismatchSamples || []).map((m: any, idx: number) => `- Event: ${m.actionDateTime || 'Unknown Date'} | Location: ${m.pharmacyLocation || 'Unknown'} | Dispensed Item: ${m.labelDescription} (${m.itemNumber}) by ${m.actionPersonnelPharmacy || 'Unknown'} | Discrepancy details: ${(m.reasons || []).join(', ')}`).join('\n')}
+`;
+
+    const systemPrompt = `You are an expert Clinical Pharmacy Auditor and Healthcare Quality Assurance consultant.
+Your role is to analyze a summarized audit of pharmacy dispensing workloads from Al Wakra & Mesaieed Pharmacy (HBKMC) and generate deep, actionable reporting insights.
+
+Generate a comprehensive clinical workload audit report with the following structure:
+1. **Executive Summary**: A concise summary of the workload quality, focusing on the mismatch rate, volume, and location comparison.
+2. **Systemic Vulnerabilities & Root Causes**: Based on the mismatch sample logs and top medications, identify the main error patterns (e.g., Brand vs Generic dispensing for non-Qataris, roster compliance, or unregistered items).
+3. **Personnel & Location Risk Index**: Highlight if any specific locations or staffing patterns present elevated risk.
+4. **Actionable Recommendations**: Clear, professional, and practical steps to reduce dispensing mistakes at HBKMC. These should be numbered or bulleted and align with Joint Commission International (JCI) and pharmacy safety standards.
+
+Use elegant Markdown, deep medical domain expertise, and clear formatting. Keep the tone clinical, professional, and constructive. DO NOT use unverified or overly dramatic branding terms.`;
+
+    const response = await client.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [
+        { text: contextStr }
+      ],
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.3,
+      }
+    });
+    
+    res.json({ analysis: response.text });
+  } catch (err: any) {
+    console.error('[Gemini AI Analysis Error]:', err);
     res.status(500).json({ error: err.message });
   }
 });

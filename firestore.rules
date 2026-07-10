@@ -156,5 +156,10 @@ service cloud.firestore {
     match /workload_records/{recordId} {
       allow read, write: if true;
     }
+
+    // Workload Chunks Collection
+    match /workload_chunks/{chunkId} {
+      allow read, write: if true;
+    }
   }
 }

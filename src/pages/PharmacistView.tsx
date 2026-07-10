@@ -397,7 +397,15 @@ export default function UserHome() {
         return (dateA.getTime() - dateB.getTime()) * multiplier;
       }
 
-      return a[sortField as keyof typeof a].localeCompare(b[sortField as keyof typeof b]) * multiplier;
+      const valA = a[sortField as keyof typeof a];
+      const valB = b[sortField as keyof typeof b];
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return (valA - valB) * multiplier;
+      }
+      if (typeof valA === 'boolean' && typeof valB === 'boolean') {
+        return (Number(valA) - Number(valB)) * multiplier;
+      }
+      return String(valA || '').localeCompare(String(valB || '')) * multiplier;
     });
   }, [medications, searchQuery, stockFilter, classificationFilter, typeFilter, refFilter, expStart, expEnd, sortField, sortOrder]);
 

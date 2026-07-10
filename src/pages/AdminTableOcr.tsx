@@ -713,7 +713,9 @@ export default function AdminTableOcr({
                           <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                         )}
                         {item.status === 'failed' && (
-                          <XCircle className="w-4 h-4 text-red-500" title={item.error} />
+                          <span title={item.error}>
+                            <XCircle className="w-4 h-4 text-red-500" />
+                          </span>
                         )}
 
                         <button 

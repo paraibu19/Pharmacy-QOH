@@ -268,7 +268,7 @@ export default function BrandGenericReportModal({
   };
 
   const handleXLSXExport = () => {
-    const wsData = [
+    const wsData: any[][] = [
       ['Brand vs Generic Report'],
       ['Report Date and Time:', reportDate],
       ['Pharmacy Location:', PHARMACY_NAMES[selectedLocation] || selectedLocation],

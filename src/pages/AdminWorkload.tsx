@@ -16,8 +16,10 @@ import {
   Search, 
   ShieldAlert, 
   CheckCircle,
-  FileDown
+  FileDown,
+  Sparkles
 } from 'lucide-react';
+import Markdown from 'react-markdown';
 import { WorkloadRecord } from '../types';
 import { format, parse, startOfDay, endOfDay, subDays, isWithinInterval } from 'date-fns';
 import jsPDF from 'jspdf';
@@ -57,10 +59,79 @@ export default function AdminWorkload() {
   
   // Reset Password Modal State
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isFilesHistoryModalOpen, setIsFilesHistoryModalOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [resetError, setResetError] = useState('');
   const [resetSuccess, setResetSuccess] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+
+  // AI Audit State
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiLoadingStep, setAiLoadingStep] = useState('');
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const handleGenerateAIAnalysis = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    setAiAnalysis(null);
+    
+    const steps = [
+      "Initializing Gemini Clinical Auditor...",
+      "Parsing HBKMC workload distribution...",
+      "Calculating error frequency by medication...",
+      "Evaluating brand-to-generic dispensing variance...",
+      "Correlating staff roster compliance...",
+      "Drafting Executive Summary...",
+      "Compiling Joint Commission compliant recommendations..."
+    ];
+    
+    let stepIdx = 0;
+    setAiLoadingStep(steps[0]);
+    const stepInterval = setInterval(() => {
+      stepIdx = (stepIdx + 1) % steps.length;
+      setAiLoadingStep(steps[stepIdx]);
+    }, 1500);
+
+    try {
+      const res = await fetch('/api/workload-records/ai-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          total: metrics.total,
+          mismatches: metrics.mismatches,
+          rate: metrics.rate,
+          location: selectedLocation,
+          startDate: startDate,
+          endDate: endDate,
+          topMedications: topMedications,
+          topStaff: topStaff,
+          mismatchSamples: records.filter(r => r.isMismatch).slice(0, 25).map(r => ({
+            actionDateTime: r.actionDateTime,
+            pharmacyLocation: r.pharmacyLocation,
+            labelDescription: r.labelDescription,
+            itemNumber: r.itemNumber,
+            actionPersonnelPharmacy: r.actionPersonnelPharmacy,
+            reasons: r.reasons
+          }))
+        })
+      });
+
+      clearInterval(stepInterval);
+      if (res.ok) {
+        const data = await res.json();
+        setAiAnalysis(data.analysis);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setAiError(errData.error || 'Failed to generate audit insights. Please try again.');
+      }
+    } catch {
+      clearInterval(stepInterval);
+      setAiError('Connection error while contacting Gemini AI engine.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // Load workload data with server-side filtering
   const fetchWorkloadData = async () => {
@@ -217,9 +288,29 @@ export default function AdminWorkload() {
         setResetSuccess('Workload data reset successfully.');
         setRecords([]);
         setAdminPassword('');
+        setMetrics({
+          total: 0,
+          mismatches: 0,
+          rate: '0.0',
+          uniqueMrns: 0,
+          activeStaff: 0,
+          lastActionStr: 'No Data',
+          totalUploadedFiles: 0
+        });
+        setUploadedFilesList([]);
+        setTopMedications([]);
+        setTopStaff([]);
+        setLocationBreakdown({
+          'adult-emergency': { total: 0, mismatches: 0 },
+          'pediatric': { total: 0, mismatches: 0 },
+          'mesaieed-opd': { total: 0, mismatches: 0 }
+        });
+        setWorkloadTrend([]);
+        setAiAnalysis(null);
         setTimeout(() => {
           setIsResetModalOpen(false);
           setResetSuccess('');
+          fetchWorkloadData();
         }, 1500);
       } else {
         const data = await res.json();
@@ -584,21 +675,30 @@ export default function AdminWorkload() {
         </div>
 
         {/* 6. Total Uploaded Files */}
-        <div className="bg-white border border-[#141414]/10 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
+        <div 
+          onClick={() => setIsFilesHistoryModalOpen(true)}
+          className="bg-white border border-[#141414]/10 rounded-2xl p-5 shadow-sm relative overflow-hidden group cursor-pointer hover:border-indigo-200 hover:shadow-md transition-all"
+        >
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#141414]/40">Uploaded Workloads</span>
+              <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#141414]/40 flex items-center gap-1.5">
+                <span>Uploaded Workloads</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+              </span>
               <p className="text-2xl font-black text-indigo-700">{loading ? '...' : metrics.totalUploadedFiles.toLocaleString()}</p>
             </div>
-            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl" title={uploadedFilesList.map(f => f.filename).join('\n')}>
+            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors" title={uploadedFilesList.map(f => f.filename).join('\n')}>
               <FileSpreadsheet className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-4 flex items-center text-[11px] font-bold text-indigo-600">
-            <span className="truncate max-w-[170px]" title={uploadedFilesList.map(f => f.filename).join(', ') || "No files uploaded yet"}>
+          <div className="mt-4 flex items-center justify-between text-[11px] font-bold text-indigo-600">
+            <span className="truncate max-w-[120px]" title={uploadedFilesList.map(f => f.filename).join(', ') || "No files uploaded yet"}>
               {uploadedFilesList.length > 0 
                 ? `${uploadedFilesList[uploadedFilesList.length - 1].filename}` 
                 : "Excel spreadsheets parsed"}
+            </span>
+            <span className="text-[10px] underline decoration-indigo-300 font-extrabold uppercase group-hover:text-indigo-800 transition-colors">
+              View History
             </span>
           </div>
         </div>
@@ -973,6 +1073,87 @@ export default function AdminWorkload() {
 
       </div>
 
+      {/* Gemini AI Clinical Audit & Insights Panel */}
+      <div className="bg-gradient-to-r from-slate-50 to-indigo-50/50 border border-indigo-100 rounded-3xl p-6 shadow-sm space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="text-lg font-black text-indigo-950 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-600 animate-pulse" />
+              <span>Gemini AI Clinical Audit Assistant</span>
+            </h3>
+            <p className="text-xs text-indigo-950/60 font-medium max-w-2xl">
+              Leverage advanced AI to analyze currently filtered workloads, cross-reference brand prescription policies, evaluate staffing roster compliance, and produce executive quality audit reports.
+            </p>
+          </div>
+
+          <button
+            onClick={handleGenerateAIAnalysis}
+            disabled={aiLoading || records.length === 0}
+            className="self-start md:self-auto flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-indigo-300 disabled:to-indigo-400 text-white rounded-2xl text-xs font-black shadow-md shadow-indigo-600/10 active:scale-95 transition-all cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>{aiLoading ? 'Auditing Workloads...' : 'Generate AI Audit Report'}</span>
+          </button>
+        </div>
+
+        {aiLoading && (
+          <div className="bg-white/80 border border-indigo-100/50 rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-4 shadow-sm animate-pulse">
+            <div className="relative">
+              <div className="w-12 h-12 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
+              <Sparkles className="w-5 h-5 text-indigo-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-black text-indigo-950">{aiLoadingStep}</p>
+              <p className="text-[10px] text-indigo-950/40 uppercase font-extrabold tracking-wider">Clinical Audit In Progress</p>
+            </div>
+          </div>
+        )}
+
+        {aiError && (
+          <div className="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex gap-3 text-xs text-rose-700 font-bold">
+            <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+            <div>
+              <p className="font-extrabold">Audit Insight Generation Failed</p>
+              <p className="text-rose-600/80 font-normal mt-0.5">{aiError}</p>
+            </div>
+          </div>
+        )}
+
+        {aiAnalysis && (
+          <div className="bg-white border border-indigo-100 rounded-2xl p-6 md:p-8 shadow-sm max-h-[550px] overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between border-b border-indigo-50 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                <p className="text-[10px] uppercase font-extrabold tracking-widest text-indigo-900 bg-indigo-50 px-2.5 py-1 rounded-full">
+                  Verified Audit Report Active
+                </p>
+              </div>
+              <p className="text-[10px] font-mono text-[#141414]/40 font-bold uppercase">
+                Audited Size: {records.length} Workloads
+              </p>
+            </div>
+            
+            <div className="prose max-w-none">
+              <Markdown
+                components={{
+                  h1: ({node, ...props}) => <h1 className="text-xs font-extrabold text-indigo-950 mt-6 mb-3 border-b pb-1.5 border-indigo-100 uppercase tracking-wide" {...props} />,
+                  h2: ({node, ...props}) => <h2 className="text-xs font-extrabold text-indigo-900 mt-5 mb-2 flex items-center gap-1.5" {...props} />,
+                  h3: ({node, ...props}) => <h3 className="text-xs font-bold text-indigo-800 mt-4 mb-2" {...props} />,
+                  p: ({node, ...props}) => <p className="text-xs text-[#141414]/80 leading-relaxed mb-3" {...props} />,
+                  ul: ({node, ...props}) => <ul className="list-disc pl-5 text-xs text-[#141414]/80 space-y-1.5 mb-4" {...props} />,
+                  ol: ({node, ...props}) => <ol className="list-decimal pl-5 text-xs text-[#141414]/80 space-y-1.5 mb-4" {...props} />,
+                  li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                  strong: ({node, ...props}) => <strong className="font-extrabold text-[#141414]" {...props} />,
+                  blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-indigo-400 pl-4 italic text-[#141414]/70 my-3 bg-indigo-50/20 py-2 rounded-r" {...props} />,
+                }}
+              >
+                {aiAnalysis}
+              </Markdown>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Filtered Records Log Table with Download Reports Actions */}
       <div className="bg-white border border-[#141414]/10 rounded-3xl p-6 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1161,6 +1342,125 @@ export default function AdminWorkload() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Uploaded Spreadsheet Audit History Modal */}
+      {isFilesHistoryModalOpen && (
+        <div className="fixed inset-0 bg-[#141414]/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white border border-[#141414]/10 rounded-3xl p-6 md:p-8 max-w-2xl w-full shadow-2xl animate-scale-in flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-[#141414]/10 pb-4 mb-4">
+              <div className="flex items-center gap-2.5 text-[#141414]">
+                <FileSpreadsheet className="w-6 h-6 text-indigo-600" />
+                <h3 className="text-base font-black tracking-tight">Spreadsheet Upload History & Deduplication Audit</h3>
+              </div>
+              <button 
+                onClick={() => setIsFilesHistoryModalOpen(false)}
+                className="p-1 rounded-full hover:bg-[#141414]/5 text-[#141414]/40 hover:text-[#141414]/80 transition-colors font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto space-y-5 pr-1 flex-1">
+              <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 space-y-2">
+                <p className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600"></span>
+                  How Deduplication Protects Your Database
+                </p>
+                <p className="text-[11px] text-indigo-950/80 leading-relaxed font-medium">
+                  When a spreadsheet is uploaded, our parser matches prescription properties (such as Patient MRN, Action Date & Time, Item Code, Pharmacy Location) against previously saved records. 
+                </p>
+                <p className="text-[11px] text-indigo-950/80 leading-relaxed font-medium">
+                  <strong>Re-uploading the same file:</strong> If you upload a file again to verify that all data has uploaded correctly, the system automatically skips all duplicate rows and saves <span className="bg-white px-1 py-0.5 rounded border border-indigo-100 font-mono text-indigo-700">0 New Saved</span>. This is fully expected and confirms your data was already safely loaded!
+                </p>
+              </div>
+
+              {uploadedFilesList.length === 0 ? (
+                <div className="py-12 text-center text-[#141414]/40 font-bold text-xs">
+                  No spreadsheets uploaded yet. All metrics are currently empty.
+                </div>
+              ) : (
+                <div className="border border-[#141414]/10 rounded-2xl overflow-hidden bg-white">
+                  <div className="max-h-[350px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-[#141414]/[0.02] border-b border-[#141414]/10 text-[#141414]/60 font-black">
+                          <th className="p-3">Filename / Date</th>
+                          <th className="p-3 text-center">Parsed Rows</th>
+                          <th className="p-3 text-center">New Saved</th>
+                          <th className="p-3 text-center">Duplicates Skipped</th>
+                          <th className="p-3 text-right">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#141414]/5 font-medium">
+                        {uploadedFilesList.map((file, idx) => {
+                          const parsed = file.recordCount || 0;
+                          const added = file.addedCount !== undefined ? file.addedCount : parsed;
+                          const skipped = Math.max(0, parsed - added);
+                          let uploadDate = 'Unknown Date';
+                          try {
+                            if (file.uploadedAt) {
+                              uploadDate = format(new Date(file.uploadedAt), 'MMM dd, yyyy HH:mm');
+                            }
+                          } catch {
+                            uploadDate = String(file.uploadedAt).substring(0, 16).replace('T', ' ');
+                          }
+                          
+                          // Badges
+                          let statusLabel = 'Saved';
+                          let badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                          if (added === 0 && parsed > 0) {
+                            statusLabel = 'Re-upload skipped';
+                            badgeStyle = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+                          } else if (skipped > 0) {
+                            statusLabel = 'Partial skip';
+                            badgeStyle = 'bg-amber-50 text-amber-700 border-amber-100';
+                          }
+
+                          return (
+                            <tr key={idx} className="hover:bg-[#141414]/[0.01]">
+                              <td className="p-3 space-y-0.5">
+                                <p className="font-bold text-[#141414] truncate max-w-[200px]" title={file.filename}>
+                                  {file.filename}
+                                </p>
+                                <p className="text-[10px] text-[#141414]/40 font-mono font-bold">
+                                  {uploadDate}
+                                </p>
+                              </td>
+                              <td className="p-3 text-center font-mono text-[#141414]/60 font-bold">
+                                {parsed.toLocaleString()}
+                              </td>
+                              <td className="p-3 text-center font-bold text-emerald-600">
+                                {added.toLocaleString()}
+                              </td>
+                              <td className="p-3 text-center font-bold text-red-500">
+                                {skipped > 0 ? skipped.toLocaleString() : '-'}
+                              </td>
+                              <td className="p-3 text-right">
+                                <span className={`inline-block px-2 py-0.5 text-[10px] font-bold border rounded-full ${badgeStyle}`}>
+                                  {statusLabel}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[#141414]/10 pt-4 flex justify-end">
+              <button
+                onClick={() => setIsFilesHistoryModalOpen(false)}
+                className="px-5 py-2.5 bg-[#141414] hover:bg-[#141414]/80 text-white text-xs font-black rounded-xl transition-all"
+              >
+                Close Audit Log
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -12,15 +12,14 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "esbuild": "^0.28.1",
-    "tsx": "^4.23.0",
-    "typescript": "~5.8.2",
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.21",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
+    "esbuild": "^0.28.1",
     "express": "^4.21.2",
     "firebase": "^12.12.1",
     "firebase-admin": "^14.0.0",
@@ -33,12 +32,14 @@
     "motion": "^12.23.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.14.2",
     "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.23.0",
+    "typescript": "~5.8.2",
     "vite": "^6.2.0",
-    "xlsx": "^0.18.5",
-    "autoprefixer": "^10.4.21",
-    "tailwindcss": "^4.1.14"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
