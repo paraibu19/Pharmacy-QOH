@@ -353,6 +353,7 @@ export default function AdminEntryMistakes() {
     pharmacists: []
   });
   const [dbLoading, setDbLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDraggingDb, setIsDraggingDb] = useState(false);
   const [isDraggingWorkload, setIsDraggingWorkload] = useState(false);
   const [workloadLoading, setWorkloadLoading] = useState(false);
@@ -634,7 +635,7 @@ export default function AdminEntryMistakes() {
         fetchSavedStorageItems();
       } else {
         const errData = await res.json();
-        alert(errData.error || 'Failed to save to Application Storage');
+        setErrorMessage(errData.error || 'Failed to save to Application Storage');
       }
     } catch (err) {
       console.error('Network error saving to storage:', err);
@@ -883,7 +884,7 @@ export default function AdminEntryMistakes() {
         }
 
       } catch (err: any) {
-        alert(`Error parsing Excel: ${err.message}`);
+        setErrorMessage(`Error parsing Excel: ${err.message}`);
       } finally {
         setDbLoading(false);
       }
@@ -1370,6 +1371,7 @@ export default function AdminEntryMistakes() {
               itemId,
               itemNumber,
               labelDescription,
+              dispenseQuantity,
               pharmacyDisplayLine,
               pharmacySig,
               pharmacyExpandedSig,
@@ -1559,16 +1561,16 @@ export default function AdminEntryMistakes() {
 
         if (!isExcludedByVariance) {
           // Evaluation 1: Action Personnel - Pharmacy is not in Pharmacist List
-          const normalizedPharmacist = actionPersonnelPharmacy.toLowerCase().trim();
-          const pharmacistConfig = (dbState.pharmacists || []).find(p => p.name.toLowerCase().trim() === normalizedPharmacist);
+          const normalizedPharmacist = String(actionPersonnelPharmacy || '').toLowerCase().trim();
+          const pharmacistConfig = (dbState.pharmacists || []).find(p => String(p.name || '').toLowerCase().trim() === normalizedPharmacist);
           
           if (!pharmacistConfig && actionPersonnelPharmacy) {
             reasons.push(`Action Personnel "${actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
           }
 
           // Fetch all DB parameter entries for this specific Item Number
-          const normalizedItemNum = itemNumber.toLowerCase().trim();
-          const matchedItemDbParameters = (dbState.parameters || []).filter(p => p.itemNumber.toLowerCase().trim() === normalizedItemNum);
+          const normalizedItemNum = String(itemNumber || '').toLowerCase().trim();
+          const matchedItemDbParameters = (dbState.parameters || []).filter(p => String(p.itemNumber || '').toLowerCase().trim() === normalizedItemNum);
 
           if (matchedItemDbParameters.length === 0) {
             if (itemNumber) {
@@ -1583,7 +1585,7 @@ export default function AdminEntryMistakes() {
               }
             } else {
               const allowedList = locationConfigWord.allowedQuantities;
-              const normalizedDispQty = dispenseQuantity.trim();
+              const normalizedDispQty = String(dispenseQuantity || '').trim();
               
               const dNum = Number(normalizedDispQty);
               const isAllowed = allowedList.some(allowVal => {
@@ -1791,7 +1793,7 @@ export default function AdminEntryMistakes() {
 
     } catch (err: any) {
       logDiag(`🛑 PARSING TERMINATED WITH FATAL ERROR: ${err.message}`);
-      alert(`Error parsing workload Excel: ${err.message}`);
+      setErrorMessage(`Error parsing workload Excel: ${err.message}`);
     } finally {
       setWorkloadLoading(false);
       setWorkloadProgressMsg('');
@@ -2162,6 +2164,28 @@ export default function AdminEntryMistakes() {
           </p>
         </div>
       </div>
+
+      {errorMessage && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 border border-red-500/15 text-red-800 p-4 rounded-xl flex items-start justify-between shadow-sm"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-xs text-red-900">Operation / Upload Failed</p>
+              <p className="text-[11px] text-red-800/80 mt-1 font-medium leading-relaxed">{errorMessage}</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setErrorMessage(null)} 
+            className="text-red-500 hover:text-red-700 font-extrabold text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-lg hover:bg-red-100/50 transition-colors cursor-pointer active:scale-95 shrink-0"
+          >
+            Dismiss
+          </button>
+        </motion.div>
+      )}
 
       {dbLoading ? (
         <div className="flex flex-col items-center justify-center p-20 bg-white border border-[#141414]/5 rounded-2xl shadow-sm">
