@@ -246,7 +246,7 @@ const isNonQatariBrandMistake = (
 
     const matchingMedCode = matchingMed.itemCode.trim().toLowerCase();
     const brandLinkedCodes = matchingMed.to 
-      ? matchingMed.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase()) 
+      ? String(matchingMed.to).split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase()) 
       : [];
 
     const genericCandidates = prebuiltGenericsMap.get(resolvedRecLocation) || [];
@@ -259,7 +259,7 @@ const isNonQatariBrandMistake = (
       }
 
       const genericLinkedCodes = m.to
-        ? m.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
+        ? String(m.to).split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
         : [];
       if (genericLinkedCodes.includes(matchingMedCode)) {
         return true;
@@ -297,7 +297,7 @@ const isNonQatariBrandMistake = (
 
   const matchingMedCode = matchingMed.itemCode.trim().toLowerCase();
   const brandLinkedCodes = matchingMed.to 
-    ? matchingMed.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase()) 
+    ? String(matchingMed.to).split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase()) 
     : [];
 
   const inStockGenericMed = medicationsList.find(m => {
@@ -315,7 +315,7 @@ const isNonQatariBrandMistake = (
     }
 
     const genericLinkedCodes = m.to
-      ? m.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
+      ? String(m.to).split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
       : [];
     if (genericLinkedCodes.includes(matchingMedCode)) {
       return true;

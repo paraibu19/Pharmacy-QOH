@@ -16,7 +16,7 @@ export default function LinkedItemsModal({ medication, allMedications, onClose, 
 
   // Split linked codes of medication by comma or space
   const linkedCodes = medication.to
-    ? medication.to.split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase())
+    ? String(medication.to).split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase())
     : [];
 
   const medicationCodeLower = medication.itemCode.trim().toLowerCase();
@@ -37,7 +37,7 @@ export default function LinkedItemsModal({ medication, allMedications, onClose, 
 
     // Split m's linked codes
     const mLinkedCodes = m.to
-      ? m.to.split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase())
+      ? String(m.to).split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase())
       : [];
 
     // 2. Inverse path check: Is medication listed in m's 'to' field?
@@ -56,7 +56,7 @@ export default function LinkedItemsModal({ medication, allMedications, onClose, 
       allMedications.forEach(anyMed => {
         const anyMedBrand = anyMed.generic && anyMed.generic.toLowerCase().includes('brand');
         if (anyMedBrand) {
-          const anyMedTo = anyMed.to ? anyMed.to.split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase()) : [];
+          const anyMedTo = anyMed.to ? String(anyMed.to).split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase()) : [];
           if (anyMedTo.includes(medicationCodeLower)) {
             medBrandCodes.push(anyMed.itemCode.trim().toLowerCase());
           }
@@ -69,7 +69,7 @@ export default function LinkedItemsModal({ medication, allMedications, onClose, 
       allMedications.forEach(anyMed => {
         const anyMedBrand = anyMed.generic && anyMed.generic.toLowerCase().includes('brand');
         if (anyMedBrand) {
-          const anyMedTo = anyMed.to ? anyMed.to.split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase()) : [];
+          const anyMedTo = anyMed.to ? String(anyMed.to).split(/[\s,]+/).filter(Boolean).map(c => c.trim().toLowerCase()) : [];
           if (anyMedTo.includes(itemCodeLower)) {
             mBrandCodes.push(anyMed.itemCode.trim().toLowerCase());
           }

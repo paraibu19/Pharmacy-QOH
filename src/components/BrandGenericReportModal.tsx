@@ -58,7 +58,7 @@ export default function BrandGenericReportModal({
 
     const getLinkedCodes = (med: Medication) => {
       return med.to
-        ? med.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
+        ? String(med.to).split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
         : [];
     };
 
