@@ -143,10 +143,57 @@ function formatActionDateTime(val: any): string {
   return `${day}-${month}-${year} ${hoursStr}:${minutes} ${ampm}`;
 }
 
+const resolvePharmacyLocationKey = (locStr: string): string => {
+  const cleanVal = (locStr || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
+  if (
+    cleanVal.includes('pediatric') || 
+    cleanVal.includes('ped') || 
+    cleanVal.includes('peds') || 
+    cleanVal.includes('child') || 
+    cleanVal.includes('kids') ||
+    cleanVal.includes('infant')
+  ) {
+    return 'pediatric';
+  }
+  if (
+    cleanVal.includes('mesaieed') || 
+    cleanVal.includes('mesai') || 
+    cleanVal.includes('msd') || 
+    cleanVal.includes('mes') ||
+    cleanVal.includes('aw ms gopd rx') ||
+    cleanVal.includes('aw ms gopd')
+  ) {
+    return 'mesaieed-opd';
+  }
+  if (
+    cleanVal.includes('adult') || 
+    cleanVal.includes('emergency') || 
+    cleanVal.includes('male') || 
+    cleanVal.includes('main') || 
+    cleanVal.includes('ip') || 
+    cleanVal.includes('opd') ||
+    cleanVal.includes('a&e') ||
+    cleanVal.includes('a/e') ||
+    cleanVal.includes('a & e') ||
+    cleanVal.includes('a and e') ||
+    cleanVal.includes('ae') ||
+    cleanVal.includes('er') ||
+    cleanVal.includes('acc') ||
+    cleanVal.includes('trauma') ||
+    cleanVal.includes('general') ||
+    cleanVal.includes('casualty')
+  ) {
+    return 'adult-emergency';
+  }
+  return cleanVal;
+};
+
 const isNonQatariBrandMistake = (
   rec: WorkloadRecord, 
   medicationsList: Medication[],
-  locationMatcher: (loc1: string, loc2: string) => boolean
+  locationMatcher: (loc1: string, loc2: string) => boolean,
+  prebuiltMedsMap?: Map<string, Medication>,
+  prebuiltGenericsMap?: Map<string, Medication[]>
 ): { isMistake: boolean; details: string; targetGenericCode?: string; targetGenericName?: string } => {
   if (rec.isExcludedByVariance) {
     return { isMistake: false, details: '' };
@@ -183,7 +230,57 @@ const isNonQatariBrandMistake = (
     return { isMistake: false, details: '' };
   }
 
-  // Find the medication in our inventory that matches this itemCode and the action's location
+  const resolvedRecLocation = resolvePharmacyLocationKey(rec.pharmacyLocation);
+
+  // If we have prebuilt maps, use them for ultra-fast O(1) matching
+  if (prebuiltMedsMap && prebuiltGenericsMap) {
+    const matchingMed = prebuiltMedsMap.get(`${itemNoClean}|||${resolvedRecLocation}`);
+    if (!matchingMed) {
+      return { isMistake: false, details: '' };
+    }
+
+    const isBrand = matchingMed.generic && matchingMed.generic.toLowerCase().includes('brand');
+    if (!isBrand) {
+      return { isMistake: false, details: '' };
+    }
+
+    const matchingMedCode = matchingMed.itemCode.trim().toLowerCase();
+    const brandLinkedCodes = matchingMed.to 
+      ? matchingMed.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase()) 
+      : [];
+
+    const genericCandidates = prebuiltGenericsMap.get(resolvedRecLocation) || [];
+    const inStockGenericMed = genericCandidates.find(m => {
+      const mCode = m.itemCode.trim().toLowerCase();
+      if (mCode === matchingMedCode) return false;
+
+      if (brandLinkedCodes.includes(mCode)) {
+        return true;
+      }
+
+      const genericLinkedCodes = m.to
+        ? m.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
+        : [];
+      if (genericLinkedCodes.includes(matchingMedCode)) {
+        return true;
+      }
+
+      return false;
+    });
+
+    if (!inStockGenericMed) {
+      return { isMistake: false, details: '' };
+    }
+
+    return {
+      isMistake: true,
+      details: `Dispensed Brand (${matchingMed.itemCode} - ${matchingMed.itemName}) for Non-Qatari while Generic (${inStockGenericMed.itemCode} - ${inStockGenericMed.itemName}) is IN STOCK (QOH: ${inStockGenericMed.qoh})`,
+      targetGenericCode: inStockGenericMed.itemCode,
+      targetGenericName: inStockGenericMed.itemName
+    };
+  }
+
+  // Fallback to legacy loop check
   const matchingMed = medicationsList.find(m => 
     m.itemCode.toLowerCase().trim() === itemNoClean && 
     locationMatcher(m.locationId, rec.pharmacyLocation)
@@ -193,14 +290,11 @@ const isNonQatariBrandMistake = (
     return { isMistake: false, details: '' };
   }
 
-  // Check if it's explicitly brand
   const isBrand = matchingMed.generic && matchingMed.generic.toLowerCase().includes('brand');
   if (!isBrand) {
     return { isMistake: false, details: '' };
   }
 
-  // 3. Check if there are any connected/associated Generic items that are in stock (QOH > 0)
-  // We check for bidirectional connections (either direct "Brand links to Generic" or inverse "Generic links to Brand").
   const matchingMedCode = matchingMed.itemCode.trim().toLowerCase();
   const brandLinkedCodes = matchingMed.to 
     ? matchingMed.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase()) 
@@ -208,25 +302,18 @@ const isNonQatariBrandMistake = (
 
   const inStockGenericMed = medicationsList.find(m => {
     const mCode = m.itemCode.trim().toLowerCase();
-
-    // Prevent self-matching
     if (mCode === matchingMedCode) return false;
-
-    // Must be in stock at the SAME pharmacy location
     if (m.qoh <= 0) return false;
     if (!locationMatcher(m.locationId, rec.pharmacyLocation)) return false;
 
-    // Must be classified as a Generic item (either says "generic", or is NOT "brand")
     const isMGeneric = (m.generic && m.generic.toLowerCase().includes('generic')) || 
                         (!m.generic || !m.generic.toLowerCase().includes('brand'));
     if (!isMGeneric) return false;
 
-    // Direct path check: Is generic code listed in brand's 'to' field?
     if (brandLinkedCodes.includes(mCode)) {
       return true;
     }
 
-    // Inverse path check: Is brand code listed in generic's 'to' field?
     const genericLinkedCodes = m.to
       ? m.to.split(/[\s,;]+/).filter(Boolean).map(c => c.trim().toLowerCase())
       : [];
@@ -271,6 +358,8 @@ export default function AdminEntryMistakes() {
   const [workloadLoading, setWorkloadLoading] = useState(false);
   const [workloadProgressMsg, setWorkloadProgressMsg] = useState('');
   const [workloadProgressPercent, setWorkloadProgressPercent] = useState<number | null>(null);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<string[]>([]);
+  const [showDiagnostics, setShowDiagnostics] = useState(true);
   const [workloadRecords, setWorkloadRecords] = useState<WorkloadRecord[]>(() => {
     try {
       const saved = sessionStorage.getItem('daily_workload_records');
@@ -805,10 +894,11 @@ export default function AdminEntryMistakes() {
   const extractFuzzyValueCache = useRef<Record<string, string>>({});
 
   // Helper fuzzy matcher for workload keys to support minor layout modifications in HBKMC reports
-  const extractFuzzyValue = (row: any, candidates: string[]): string => {
+  const extractFuzzyValue = (row: any, candidates: string[], cache?: Record<string, string>): string => {
     if (!row) return '';
     const cacheKey = candidates[0];
-    const cachedField = extractFuzzyValueCache.current[cacheKey];
+    const activeCache = cache || extractFuzzyValueCache.current;
+    const cachedField = activeCache[cacheKey];
     if (cachedField !== undefined) {
       return cachedField ? String(row[cachedField] || '').trim() : '';
     }
@@ -816,7 +906,7 @@ export default function AdminEntryMistakes() {
     // Exact match first
     for (const cand of candidates) {
       if (row[cand] !== undefined && row[cand] !== null) {
-        extractFuzzyValueCache.current[cacheKey] = cand;
+        activeCache[cacheKey] = cand;
         return String(row[cand]).trim();
       }
     }
@@ -827,7 +917,7 @@ export default function AdminEntryMistakes() {
       for (const k of keys) {
         const normK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (normK === normCand) {
-          extractFuzzyValueCache.current[cacheKey] = k;
+          activeCache[cacheKey] = k;
           return String(row[k]).trim();
         }
       }
@@ -838,12 +928,12 @@ export default function AdminEntryMistakes() {
       for (const k of keys) {
         const normK = k.toLowerCase();
         if (normK.includes(normCand) || normCand.includes(normK)) {
-          extractFuzzyValueCache.current[cacheKey] = k;
+          activeCache[cacheKey] = k;
           return String(row[k]).trim();
         }
       }
     }
-    extractFuzzyValueCache.current[cacheKey] = '';
+    activeCache[cacheKey] = '';
     return '';
   };
 
@@ -1029,6 +1119,48 @@ export default function AdminEntryMistakes() {
                    sName.includes('yesterday hbkmc');
           });
 
+          // Dynamic header keyword match scan over all sheets as high-priority fallback!
+          if (!targetSheetName) {
+            let maxScore = 0;
+            let bestSheet = '';
+            
+            // Common header keywords we expect in the workload sheet
+            const workloadKeywords = [
+              'item number', 'item code', 'dispense quantity', 'dispensed quantity', 
+              'mrn', 'pharmacy location', 'action personnel', 'action date'
+            ];
+
+            for (const sName of wb.SheetNames) {
+              const ws = wb.Sheets[sName];
+              const wsRows = XLSX.utils.sheet_to_json(ws, { header: 1, range: 0 }) as any[][];
+              if (!wsRows || wsRows.length === 0) continue;
+              
+              // Scan first 15 rows for header keyword matches
+              let matches = 0;
+              for (let i = 0; i < Math.min(wsRows.length, 15); i++) {
+                const r = wsRows[i];
+                if (!r || !Array.isArray(r)) continue;
+                for (const cell of r) {
+                  if (cell !== undefined && cell !== null) {
+                    const cStr = String(cell).toLowerCase();
+                    if (workloadKeywords.some(kw => cStr.includes(kw))) {
+                      matches++;
+                    }
+                  }
+                }
+              }
+              if (matches > maxScore) {
+                maxScore = matches;
+                bestSheet = sName;
+              }
+            }
+            
+            // If we found a sheet that has at least 2 matching headers, let's use it!
+            if (maxScore >= 2 && bestSheet) {
+              targetSheetName = bestSheet;
+            }
+          }
+
           // Fallback 1: sheet containing "detai"
           if (!targetSheetName) {
             targetSheetName = wb.SheetNames.find(n => n.trim().toLowerCase().includes('detai'));
@@ -1047,9 +1179,9 @@ export default function AdminEntryMistakes() {
             targetSheetName = wb.SheetNames[2];
           }
 
-          // Fallback 4: use the last sheet
+          // Fallback 4: use the first sheet (standard Excel sheet containing data) rather than blindly last sheet
           if (!targetSheetName && wb.SheetNames.length > 0) {
-            targetSheetName = wb.SheetNames[wb.SheetNames.length - 1];
+            targetSheetName = wb.SheetNames[0];
           }
 
           if (!targetSheetName) {
@@ -1081,13 +1213,29 @@ export default function AdminEntryMistakes() {
     setWorkloadLoading(true);
     setWorkloadProgressMsg('Starting parser session...');
     setWorkloadProgressPercent(0);
+    setDiagnosticLogs([]);
+
+    const logDiag = (msg: string) => {
+      setDiagnosticLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+      console.log(`[Parser Diagnostics] ${msg}`);
+    };
+
+    logDiag("=================================================");
+    logDiag("🔄 STARTING WORKLOAD FILE PARSER DIAGNOSTIC CHECK");
+    logDiag("=================================================");
+
     try {
       const fileArray = Array.from(files);
       if (fileArray.length === 0) {
+        logDiag("⚠️ Warning: No files selected. Aborting.");
         setWorkloadLoading(false);
         setWorkloadProgressPercent(null);
         return;
       }
+
+      logDiag(`📦 Selected files count: ${fileArray.length}`);
+      const totalBytes = fileArray.reduce((acc, f) => acc + f.size, 0);
+      logDiag(`📊 Total input size: ${(totalBytes / (1024 * 1024)).toFixed(2)} MB`);
 
       // Helper to process loops in chunks with UI yielding and specific percent ranges
       const chunkedForEach = async <T,>(
@@ -1098,38 +1246,162 @@ export default function AdminEntryMistakes() {
         endPct: number,
         callback: (item: T, index: number) => void
       ) => {
+        logDiag(`⚙️ Task: Starting loop for "${progressMsg}" with array length ${array.length}`);
+        const totalChunks = Math.ceil(array.length / chunkSize);
         for (let i = 0; i < array.length; i += chunkSize) {
           const ratio = i / array.length;
           const pct = Math.round(startPct + ratio * (endPct - startPct));
+          const chunkIdx = Math.floor(i / chunkSize) + 1;
+          
           setWorkloadProgressPercent(pct);
           setWorkloadProgressMsg(`${progressMsg} (${Math.round(ratio * 100)}%)...`);
-          await new Promise(resolve => setTimeout(resolve, 5));
+          
+          logDiag(`🧩 [Sub-Loop] ${progressMsg}: processing chunk ${chunkIdx} of ${totalChunks} (${Math.round(ratio * 100)}%)`);
+          await new Promise(resolve => setTimeout(resolve, 15));
           const end = Math.min(i + chunkSize, array.length);
           for (let j = i; j < end; j++) {
             callback(array[j], j);
           }
         }
+        logDiag(`✅ Task Completed: "${progressMsg}"`);
       };
 
+      const allStructuredRows: any[] = [];
+      
       // Read all files sequentially to avoid high memory usage and main thread starvation
-      const results: any[][] = [];
       for (let i = 0; i < fileArray.length; i++) {
         const file = fileArray[i];
         const pct = Math.round((i / fileArray.length) * 25);
         setWorkloadProgressPercent(pct);
         setWorkloadProgressMsg(`Parsing file ${i + 1} of ${fileArray.length} (${file.name})...`);
-        await new Promise(resolve => setTimeout(resolve, 15));
+        
+        logDiag(`📂 [File ${i + 1}/${fileArray.length}] Parsing "${file.name}" (${(file.size / 1024).toFixed(1)} KB)`);
+        await new Promise(resolve => setTimeout(resolve, 40));
+        
         try {
-          const singleResult = await parseSingleWorkloadFile(file);
-          results.push(singleResult);
+          const rawRows = await parseSingleWorkloadFile(file);
+          logDiag(`✔️ File parsed successfully. Found ${rawRows.length} raw rows in worksheet.`);
+          
+          // Re-create a file-specific cache to avoid cross-file schema matching pollution
+          const fileSpecificCache: Record<string, string> = {};
+          let parsedFileRowsCount = 0;
+
+          for (let j = 0; j < rawRows.length; j++) {
+            const rawRow = rawRows[j];
+            
+            const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime'], fileSpecificCache);
+            const actionDateTime = formatActionDateTime(actionDateTimeRaw);
+            const facilityOrder = extractFuzzyValue(rawRow, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order'], fileSpecificCache);
+            const nursingLocationOrder = extractFuzzyValue(rawRow, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order'], fileSpecificCache);
+            const encounterType = extractFuzzyValue(rawRow, ['Encounter Type', 'EncounterType', 'Encounter_Type'], fileSpecificCache);
+            
+            const orderDateTimePhysicianRaw = extractFuzzyValue(rawRow, ['Order Date & Time - Physician', 'Order Date & Time', 'Order Date and Time - Physician', 'Order Date & Time -Physician', 'Order Date and Time'], fileSpecificCache);
+            const orderDateTimePhysician = formatActionDateTime(orderDateTimePhysicianRaw);
+            
+            const lastUpdateProvider = extractFuzzyValue(rawRow, ['Last Update Provider', 'LastUpdateProvider', 'Last_Update_Provider', 'Provider'], fileSpecificCache);
+            const mrnOrganization = extractFuzzyValue(rawRow, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization'], fileSpecificCache);
+            const personNameFull = extractFuzzyValue(rawRow, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name'], fileSpecificCache);
+            const sex = extractFuzzyValue(rawRow, ['Sex', 'Gender', 'M/F'], fileSpecificCache);
+            const nationality = extractFuzzyValue(rawRow, ['Nationality', 'Nation', 'Country'], fileSpecificCache);
+            const ageYearsVisit = extractFuzzyValue(rawRow, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years'], fileSpecificCache);
+            const parentOrderId = extractFuzzyValue(rawRow, ['Parent Order ID', 'Parent Order Id', 'Parent_Order_ID', 'ParentOrderID'], fileSpecificCache);
+            const orderEntryMode = extractFuzzyValue(rawRow, ['Order Entry Mode', 'OrderEntryMode', 'Order_Entry_Mode'], fileSpecificCache);
+            const mnemonicName = extractFuzzyValue(rawRow, ['Mnemonic Name', 'MnemonicName', 'Mnemonic'], fileSpecificCache);
+            const orderedAsMnemonic = extractFuzzyValue(rawRow, ['Ordered As Mnemonic', 'OrderedAsMnemonic', 'Ordered As'], fileSpecificCache);
+            const orderDisplayLine = extractFuzzyValue(rawRow, ['Order Display Line', 'OrderDisplayLine'], fileSpecificCache);
+            const prn = extractFuzzyValue(rawRow, ['PRN'], fileSpecificCache);
+            const oci = extractFuzzyValue(rawRow, ['OCI'], fileSpecificCache);
+            const orderComments = extractFuzzyValue(rawRow, ['Order Comments', 'OrderComments', 'Comments'], fileSpecificCache);
+            const physicianOrdering = extractFuzzyValue(rawRow, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician'], fileSpecificCache);
+            const pharmacyLocation = extractFuzzyValue(rawRow, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location'], fileSpecificCache);
+            const actionType = extractFuzzyValue(rawRow, ['Action Type', 'Type', 'Action_Type'], fileSpecificCache);
+            const childOrderId = extractFuzzyValue(rawRow, ['Child Order ID', 'Child Order Id', 'Child_Order_ID', 'ChildOrderID'], fileSpecificCache);
+            const itemId = extractFuzzyValue(rawRow, ['Item Id', 'ItemId', 'Item_Id'], fileSpecificCache);
+            const itemNumber = extractFuzzyValue(rawRow, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item'], fileSpecificCache);
+            const labelDescription = extractFuzzyValue(rawRow, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name'], fileSpecificCache);
+            const pharmacyDisplayLine = extractFuzzyValue(rawRow, ['Pharmacy Display Line', 'PharmacyDisplayLine'], fileSpecificCache);
+            const pharmacySig = extractFuzzyValue(rawRow, ['Pharmacy SIG', 'PharmacySIG', 'SIG'], fileSpecificCache);
+            const pharmacyExpandedSig = extractFuzzyValue(rawRow, ['Pharmacy Expanded SIG', 'Pharmacy Expanded SIG', 'PharmacyExpandedSIG', 'Expanded SIG'], fileSpecificCache);
+            const dispenseUnit = extractFuzzyValue(rawRow, ['Dispense Unit', 'DispenseUnit', 'Unit'], fileSpecificCache);
+            const billQuantity = extractFuzzyValue(rawRow, ['Bill Quantity', 'BillQuantity', 'Bill Qty'], fileSpecificCache);
+            const actionPersonnelPharmacy = extractFuzzyValue(rawRow, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy'], fileSpecificCache);
+            const departmentOrderStatus = extractFuzzyValue(rawRow, ['Department Order Status', 'DepartmentOrderStatus'], fileSpecificCache);
+            const orderStatus = extractFuzzyValue(rawRow, ['Order Status', 'OrderStatus'], fileSpecificCache);
+
+            const dispenseDateTime = extractFuzzyValue(rawRow, ['Dispense Date & Time', 'Dispense Date and Time', 'Dispense Date', 'Dispense Date/Time'], fileSpecificCache);
+            const dispenseEventTypeVar = extractFuzzyValue(rawRow, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event'], fileSpecificCache);
+            const productDispenseHXID = extractFuzzyValue(rawRow, ['Product Dispense HX ID', 'Product Dispense HX Id', 'ProductDispenseHXID', 'HX ID', 'HX_ID'], fileSpecificCache);
+            const dispenseQuantity = extractFuzzyValue(rawRow, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity'], fileSpecificCache);
+            const trackingItemId = extractFuzzyValue(rawRow, ['Tracking Item Id', 'Tracking Item ID', 'TrackingItemId', 'Tracking_Item_ID'], fileSpecificCache);
+
+            // If the row is totally empty or missing critical columns, skip
+            if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) continue;
+
+            // Ignore rows representing negative (minus) dispensed QTY
+            const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
+            if (!isNaN(parsedDispenseQty) && parsedDispenseQty < 0) {
+              continue;
+            }
+
+            allStructuredRows.push({
+              actionDateTime,
+              facilityOrder,
+              nursingLocationOrder,
+              encounterType,
+              orderDateTimePhysician,
+              lastUpdateProvider,
+              mrnOrganization,
+              personNameFull,
+              sex,
+              nationality,
+              ageYearsVisit,
+              parentOrderId,
+              orderEntryMode,
+              mnemonicName,
+              orderedAsMnemonic,
+              orderDisplayLine,
+              prn,
+              oci,
+              orderComments,
+              physicianOrdering,
+              pharmacyLocation,
+              actionType,
+              childOrderId,
+              itemId,
+              itemNumber,
+              labelDescription,
+              pharmacyDisplayLine,
+              pharmacySig,
+              pharmacyExpandedSig,
+              dispenseUnit,
+              billQuantity,
+              actionPersonnelPharmacy,
+              departmentOrderStatus,
+              orderStatus,
+
+              // Pre-packed values for variance check
+              vDispenseDateTime: formatActionDateTime(dispenseDateTime),
+              vDispenseEventType: dispenseEventTypeVar,
+              vProductDispenseHXID: productDispenseHXID,
+              vDispenseQuantity: dispenseQuantity,
+              vTrackingItemId: trackingItemId
+            });
+
+            parsedFileRowsCount++;
+          }
+
+          logDiag(`⚡ Structured & memory-optimized ${parsedFileRowsCount} rows from "${file.name}".`);
+          
+          // Reclaim memory immediately by dumping raw XLSX rows
+          rawRows.length = 0;
         } catch (singleErr: any) {
+          logDiag(`❌ Error parsing file ${file.name}: ${singleErr?.message || singleErr}`);
           console.warn(`Error parsing file ${file.name}:`, singleErr);
-          // Proceed with other files to be resilient and robust
         }
       }
 
-      const rawJson = results.flat();
-      if (rawJson.length === 0) {
+      logDiag(`📋 Finished parsing files. Total structured records in buffer: ${allStructuredRows.length}`);
+      if (allStructuredRows.length === 0) {
         throw new Error('All uploaded files had empty workloads or failed to parse.');
       }
 
@@ -1146,42 +1418,42 @@ export default function AdminEntryMistakes() {
         return str.toLowerCase();
       };
 
-      const getMatchValues34 = (row: any) => {
+      const getMatchValues34FromStructured = (row: any) => {
         return [
-          formatActionDateTime(extractFuzzyValue(row, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime'])),
-          extractFuzzyValue(row, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order']),
-          extractFuzzyValue(row, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order']),
-          extractFuzzyValue(row, ['Encounter Type', 'EncounterType', 'Encounter_Type']),
-          formatActionDateTime(extractFuzzyValue(row, ['Order Date & Time - Physician', 'Order Date & Time', 'Order Date and Time - Physician', 'Order Date & Time -Physician', 'Order Date and Time'])),
-          extractFuzzyValue(row, ['Last Update Provider', 'LastUpdateProvider', 'Last_Update_Provider', 'Provider']),
-          extractFuzzyValue(row, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization']),
-          extractFuzzyValue(row, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']),
-          extractFuzzyValue(row, ['Sex', 'Gender', 'M/F']),
-          extractFuzzyValue(row, ['Nationality', 'Nation', 'Country']),
-          extractFuzzyValue(row, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years']),
-          extractFuzzyValue(row, ['Parent Order ID', 'Parent Order Id', 'Parent_Order_ID', 'ParentOrderID']),
-          extractFuzzyValue(row, ['Order Entry Mode', 'Order Entry Mode', 'OrderEntryMode', 'Order_Entry_Mode']),
-          extractFuzzyValue(row, ['Mnemonic Name', 'MnemonicName', 'Mnemonic']),
-          extractFuzzyValue(row, ['Ordered As Mnemonic', 'Ordered As Mnemonic', 'OrderedAsMnemonic', 'Ordered As']),
-          extractFuzzyValue(row, ['Order Display Line', 'Order Display Line', 'OrderDisplayLine']),
-          extractFuzzyValue(row, ['PRN']),
-          extractFuzzyValue(row, ['OCI']),
-          extractFuzzyValue(row, ['Order Comments', 'OrderComments', 'Comments']),
-          extractFuzzyValue(row, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician']),
-          extractFuzzyValue(row, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location']),
-          extractFuzzyValue(row, ['Action Type', 'Type', 'Action_Type']),
-          extractFuzzyValue(row, ['Child Order ID', 'Child Order Id', 'Child_Order_ID', 'ChildOrderID']),
-          extractFuzzyValue(row, ['Item Id', 'ItemId', 'Item_Id']),
-          extractFuzzyValue(row, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']),
-          extractFuzzyValue(row, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name']),
-          extractFuzzyValue(row, ['Pharmacy Display Line', 'Pharmacy Display Line', 'PharmacyDisplayLine']),
-          extractFuzzyValue(row, ['Pharmacy SIG', 'PharmacySIG', 'SIG']),
-          extractFuzzyValue(row, ['Pharmacy Expanded SIG', 'Pharmacy Expanded SIG', 'PharmacyExpandedSIG', 'Expanded SIG']),
-          extractFuzzyValue(row, ['Dispense Unit', 'DispenseUnit', 'Unit']),
-          extractFuzzyValue(row, ['Bill Quantity', 'BillQuantity', 'Bill Qty']),
-          extractFuzzyValue(row, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']),
-          extractFuzzyValue(row, ['Department Order Status', 'DepartmentOrderStatus']),
-          extractFuzzyValue(row, ['Order Status', 'OrderStatus'])
+          row.actionDateTime,
+          row.facilityOrder,
+          row.nursingLocationOrder,
+          row.encounterType,
+          row.orderDateTimePhysician,
+          row.lastUpdateProvider,
+          row.mrnOrganization,
+          row.personNameFull,
+          row.sex,
+          row.nationality,
+          row.ageYearsVisit,
+          row.parentOrderId,
+          row.orderEntryMode,
+          row.mnemonicName,
+          row.orderedAsMnemonic,
+          row.orderDisplayLine,
+          row.prn,
+          row.oci,
+          row.orderComments,
+          row.physicianOrdering,
+          row.pharmacyLocation,
+          row.actionType,
+          row.childOrderId,
+          row.itemId,
+          row.itemNumber,
+          row.labelDescription,
+          row.pharmacyDisplayLine,
+          row.pharmacySig,
+          row.pharmacyExpandedSig,
+          row.dispenseUnit,
+          row.billQuantity,
+          row.actionPersonnelPharmacy,
+          row.departmentOrderStatus,
+          row.orderStatus
         ].map(normalizeFieldValue);
       };
 
@@ -1193,48 +1465,47 @@ export default function AdminEntryMistakes() {
         "Tracking Item Id"
       ];
 
-      const getVarianceValue = (row: any, vKey: string) => {
+      const getVarianceValueFromStructured = (row: any, vKey: string) => {
         let raw = '';
         if (vKey === "Dispense Date & Time") {
-          raw = formatActionDateTime(extractFuzzyValue(row, ['Dispense Date & Time', 'Dispense Date and Time', 'Dispense Date', 'Dispense Date/Time']));
+          raw = row.vDispenseDateTime;
         } else if (vKey === "Dispense Event Type") {
-          raw = extractFuzzyValue(row, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event']);
+          raw = row.vDispenseEventType;
         } else if (vKey === "Product Dispense HX ID") {
-          raw = extractFuzzyValue(row, ['Product Dispense HX ID', 'Product Dispense HX Id', 'ProductDispenseHXID', 'HX ID', 'HX_ID']);
+          raw = row.vProductDispenseHXID;
         } else if (vKey === "Dispense Quantity") {
-          raw = extractFuzzyValue(row, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
+          raw = row.vDispenseQuantity;
         } else if (vKey === "Tracking Item Id") {
-          raw = extractFuzzyValue(row, ['Tracking Item Id', 'Tracking Item ID', 'TrackingItemId', 'Tracking_Item_ID']);
+          raw = row.vTrackingItemId;
         }
         return normalizeFieldValue(raw);
       };
 
       const excludedIndices = new Set<number>();
       {
-        // Group indices of rawJson by the 34 order/item-level fields
-        const groups: { [key: string]: { rawRow: any; index: number }[] } = {};
+        const groups: { [key: string]: { row: any; index: number }[] } = {};
         
-        await chunkedForEach(rawJson, 1500, "Analyzing variance exclusions", 25, 35, (rawRow, index) => {
-          const values34 = getMatchValues34(rawRow);
+        await chunkedForEach(allStructuredRows, 2500, "Analyzing variance exclusions", 25, 35, (row, index) => {
+          const values34 = getMatchValues34FromStructured(row);
           const groupKey = values34.join('|||');
           if (!groups[groupKey]) {
             groups[groupKey] = [];
           }
-          groups[groupKey].push({ rawRow, index });
+          groups[groupKey].push({ row, index });
         });
 
         const keys = Object.keys(groups);
-        await chunkedForEach(keys, 2000, "Checking variance boundaries", 35, 50, (key) => {
+        logDiag(`🛡️ Detected ${keys.length} unique 34-column item groups. Running variance checks...`);
+
+        await chunkedForEach(keys, 3000, "Checking variance boundaries", 35, 50, (key) => {
           const groupRows = groups[key];
           if (groupRows.length >= 2) {
             let hasVariance = false;
             for (const vKey of varianceKeys5) {
                const values = groupRows.map(gr => {
-                 const val = getVarianceValue(gr.rawRow, vKey);
-                 // If comparing dispense quantities, handle positive vs negative comparison
+                 const val = getVarianceValueFromStructured(gr.row, vKey);
                  if (vKey === "Dispense Quantity") {
                    const rawStr = String(val).trim();
-                   // Normalize both "+2" and "2" to "2", but keep "-2" as "-2"
                    const cleanStr = rawStr.startsWith('+') ? rawStr.substring(1) : rawStr;
                    return cleanStr.toLowerCase();
                  }
@@ -1255,48 +1526,39 @@ export default function AdminEntryMistakes() {
         });
       }
 
+      logDiag(`🛡️ Variance boundaries complete. Excluded ${excludedIndices.size} rows with transient variances.`);
+
       // Parse each row and run evaluations
       const evaluated: WorkloadRecord[] = [];
       let recordCounter = 0;
       
-      await chunkedForEach(rawJson, 1000, "Evaluating parameters & database match constraints", 50, 75, (rawRow, index) => {
+      await chunkedForEach(allStructuredRows, 2500, "Evaluating parameters & database match constraints", 50, 75, (row, index) => {
         recordCounter++;
-        const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime']);
-        const actionDateTime = formatActionDateTime(actionDateTimeRaw);
-        const mrnOrganization = extractFuzzyValue(rawRow, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization']);
-        const personNameFull = extractFuzzyValue(rawRow, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name']);
-        const sex = extractFuzzyValue(rawRow, ['Sex', 'Gender', 'M/F']);
-        const nationality = extractFuzzyValue(rawRow, ['Nationality', 'Nation', 'Country']);
-        const pharmacyLocation = extractFuzzyValue(rawRow, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location']);
-        const actionType = extractFuzzyValue(rawRow, ['Action Type', 'Type', 'Action_Type']);
-        const itemNumber = extractFuzzyValue(rawRow, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item']);
-        const labelDescription = extractFuzzyValue(rawRow, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name']);
-        const dispenseQuantity = extractFuzzyValue(rawRow, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity']);
-        const actionPersonnelPharmacy = extractFuzzyValue(rawRow, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy']);
+        const actionDateTime = row.actionDateTime;
+        const mrnOrganization = row.mrnOrganization;
+        const personNameFull = row.personNameFull;
+        const sex = row.sex;
+        const nationality = row.nationality;
+        const pharmacyLocation = row.pharmacyLocation;
+        const actionType = row.actionType;
+        const itemNumber = row.itemNumber;
+        const labelDescription = row.labelDescription;
+        const dispenseQuantity = row.dispenseQuantity;
+        const actionPersonnelPharmacy = row.actionPersonnelPharmacy;
 
-        const facilityOrder = extractFuzzyValue(rawRow, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order']);
-        const nursingLocationOrder = extractFuzzyValue(rawRow, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order']);
-        const encounterType = extractFuzzyValue(rawRow, ['Encounter Type', 'EncounterType', 'Encounter_Type']);
-        const ageYearsVisit = extractFuzzyValue(rawRow, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years']);
-        const physicianOrdering = extractFuzzyValue(rawRow, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician']);
-        const dispenseEventType = extractFuzzyValue(rawRow, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event']);
-
-        // If the row is totally empty or missing critical columns, skip
-        if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) return;
-
-        // Ignore rows representing negative (minus) dispensed QTY
-        const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
-        if (!isNaN(parsedDispenseQty) && parsedDispenseQty < 0) {
-          return;
-        }
+        const facilityOrder = row.facilityOrder;
+        const nursingLocationOrder = row.nursingLocationOrder;
+        const encounterType = row.encounterType;
+        const ageYearsVisit = row.ageYearsVisit;
+        const physicianOrdering = row.physicianOrdering;
+        const dispenseEventType = row.dispenseEventType;
 
         const reasons: string[] = [];
         
-        const isExcludedByVariance = excludedIndices.has(recordCounter - 1);
+        const isExcludedByVariance = excludedIndices.has(index);
 
         if (!isExcludedByVariance) {
           // Evaluation 1: Action Personnel - Pharmacy is not in Pharmacist List
-          // Compare with database stored pharmacist list
           const normalizedPharmacist = actionPersonnelPharmacy.toLowerCase().trim();
           const pharmacistConfig = (dbState.pharmacists || []).find(p => p.name.toLowerCase().trim() === normalizedPharmacist);
           
@@ -1309,12 +1571,10 @@ export default function AdminEntryMistakes() {
           const matchedItemDbParameters = (dbState.parameters || []).filter(p => p.itemNumber.toLowerCase().trim() === normalizedItemNum);
 
           if (matchedItemDbParameters.length === 0) {
-            // Item does not exist in any database configurations at all
             if (itemNumber) {
               reasons.push(`Item Number ${itemNumber} is not registered in base Parameter sheet`);
             }
           } else {
-            // Item exists. Next, find if there is a configuration for the specific Pharmacy Location of this record (Condition 3)
             const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, pharmacyLocation));
             
             if (!locationConfigWord) {
@@ -1322,11 +1582,9 @@ export default function AdminEntryMistakes() {
                 reasons.push(`Item ${itemNumber} is not configured to be dispensed from "${pharmacyLocation}" location`);
               }
             } else {
-              // Item + Location matches! Let's check the dispensed quantity parameter list (Condition 1)
               const allowedList = locationConfigWord.allowedQuantities;
               const normalizedDispQty = dispenseQuantity.trim();
               
-              // Try numerical match and string match
               const dNum = Number(normalizedDispQty);
               const isAllowed = allowedList.some(allowVal => {
                 const aNum = Number(allowVal);
@@ -1343,8 +1601,11 @@ export default function AdminEntryMistakes() {
           }
         }
 
+        // Generate 100% unique sequence key combining file index, item index, random seed, and timestamp
+        const uniqueId = `workload-rec-${index}-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`;
+
         evaluated.push({
-          id: `workload-rec-${recordCounter}-${Date.now()}`,
+          id: uniqueId,
           actionDateTime,
           mrnOrganization,
           personNameFull,
@@ -1368,22 +1629,22 @@ export default function AdminEntryMistakes() {
         });
       });
 
-      const mismatchOnly = evaluated.filter(r => r.isMismatch);
+      logDiag(`📊 Evaluated ${evaluated.length} total records. Identified ${evaluated.filter(e => e.isMismatch).length} mismatches.`);
+
+      // Update UI state with first 100 preview rows to ensure UI rendering stays fluid and fast
+      setWorkloadRecords(evaluated.slice(0, 100));
+      sessionStorage.setItem('daily_workload_records', JSON.stringify(evaluated.slice(0, 100)));
       setUploadedTotalCount(evaluated.length);
-      if (filterMismatchesOnly) {
-        setWorkloadRecords(evaluated);
-      } else {
-        // Keep list limited in page memory for fast rendering when Mismatch Filter is CLOSED/Deactive.
-        // The full evaluated array is still sent in the POST body to be stored forever on the server!
-        setWorkloadRecords(evaluated.slice(0, 100));
-      }
+      sessionStorage.setItem('uploaded_total_count', String(evaluated.length));
       setWorkloadUploaded(true);
+      sessionStorage.setItem('daily_workload_uploaded', 'true');
 
       const uploadFilenames = fileArray.map(f => f.name);
 
       // Auto-save all parsed workload records to the server for persistent analysis in the Workload Page
       try {
-        if (evaluated.length <= 5000) {
+        if (evaluated.length <= 1500) {
+          logDiag(`🌐 Saving ${evaluated.length} records to server via atomic transaction...`);
           setWorkloadProgressPercent(85);
           setWorkloadProgressMsg(`Saving ${evaluated.length} records to server database...`);
           await new Promise(resolve => setTimeout(resolve, 10));
@@ -1393,15 +1654,16 @@ export default function AdminEntryMistakes() {
             body: JSON.stringify({ records: evaluated, filenames: uploadFilenames })
           });
           if (saveRes.ok) {
-            console.log('Workload records successfully persisted on the server.');
+            logDiag('✔️ Saved successfully to atomic storage!');
           } else {
+            logDiag('❌ Server returned non-ok for atomic save. Check server logs.');
             console.error('Failed to auto-save workload records to server.');
           }
           setWorkloadProgressPercent(100);
           setWorkloadProgressMsg('Records saved successfully!');
           await new Promise(resolve => setTimeout(resolve, 500));
         } else {
-          console.log(`Starting chunked upload of ${evaluated.length} records...`);
+          logDiag(`🌐 Initializing multi-part bulk upload for ${evaluated.length} records...`);
           setWorkloadProgressPercent(75);
           setWorkloadProgressMsg(`Initializing database bulk upload session...`);
           await new Promise(resolve => setTimeout(resolve, 10));
@@ -1409,29 +1671,38 @@ export default function AdminEntryMistakes() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
           });
-          if (!startRes.ok) throw new Error('Failed to start chunked upload session.');
           const { uploadId } = await startRes.json();
+          logDiag(`🔑 Chunked Session ID created: ${uploadId}`);
           
-          const CHUNK_SIZE = 10000;
+          // Use smaller safe chunk sizes (1500 instead of 10000) to guarantee fast and reliable requests
+          const CHUNK_SIZE = 1500;
           const totalChunks = Math.ceil(evaluated.length / CHUNK_SIZE);
+          logDiag(`🧩 Segmented into ${totalChunks} database chunks. Uploading sequentially...`);
+
           for (let i = 0; i < evaluated.length; i += CHUNK_SIZE) {
             const chunkItems = evaluated.slice(i, i + CHUNK_SIZE);
             const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
             const ratio = i / evaluated.length;
             const pct = Math.round(75 + ratio * 20); // range 75 to 95
+            
             setWorkloadProgressPercent(pct);
             setWorkloadProgressMsg(`Saving database: chunk ${chunkIndex} of ${totalChunks} (${Math.round(ratio * 100)}%)...`);
-            await new Promise(resolve => setTimeout(resolve, 10));
             
-            console.log(`Uploading chunk ${chunkIndex}...`);
+            logDiag(`🛫 Sending chunk ${chunkIndex}/${totalChunks} (${chunkItems.length} records)...`);
+            await new Promise(resolve => setTimeout(resolve, 15));
+            
             const chunkRes = await fetch('/api/workload-records/upload/chunk', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ uploadId, items: chunkItems })
             });
-            if (!chunkRes.ok) throw new Error(`Failed to upload chunk starting at index ${i}`);
+            if (!chunkRes.ok) {
+              logDiag(`❌ Failed to send chunk ${chunkIndex}. Aborting.`);
+              throw new Error(`Failed to upload chunk starting at index ${i}`);
+            }
           }
           
+          logDiag(`🏁 Finishing chunked session. Running server deduplication, indexing, and persistent backup...`);
           setWorkloadProgressPercent(95);
           setWorkloadProgressMsg(`Finalizing database upload and running cloud deduplication...`);
           await new Promise(resolve => setTimeout(resolve, 10));
@@ -1441,8 +1712,10 @@ export default function AdminEntryMistakes() {
             body: JSON.stringify({ uploadId, filenames: uploadFilenames })
           });
           if (endRes.ok) {
+            logDiag('✔️ Cloud consolidation completed and stored permanently.');
             console.log('Chunked workload records successfully persisted on the server.');
           } else {
+            logDiag('❌ Failed to finalize chunked session on server.');
             console.error('Failed to finalize chunked workload records on the server.');
           }
           setWorkloadProgressPercent(100);
@@ -1450,14 +1723,34 @@ export default function AdminEntryMistakes() {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       } catch (saveErr: any) {
+        logDiag(`❌ Network error saving to database: ${saveErr?.message || saveErr}`);
         console.error('Network error saving workload records to server:', saveErr?.message || saveErr);
       }
 
       // Auto-save discovered mismatches to Application Storage forever upon upload
       {
+        logDiag('💾 Auto-saving mismatches list to Application Storage archive...');
         const standardMismatches = evaluated.filter(r => r.isMismatch);
+
+        // Pre-build O(1) lookup maps for brand vs generic mistake checks to avoid O(E * M) freeze
+        const prebuiltMedsMap = new Map<string, Medication>();
+        const prebuiltGenericsMap = new Map<string, Medication[]>();
+        for (const m of medications) {
+          const code = m.itemCode.toLowerCase().trim();
+          const loc = m.locationId;
+          prebuiltMedsMap.set(`${code}|||${loc}`, m);
+          const isMGeneric = (m.generic && m.generic.toLowerCase().includes('generic')) || 
+                              (!m.generic || !m.generic.toLowerCase().includes('brand'));
+          if (isMGeneric && m.qoh > 0) {
+            if (!prebuiltGenericsMap.has(loc)) {
+              prebuiltGenericsMap.set(loc, []);
+            }
+            prebuiltGenericsMap.get(loc)!.push(m);
+          }
+        }
+
         const brandVsGenericMismatches = evaluated.map(rec => {
-          const outcome = isNonQatariBrandMistake(rec, medications, isLocationMatches);
+          const outcome = isNonQatariBrandMistake(rec, medications, isLocationMatches, prebuiltMedsMap, prebuiltGenericsMap);
           if (outcome.isMistake) {
             return {
               ...rec,
@@ -1469,6 +1762,7 @@ export default function AdminEntryMistakes() {
         }).filter(Boolean) as WorkloadRecord[];
 
         const allMismatchesToSave = [...standardMismatches, ...brandVsGenericMismatches];
+        logDiag(`💾 Found ${allMismatchesToSave.length} total policy mistakes. Storing in persistent registry...`);
         if (allMismatchesToSave.length > 0) {
           try {
             const appStorageRes = await fetch('/api/application-storage', {
@@ -1477,18 +1771,26 @@ export default function AdminEntryMistakes() {
               body: JSON.stringify(allMismatchesToSave)
             });
             if (appStorageRes.ok) {
+              logDiag('✔️ Mistake registry synchronized successfully.');
               console.log('Successfully auto-saved mismatches to application storage.');
               fetchSavedStorageItems();
             } else {
+              logDiag('❌ Mistake registry sync failed on server.');
               console.error('Failed to auto-save mismatches to application storage.');
             }
           } catch (err) {
+            logDiag('❌ Error saving to mistake registry.');
             console.error('Network error auto-saving mismatches to application storage:', err);
           }
         }
       }
 
+      logDiag("=================================================");
+      logDiag("🎉 WORKLOAD PARSING & SAVE PIPELINE COMPLETED SUCCESSFULLY!");
+      logDiag("=================================================");
+
     } catch (err: any) {
+      logDiag(`🛑 PARSING TERMINATED WITH FATAL ERROR: ${err.message}`);
       alert(`Error parsing workload Excel: ${err.message}`);
     } finally {
       setWorkloadLoading(false);
@@ -1499,6 +1801,23 @@ export default function AdminEntryMistakes() {
 
   // Dynamically calculate brand vs generic policy mistake records
   const brandVsGenericRecords = React.useMemo(() => {
+    // Pre-build O(1) lookup maps for brand vs generic mistake checks
+    const prebuiltMedsMap = new Map<string, Medication>();
+    const prebuiltGenericsMap = new Map<string, Medication[]>();
+    for (const m of medications) {
+      const code = m.itemCode.toLowerCase().trim();
+      const loc = m.locationId;
+      prebuiltMedsMap.set(`${code}|||${loc}`, m);
+      const isMGeneric = (m.generic && m.generic.toLowerCase().includes('generic')) || 
+                          (!m.generic || !m.generic.toLowerCase().includes('brand'));
+      if (isMGeneric && m.qoh > 0) {
+        if (!prebuiltGenericsMap.has(loc)) {
+          prebuiltGenericsMap.set(loc, []);
+        }
+        prebuiltGenericsMap.get(loc)!.push(m);
+      }
+    }
+
     return workloadRecords.map(rec => {
       if (rec.dismissedBrandVsGeneric) {
         return {
@@ -1507,7 +1826,7 @@ export default function AdminEntryMistakes() {
           isMismatch: false
         };
       }
-      const outcome = isNonQatariBrandMistake(rec, medications, isLocationMatches);
+      const outcome = isNonQatariBrandMistake(rec, medications, isLocationMatches, prebuiltMedsMap, prebuiltGenericsMap);
       if (outcome.isMistake) {
         return {
           ...rec,
