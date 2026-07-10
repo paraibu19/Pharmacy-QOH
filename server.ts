@@ -366,9 +366,21 @@ function parseRecordDateServer(dateStr: string): Date {
     if (cleaned.length >= 10) {
       const parts = cleaned.split(' ');
       const dateParts = parts[0].split('-');
-      const day = parseInt(dateParts[0], 10);
-      const month = parseInt(dateParts[1], 10) - 1;
-      const year = parseInt(dateParts[2], 10);
+      let day = 0;
+      let month = 0;
+      let year = 0;
+      
+      if (dateParts[0].length === 4) {
+        // Format is YYYY-MM-DD
+        year = parseInt(dateParts[0], 10);
+        month = parseInt(dateParts[1], 10) - 1;
+        day = parseInt(dateParts[2], 10);
+      } else {
+        // Format is DD-MM-YYYY
+        day = parseInt(dateParts[0], 10);
+        month = parseInt(dateParts[1], 10) - 1;
+        year = parseInt(dateParts[2], 10);
+      }
       
       if (parts.length > 1) {
         const timeParts = parts[1].split(':');
@@ -1199,8 +1211,8 @@ async function generateWorkloadSummary(): Promise<any> {
         }
 
         try {
-          const d = parseRecordDateServer(formattedDay || dateStr);
-          if (d > maxDate) {
+          const d = parseRecordDateServer(dateStr);
+          if (d.getTime() > 0 && d > maxDate) {
             maxDate = d;
             summary.lastActionStr = dateStr;
           }
@@ -1296,9 +1308,6 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
       crlfDelay: Infinity
     });
     
-    let batch = adminDb.batch();
-    let count = 0;
-    
     for await (const line of rl) {
       if (!line.trim()) continue;
       try {
@@ -1313,14 +1322,8 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
             updatedAt: new Date().toISOString(),
             records: cleanServerUndefined(currentChunk)
           };
-          batch.set(docRef, chunkData, { merge: false });
-          count++;
-          
-          if (count >= 400) {
-            await batch.commit();
-            batch = adminDb.batch();
-            count = 0;
-          }
+          // Save chunk document individually to prevent exceeding WriteBatch payload size limit of 10MB
+          await docRef.set(chunkData, { merge: false });
           
           chunkIdx++;
           currentChunk = [];
@@ -1336,15 +1339,11 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
         updatedAt: new Date().toISOString(),
         records: cleanServerUndefined(currentChunk)
       };
-      batch.set(docRef, chunkData, { merge: false });
-      count++;
+      await docRef.set(chunkData, { merge: false });
+      chunkIdx++;
     }
     
-    if (count > 0) {
-      await batch.commit();
-    }
-    
-    const lastWrittenIdx = chunkIdx;
+    const lastWrittenIdx = chunkIdx - 1;
     let cleanupBatch = adminDb.batch();
     let cleanupCount = 0;
     for (let i = lastWrittenIdx + 1; i < lastWrittenIdx + 200; i++) {
@@ -1362,7 +1361,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
       await cleanupBatch.commit().catch(() => {});
     }
     
-    console.log(`[Firebase Sync] Successfully saved ${chunkIdx + 1} chunks to 'workload_records'.`);
+    console.log(`[Firebase Sync] Successfully saved ${chunkIdx} chunks to 'workload_records'.`);
   } catch (err: any) {
     console.error('[Firebase Sync] Failed chunk-save workload records to Firestore:', err.message);
   }
@@ -2239,7 +2238,10 @@ app.post('/api/workload-records/upload/end', async (req, res) => {
       }
     }
     
-    appendStream.end();
+    await new Promise<void>((resolve) => {
+      appendStream.on('finish', () => resolve());
+      appendStream.end();
+    });
 
     if (Array.isArray(filenames) && filenames.length > 0) {
       logUploadedFiles(filenames, itemsToSave.length, addedCount);
@@ -2291,6 +2293,13 @@ app.get('/api/workload-records', async (req, res) => {
       if (fs.existsSync(summaryFile)) {
         try {
           summary = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+          // Self-healing: if summary reports 0 records but the records file is non-empty, force regeneration!
+          if (summary && summary.total === 0 && fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+            const stats = fs.statSync(WORKLOAD_RECORDS_FILE);
+            if (stats.size > 10) {
+              summary = null;
+            }
+          }
         } catch {}
       }
       
@@ -2574,7 +2583,10 @@ app.post('/api/workload-records', async (req, res) => {
       }
     }
     
-    appendStream.end();
+    await new Promise<void>((resolve) => {
+      appendStream.on('finish', () => resolve());
+      appendStream.end();
+    });
 
     if (filenames.length > 0) {
       logUploadedFiles(filenames, itemsToSave.length, addedCount);
