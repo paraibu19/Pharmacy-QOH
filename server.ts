@@ -23,7 +23,10 @@ import {
   writeBatch, 
   onSnapshot,
   Timestamp,
-  serverTimestamp
+  serverTimestamp,
+  query,
+  limit,
+  orderBy
 } from 'firebase/firestore';
 
 const FieldValue = {
@@ -73,13 +76,21 @@ class CollectionRefAdapter {
 
   async get() {
     const colRef = collection(this.db, this.path);
-    const snap = await getDocs(colRef);
+    let q: any = colRef;
+    if (this.path === 'application_storage') {
+      q = query(colRef, orderBy('savedAt', 'desc'), limit(1000));
+    }
+    const snap = await getDocs(q);
     return new QuerySnapshotAdapter(snap);
   }
 
   onSnapshot(onNext: any, onError: any) {
     const colRef = collection(this.db, this.path);
-    return onSnapshot(colRef, (snap) => {
+    let q: any = colRef;
+    if (this.path === 'application_storage') {
+      q = query(colRef, orderBy('savedAt', 'desc'), limit(1000));
+    }
+    return onSnapshot(q, (snap) => {
       onNext(new QuerySnapshotAdapter(snap));
     }, onError);
   }
@@ -574,17 +585,19 @@ function handleAdminDbError(err: any, context: string) {
   const errMsg = err.message || String(err);
   const lowerMsg = errMsg.toLowerCase();
   
-  const isFallbackTrigger = errMsg.includes('PERMISSION_DENIED') || 
-                            errMsg.includes('insufficient permissions') || 
-                            lowerMsg.includes('quota') || 
-                            lowerMsg.includes('exhausted') || 
-                            lowerMsg.includes('limit') || 
-                            lowerMsg.includes('over-quota') ||
-                            lowerMsg.includes('unavailable') ||
-                            errMsg.includes(' 7 ') ||
-                            errMsg.startsWith('7 ') ||
-                            errMsg.includes(': 7') ||
-                            errMsg.includes('Status code: 7');
+  const isFallbackTrigger = (
+    errMsg.includes('PERMISSION_DENIED') || 
+    errMsg.includes('insufficient permissions') || 
+    lowerMsg.includes('quota') || 
+    lowerMsg.includes('exhausted') || 
+    (lowerMsg.includes('limit') && !lowerMsg.includes('128.00 mib') && !lowerMsg.includes('payload size') && !lowerMsg.includes('query failed')) || 
+    lowerMsg.includes('over-quota') ||
+    lowerMsg.includes('unavailable') ||
+    errMsg.includes(' 7 ') ||
+    errMsg.startsWith('7 ') ||
+    errMsg.includes(': 7') ||
+    errMsg.includes('Status code: 7')
+  );
   
   if (isFallbackTrigger) {
     if (adminDb) {
