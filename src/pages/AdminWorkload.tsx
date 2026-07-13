@@ -552,6 +552,260 @@ export default function AdminWorkload() {
     return Math.max(...workloadTrend.map(t => t.count)) * 1.15;
   }, [workloadTrend]);
 
+  // Advanced Field-by-Field Analysis State
+  const [selectedAnalysisField, setSelectedAnalysisField] = useState<string>('facilityOrder');
+
+  const ANALYZABLE_FIELDS = useMemo(() => [
+    { key: 'actionDateTime', label: 'Action Date & Time' },
+    { key: 'facilityOrder', label: 'Facility - Order' },
+    { key: 'nursingLocationOrder', label: 'Nursing Location - Order' },
+    { key: 'encounterType', label: 'Encounter Type' },
+    { key: 'mrnOrganization', label: 'MRN- Organization' },
+    { key: 'personNameFull', label: 'Person Name- Full' },
+    { key: 'sex', label: 'Sex' },
+    { key: 'nationality', label: 'Nationality' },
+    { key: 'ageYearsVisit', label: 'Age- Years (Visit)' },
+    { key: 'physicianOrdering', label: 'Physician - Ordering' },
+    { key: 'pharmacyLocation', label: 'Pharmacy Location' },
+    { key: 'dispenseEventType', label: 'Dispense Event Type' },
+    { key: 'actionType', label: 'Action Type' },
+    { key: 'itemNumber', label: 'Item Number' },
+    { key: 'labelDescription', label: 'Label Description' },
+    { key: 'actionPersonnelPharmacy', label: 'Action Personnel - Pharmacy' },
+    { key: 'status', label: 'Status' }
+  ], []);
+
+  interface AnalysisItem {
+    value: string;
+    count: number;
+    percentage: number;
+    mismatches: number;
+    mismatchRate: number;
+  }
+
+  const fieldAnalysis = useMemo(() => {
+    const total = filteredRecords.length;
+    if (total === 0) {
+      return { items: [], totalRecords: 0, uniqueValuesCount: 0, topValue: 'N/A', topValueCount: 0, topValuePercentage: 0 };
+    }
+
+    const frequencyMap: Record<string, { count: number; mismatches: number }> = {};
+
+    filteredRecords.forEach(rec => {
+      let rawVal = '';
+      if (selectedAnalysisField === 'status') {
+        rawVal = rec.isMismatch ? 'Mistake' : 'Normal';
+      } else {
+        rawVal = String((rec as any)[selectedAnalysisField] || '').trim();
+      }
+      const val = rawVal === '' ? '(Blank)' : rawVal;
+
+      if (!frequencyMap[val]) {
+        frequencyMap[val] = { count: 0, mismatches: 0 };
+      }
+      frequencyMap[val].count++;
+      if (rec.isMismatch) {
+        frequencyMap[val].mismatches++;
+      }
+    });
+
+    const items: AnalysisItem[] = Object.keys(frequencyMap).map(value => {
+      const data = frequencyMap[value];
+      return {
+        value,
+        count: data.count,
+        percentage: Number(((data.count / total) * 100).toFixed(1)),
+        mismatches: data.mismatches,
+        mismatchRate: data.count > 0 ? Number(((data.mismatches / data.count) * 100).toFixed(1)) : 0
+      };
+    });
+
+    items.sort((a, b) => b.count - a.count);
+
+    const uniqueValuesCount = items.length;
+    const topItem = items[0] || { value: 'N/A', count: 0, percentage: 0 };
+
+    return {
+      items,
+      totalRecords: total,
+      uniqueValuesCount,
+      topValue: topItem.value,
+      topValueCount: topItem.count,
+      topValuePercentage: topItem.percentage
+    };
+  }, [filteredRecords, selectedAnalysisField]);
+
+  const handlePrintFieldPDF = (fieldKey: string, fieldLabel: string) => {
+    const total = filteredRecords.length;
+    if (total === 0) {
+      alert('No data available to print.');
+      return;
+    }
+
+    // Recalculate directly for safety
+    const frequencyMap: Record<string, { count: number; mismatches: number }> = {};
+    filteredRecords.forEach(rec => {
+      let rawVal = '';
+      if (fieldKey === 'status') {
+        rawVal = rec.isMismatch ? 'Mistake' : 'Normal';
+      } else {
+        rawVal = String((rec as any)[fieldKey] || '').trim();
+      }
+      const val = rawVal === '' ? '(Blank)' : rawVal;
+
+      if (!frequencyMap[val]) {
+        frequencyMap[val] = { count: 0, mismatches: 0 };
+      }
+      frequencyMap[val].count++;
+      if (rec.isMismatch) {
+        frequencyMap[val].mismatches++;
+      }
+    });
+
+    const items: AnalysisItem[] = Object.keys(frequencyMap).map(value => {
+      const data = frequencyMap[value];
+      return {
+        value,
+        count: data.count,
+        percentage: Number(((data.count / total) * 100).toFixed(1)),
+        mismatches: data.mismatches,
+        mismatchRate: data.count > 0 ? Number(((data.mismatches / data.count) * 100).toFixed(1)) : 0
+      };
+    });
+
+    items.sort((a, b) => b.count - a.count);
+
+    const uniqueValuesCount = items.length;
+    const topItem = items[0] || { value: 'N/A', count: 0, percentage: 0 };
+
+    const doc = new jsPDF();
+    const timestamp = format(new Date(), 'dd-MM-yyyy hh:mm a');
+
+    // Header Band
+    doc.setFillColor(79, 70, 229); // Royal indigo
+    doc.rect(0, 0, 210, 8, 'F');
+
+    // Document Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.setTextColor(20, 20, 20);
+    doc.text('HBKMC Workload Advanced Analysis Report', 14, 25);
+
+    // Metadata Block
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Report Subject: Field Analysis per "${fieldLabel}"`, 14, 32);
+    doc.text(`Report Generated On: ${timestamp.toUpperCase()}`, 14, 37);
+    doc.text(`Data Mode: CLOUD FIRESTORE PERSISTENT`, 14, 42);
+
+    // Section 1: Dashboard KPI Performance
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(20, 20, 20);
+    doc.text('Key Performance Indicators (KPIs)', 14, 52);
+
+    // KPI Metrics table
+    (doc as any).autoTable({
+      startY: 55,
+      head: [['Metric Description', 'Value', 'Context / Details']],
+      body: [
+        ['Total Analysed Workloads', `${total} Records`, 'Active records matching current filters'],
+        [`Unique "${fieldLabel}" Values`, `${uniqueValuesCount} Unique Values`, `Distinct entries present for this field`],
+        ['Most Dominant / Frequent Value', `${topItem.value}`, 'Value with highest occurrence frequency'],
+        ['Top Value Share', `${topItem.count} Occurrences (${topItem.percentage}% of total)`, 'Proportional prevalence in active dataset']
+      ],
+      headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { fontSize: 9, cellPadding: 3.5 },
+      theme: 'grid'
+    });
+
+    // Section 2: Frequency Breakdown Table
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(20, 20, 20);
+    doc.text('Frequency Distribution Breakdown', 14, (doc as any).lastAutoTable.finalY + 12);
+
+    (doc as any).autoTable({
+      startY: (doc as any).lastAutoTable.finalY + 15,
+      head: [['Rank', `${fieldLabel} Value`, 'Occurrences', 'Percentage Share', 'Mistakes', 'Mistake Rate']],
+      body: items.slice(0, 50).map((item, idx) => [
+        `#${idx + 1}`,
+        item.value,
+        `${item.count} times`,
+        `${item.percentage}%`,
+        `${item.mismatches} times`,
+        `${item.mismatchRate}%`
+      ]),
+      headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
+      styles: { fontSize: 9, cellPadding: 3.5 },
+      theme: 'striped',
+      columnStyles: {
+        1: { cellWidth: 70 }
+      }
+    });
+
+    // Section 3: Visual Chart Page
+    doc.addPage();
+    doc.setFillColor(79, 70, 229); // Royal indigo
+    doc.rect(0, 0, 210, 8, 'F');
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(20, 20, 20);
+    doc.text(`Visual Frequency Distribution - Top 10 "${fieldLabel}" Values`, 14, 25);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text('This chart represents the proportional workload distribution of the top 10 most frequent records.', 14, 31);
+    
+    let chartY = 42;
+    const chartWidth = 115; // Width in mm of the bar chart area
+    const maxCount = Math.max(1, ...items.slice(0, 10).map(i => i.count));
+    
+    items.slice(0, 10).forEach((item, idx) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(50, 50, 50);
+      
+      const displayName = item.value.length > 40 ? item.value.substring(0, 37) + '...' : item.value;
+      doc.text(`#${idx + 1} ${displayName}`, 14, chartY + 4);
+      
+      doc.setDrawColor(235, 235, 235);
+      doc.setFillColor(248, 250, 252);
+      doc.rect(70, chartY, chartWidth, 6, 'FD');
+      
+      const barLength = (item.count / maxCount) * chartWidth;
+      if (item.mismatchRate > 10) {
+        doc.setFillColor(245, 158, 11); // Amber-500 for high mismatch rates
+      } else {
+        doc.setFillColor(79, 70, 229); // Indigo-600
+      }
+      doc.rect(70, chartY, barLength, 6, 'F');
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 30, 30);
+      doc.text(`${item.count} (${item.percentage}%)`, 70 + chartWidth + 3, chartY + 4.5);
+      
+      chartY += 10;
+    });
+
+    // Add footer signature on all pages
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`AW-PharmaStock Pro - Page ${i} of ${pageCount}`, 14, 287);
+      doc.text('AL WAKRA & MESAIEED PHARMACY SYSTEM UTILITY - CONFIDENTIAL REPORT', 110, 287);
+    }
+
+    doc.save(`HBKMC_Analysis_${fieldKey}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Page Header */}
@@ -991,6 +1245,207 @@ export default function AdminWorkload() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Field-by-Field Analysis Dashboard */}
+      <div className="bg-white border border-[#141414]/10 rounded-3xl p-6 md:p-8 shadow-sm space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#141414]/10 pb-6">
+          <div className="space-y-1">
+            <span className="text-[10px] uppercase font-extrabold tracking-widest text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
+              Field Analyzer Hub
+            </span>
+            <h2 className="text-xl font-extrabold text-[#141414] mt-1.5">Interactive Field Analysis & Custom Reports</h2>
+            <p className="text-xs text-[#141414]/50 font-medium">
+              Analyze statistical breakdowns across all 17 workload properties. View instant charts and print customized high-fidelity PDFs per each.
+            </p>
+          </div>
+
+          <button
+            onClick={() => {
+              const currentLabel = ANALYZABLE_FIELDS.find(f => f.key === selectedAnalysisField)?.label || selectedAnalysisField;
+              handlePrintFieldPDF(selectedAnalysisField, currentLabel);
+            }}
+            disabled={filteredRecords.length === 0}
+            className="flex items-center gap-2 px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-black shadow-md shadow-indigo-600/10 transition-all cursor-pointer disabled:opacity-50"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Print Current Field PDF</span>
+          </button>
+        </div>
+
+        {/* Field Selector Section */}
+        <div className="space-y-2.5">
+          <label className="text-xs font-extrabold uppercase tracking-wider text-[#141414]/40">
+            Select Workload Property to Analyze:
+          </label>
+          
+          {/* Mobile Selector Dropdown */}
+          <div className="block lg:hidden">
+            <select
+              value={selectedAnalysisField}
+              onChange={e => setSelectedAnalysisField(e.target.value)}
+              className="w-full px-4 py-3 rounded-2xl text-xs font-bold border border-[#141414]/10 bg-white cursor-pointer"
+            >
+              {ANALYZABLE_FIELDS.map(f => (
+                <option key={f.key} value={f.key}>{f.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Desktop Selector Grid */}
+          <div className="hidden lg:grid grid-cols-6 gap-2">
+            {ANALYZABLE_FIELDS.map(f => {
+              const isActive = selectedAnalysisField === f.key;
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setSelectedAnalysisField(f.key)}
+                  className={`px-3 py-2.5 rounded-xl text-[11px] font-bold text-left transition-all border truncate ${
+                    isActive
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                      : 'bg-[#141414]/[0.01] hover:bg-[#141414]/5 text-[#141414]/70 border-[#141414]/10'
+                  }`}
+                  title={f.label}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Selected Field Analytics Summary KPIs */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+          {/* 1. Analyzed items */}
+          <div className="bg-slate-50 rounded-2xl p-4 border border-[#141414]/5">
+            <p className="text-[10px] uppercase font-extrabold tracking-widest text-[#141414]/40">Active Sample Size</p>
+            <p className="text-xl font-black text-[#141414] mt-1">{fieldAnalysis.totalRecords.toLocaleString()} Records</p>
+            <p className="text-[10px] text-[#141414]/40 mt-1 font-medium">Currently filtered rows analyzed</p>
+          </div>
+
+          {/* 2. Unique values count */}
+          <div className="bg-slate-50 rounded-2xl p-4 border border-[#141414]/5">
+            <p className="text-[10px] uppercase font-extrabold tracking-widest text-[#141414]/40">Unique Field Values</p>
+            <p className="text-xl font-black text-[#141414] mt-1">{fieldAnalysis.uniqueValuesCount.toLocaleString()} Unique Keys</p>
+            <p className="text-[10px] text-[#141414]/40 mt-1 font-medium">Distinct variations found</p>
+          </div>
+
+          {/* 3. Top Value */}
+          <div className="bg-slate-50 rounded-2xl p-4 border border-[#141414]/5 overflow-hidden">
+            <p className="text-[10px] uppercase font-extrabold tracking-widest text-indigo-600">Top Value (Mode)</p>
+            <p className="text-xl font-black text-indigo-700 mt-1 truncate" title={fieldAnalysis.topValue}>
+              {fieldAnalysis.topValue}
+            </p>
+            <p className="text-[10px] text-indigo-600/70 mt-1 font-medium">
+              {fieldAnalysis.topValueCount} times ({fieldAnalysis.topValuePercentage}% dominance)
+            </p>
+          </div>
+        </div>
+
+        {/* Charts and Data breakdowns Grid */}
+        {fieldAnalysis.items.length === 0 ? (
+          <div className="py-12 text-center text-xs text-[#141414]/30 font-bold uppercase tracking-wider border border-dashed border-[#141414]/10 rounded-2xl bg-[#141414]/[0.01]">
+            No data currently loaded. Please sync database or upload workloads first.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Visual bar distribution chart */}
+            <div className="bg-white border border-[#141414]/10 rounded-2xl p-5 shadow-xs lg:col-span-2 space-y-4">
+              <div className="flex justify-between items-center border-b border-[#141414]/5 pb-3">
+                <h3 className="text-sm font-black text-[#141414] flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-indigo-500" />
+                  <span>Frequency Distribution (Top 10 Values)</span>
+                </h3>
+                <span className="text-[10px] uppercase font-extrabold tracking-widest text-[#141414]/40 font-mono">
+                  Percentage share of workload
+                </span>
+              </div>
+
+              <div className="space-y-4">
+                {fieldAnalysis.items.slice(0, 10).map((item, idx) => {
+                  const maxCount = Math.max(1, ...fieldAnalysis.items.slice(0, 10).map(i => i.count));
+                  const percentWidth = ((item.count / maxCount) * 100).toFixed(0);
+                  
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-extrabold text-[#141414] truncate max-w-[280px] md:max-w-[400px]" title={item.value}>
+                          {item.value}
+                        </span>
+                        <div className="flex items-center gap-2 text-[11px] font-mono shrink-0">
+                          <span className="font-bold text-[#141414]">{item.count} recs</span>
+                          <span className="text-[#141414]/40">({item.percentage}%)</span>
+                          {item.mismatches > 0 && (
+                            <span className="text-red-500 font-bold">({item.mismatchRate}% error rate)</span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Bar indicator */}
+                      <div className="w-full h-2.5 bg-slate-50 border border-slate-100 rounded-full overflow-hidden flex">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            item.mismatchRate > 10 ? 'bg-amber-500' : 'bg-indigo-500'
+                          }`}
+                          style={{ width: `${Math.max(2, parseInt(percentWidth, 10))}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Tabular summary leaderboards */}
+            <div className="bg-white border border-[#141414]/10 rounded-2xl p-5 shadow-xs space-y-4 flex flex-col justify-between">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center border-b border-[#141414]/5 pb-3">
+                  <h3 className="text-sm font-black text-[#141414]">Leaderboard Overview</h3>
+                  <span className="text-[10px] uppercase font-extrabold tracking-widest text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
+                    Ranked
+                  </span>
+                </div>
+
+                <div className="divide-y divide-[#141414]/5 max-h-[300px] overflow-y-auto pr-1">
+                  {fieldAnalysis.items.slice(0, 15).map((item, idx) => (
+                    <div key={idx} className="py-2.5 flex justify-between items-center text-xs font-bold gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-4 h-4 flex items-center justify-center bg-indigo-50 text-indigo-600 rounded text-[9px] font-mono">
+                          {idx + 1}
+                        </span>
+                        <span className="text-[#141414] truncate font-black" title={item.value}>
+                          {item.value}
+                        </span>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[#141414] font-mono font-black">{item.count}</p>
+                        <p className="text-[9px] uppercase font-extrabold tracking-wider text-[#141414]/30">{item.percentage}% share</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t border-[#141414]/10 pt-4 mt-4 bg-slate-50 -mx-5 -mb-5 p-4 rounded-b-2xl flex flex-col gap-2.5">
+                <p className="text-[10px] font-bold text-[#141414]/50 leading-relaxed">
+                  * Generate a comprehensive printable document showing full statistical frequencies, local mistake metrics, and ranking logs for this specific field.
+                </p>
+                <button
+                  onClick={() => {
+                    const currentLabel = ANALYZABLE_FIELDS.find(f => f.key === selectedAnalysisField)?.label || selectedAnalysisField;
+                    handlePrintFieldPDF(selectedAnalysisField, currentLabel);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black rounded-xl text-xs transition-all cursor-pointer border border-indigo-100"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Print Detailed Field PDF Report</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
       </div>
 
       {/* High Demand Lists Grid */}

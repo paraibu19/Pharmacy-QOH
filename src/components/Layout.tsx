@@ -34,11 +34,17 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
     }
   }, []);
 
-  const handleToggleDatabaseMode = () => {
+  const handleToggleDatabaseMode = async () => {
     if (typeof window !== 'undefined') {
       if (isLocalMode) {
+        try {
+          await fetch('/api/system/reconnect-db', { method: 'POST' });
+        } catch (e) {
+          console.error('Failed to trigger server DB reconnect:', e);
+        }
         sessionStorage.removeItem('firestore_fallback');
         sessionStorage.removeItem('manual_local_mode');
+        sessionStorage.removeItem('server_fallback');
       } else {
         sessionStorage.setItem('firestore_fallback', 'true');
         sessionStorage.setItem('manual_local_mode', 'true');

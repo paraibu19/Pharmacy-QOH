@@ -207,6 +207,30 @@ dotenv.config();
 
 // Initialize Firebase Client sync adapter
 let adminDb: any = null;
+
+function tryInitializeAdminDb(force: boolean = false) {
+  if (adminDb && !force) return;
+  try {
+    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      adminDb = new ClientFirestoreAdapter(config);
+      console.log(`[Firebase Client Sync] Firestore initialized successfully with client credentials for project: ${config.projectId}`);
+      // Asynchronously trigger sync and setup listeners
+      syncAllFromFirestoreAtStartup()
+        .then(() => {
+          setupFirestoreListeners();
+        })
+        .catch(err => console.error('[Firebase Client Sync] Delayed startup sync failed:', err.message));
+    } else {
+      console.warn('[Firebase Client Sync] No configuration file found yet. Running in local-only fallback.');
+    }
+  } catch (err: any) {
+    console.warn('[Firebase Client Sync] Initialization failure:', err.message);
+  }
+}
+
+// Initial connection attempt
 try {
   const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
@@ -2107,6 +2131,10 @@ app.delete('/api/entry-mistakes/db', async (req, res) => {
 // GET current system metadata (cached from Firestore or updated locally)
 app.get('/api/system/metadata', async (req, res) => {
   try {
+    if (!adminDb) {
+      tryInitializeAdminDb();
+    }
+    
     if (adminDb && !isRealtimeListeningActive) {
       await syncSystemMetadataFromFirestore().catch(err => console.error(err));
     }
@@ -2157,6 +2185,28 @@ app.post('/api/system/metadata/settings', async (req, res) => {
     res.json({ success: true, metadata: currentPayload });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST to force reconnect and sync with Cloud Firestore
+app.post('/api/system/reconnect-db', async (req, res) => {
+  try {
+    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    if (!fs.existsSync(configPath)) {
+      return res.status(400).json({ success: false, error: 'No Firebase configuration found. Please set up Firebase first.' });
+    }
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    adminDb = new ClientFirestoreAdapter(config);
+    console.log(`[Firebase Client Sync] Manual reconnect triggered. Initialized for project: ${config.projectId}`);
+    
+    // Asynchronously pull and sync
+    await syncAllFromFirestoreAtStartup();
+    setupFirestoreListeners();
+    
+    res.json({ success: true, message: 'Successfully reconnected and synchronized with Cloud Firestore.' });
+  } catch (err: any) {
+    adminDb = null;
+    res.status(500).json({ success: false, error: `Failed to reconnect: ${err.message}` });
   }
 });
 
