@@ -2344,7 +2344,25 @@ app.get('/api/workload-records', async (req, res) => {
     }
     const totalUploadedFiles = uploadedFilesList.length;
 
-    const { location, mismatchOnly, search, startDate, endDate, trendLocation } = req.query;
+    const { location, mismatchOnly, search, startDate, endDate, trendLocation, all } = req.query;
+    
+    if (all === 'true') {
+      const records: any[] = [];
+      if (fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+        const fileStream = fs.createReadStream(WORKLOAD_RECORDS_FILE);
+        const rl = readline.createInterface({
+          input: fileStream,
+          crlfDelay: Infinity
+        });
+        for await (const line of rl) {
+          if (!line.trim()) continue;
+          try {
+            records.push(JSON.parse(line));
+          } catch {}
+        }
+      }
+      return res.json({ records });
+    }
     
     const hasFilters = location || mismatchOnly === 'true' || search || startDate || endDate || (trendLocation && trendLocation !== 'all');
     

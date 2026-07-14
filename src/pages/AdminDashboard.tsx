@@ -858,6 +858,40 @@ export default function AdminDashboard() {
         console.warn("Error fetching entry mistakes parameters", e);
       }
 
+      // 4. Fetch Workload Records
+      let workloadList: any[] = [];
+      try {
+        const res = await fetch('/api/workload-records?all=true');
+        if (res.ok) {
+          const data = await res.json();
+          workloadList = data.records || [];
+        }
+      } catch (e) {
+        console.warn("Error fetching workload records", e);
+      }
+
+      // 5. Fetch Global Mistakes Storage
+      let mistakesList: any[] = [];
+      try {
+        const res = await fetch('/api/application-storage');
+        if (res.ok) {
+          mistakesList = await res.json();
+        }
+      } catch (e) {
+        console.warn("Error fetching global mistakes", e);
+      }
+
+      // 6. Fetch Duty Rosters
+      let rostersList: any[] = [];
+      try {
+        const res = await fetch('/api/rosters');
+        if (res.ok) {
+          rostersList = await res.json();
+        }
+      } catch (e) {
+        console.warn("Error fetching duty rosters", e);
+      }
+
       // Create new workbook
       const wb = XLSX.utils.book_new();
 
@@ -957,7 +991,88 @@ export default function AdminDashboard() {
       const wsPharma = XLSX.utils.aoa_to_sheet([pharmaHeaders, ...pharmaRows]);
       XLSX.utils.book_append_sheet(wb, wsPharma, "Pharmacists_Roster");
 
-      // --- SHEET 5: Database Metadata Info ---
+      // --- SHEET 5: Workload Records ---
+      const workloadHeaders = [
+        'Action Date & Time', 'Facility - Order', 'Nursing Location - Order', 'Encounter Type',
+        'MRN- Organization', 'Person Name- Full', 'Sex', 'Nationality', 'Age- Years (Visit)',
+        'Physician - Ordering', 'Pharmacy Location', 'Dispense Event Type', 'Action Type',
+        'Item Number', 'Label Description', 'Action Personnel - Pharmacy', 'Is Mismatch', 'Remarks'
+      ];
+      const workloadRows = workloadList.map(rec => [
+        rec.actionDateTime || '',
+        rec.facilityOrder || '',
+        rec.nursingLocationOrder || '',
+        rec.encounterType || '',
+        rec.mrnOrganization || '',
+        rec.personNameFull || '',
+        rec.sex || '',
+        rec.nationality || '',
+        rec.ageYearsVisit || '',
+        rec.physicianOrdering || '',
+        rec.pharmacyLocation || '',
+        rec.dispenseEventType || '',
+        rec.actionType || '',
+        rec.itemNumber || '',
+        rec.labelDescription || '',
+        rec.actionPersonnelPharmacy || '',
+        rec.isMismatch ? 'Yes' : 'No',
+        Array.isArray(rec.reasons) ? rec.reasons.join('; ') : (rec.reasons || '')
+      ]);
+      const wsWorkload = XLSX.utils.aoa_to_sheet([workloadHeaders, ...workloadRows]);
+      XLSX.utils.book_append_sheet(wb, wsWorkload, "Workload_Analysis");
+
+      // --- SHEET 6: Global Mistakes Storage ---
+      const mistakesHeaders = [
+        'Action Personnel', 'Action Date & Time', 'MRN- Organization', 'Patient Full Name',
+        'Sex', 'Nationality', 'Pharmacy Location', 'Action Type', 'Item Number',
+        'Label Description', 'Quantity', 'Mismatch Discrepancies', 'Database Storage Timestamp'
+      ];
+      const mistakesRows = mistakesList.map(item => [
+        item.actionPersonnelPharmacy || 'N/A',
+        item.actionDateTime || 'N/A',
+        item.mrnOrganization || 'N/A',
+        item.personNameFull || 'N/A',
+        item.sex || 'N/A',
+        item.nationality || 'N/A',
+        item.pharmacyLocation || 'N/A',
+        item.actionType || 'N/A',
+        item.itemNumber || 'N/A',
+        item.labelDescription || 'N/A',
+        item.dispenseQuantity || '0',
+        Array.isArray(item.reasons) ? item.reasons.join('; ') : (item.reasons || 'N/A'),
+        item.savedAt ? new Date(item.savedAt).toLocaleString() : 'N/A'
+      ]);
+      const wsMistakes = XLSX.utils.aoa_to_sheet([mistakesHeaders, ...mistakesRows]);
+      XLSX.utils.book_append_sheet(wb, wsMistakes, "Global_Mistakes_Storage");
+
+      // --- SHEET 7: Duty Rosters ---
+      const rosterHeaders = [
+        'Roster Month', 'Roster ID', 'Date', 'Day', 'Pharmacist Name',
+        'Shift', 'Pharmacy/Duty Location', 'Notes', 'Roster Source File', 'Uploaded At'
+      ];
+      const rosterRows: any[] = [];
+      rostersList.forEach(r => {
+        if (r.entries && Array.isArray(r.entries)) {
+          r.entries.forEach((e: any) => {
+            rosterRows.push([
+              r.month || '',
+              r.id || '',
+              e.date || '',
+              e.day || '',
+              e.pharmacistName || '',
+              e.shift || '',
+              e.location || '',
+              e.notes || '',
+              r.filename || '',
+              r.uploadedAt || ''
+            ]);
+          });
+        }
+      });
+      const wsRoster = XLSX.utils.aoa_to_sheet([rosterHeaders, ...rosterRows]);
+      XLSX.utils.book_append_sheet(wb, wsRoster, "Duty_Rosters");
+
+      // --- SHEET 8: Database Metadata Info ---
       const metaHeaders = ['Database Key / Parameter', 'Value'];
       const metaRows = [
         ['Database Export Host', window.location.origin],
@@ -968,6 +1083,9 @@ export default function AdminDashboard() {
         ['Total Audits/Variances logged', auditsList.length],
         ['Total Mismatch Parameters configured', paramsList.length],
         ['Total Pharmacists registered', pharmaList.length],
+        ['Total Workload Records', workloadList.length],
+        ['Total Discovered Mistakes logged', mistakesList.length],
+        ['Total Duty Rosters loaded', rostersList.length],
         ['Mesaieed OPD Pharmacy Hidden state', isMesaieedHidden ? 'Hidden' : 'Visible'],
         ['Last System Update timestamp', lastUpdate || 'N/A']
       ];

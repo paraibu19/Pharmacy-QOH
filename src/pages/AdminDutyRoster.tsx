@@ -318,7 +318,8 @@ export default function AdminDutyRoster() {
   const [selectedLocation, setSelectedLocation] = useState<string>('');
 
   // Custom States for View Mode and Comparison Table
-  const [viewMode, setViewMode] = useState<'spreadsheet' | 'comparison'>('spreadsheet');
+  const [viewMode, setViewMode] = useState<'spreadsheet' | 'comparison' | 'today'>('spreadsheet');
+  const [selectedTodayDate, setSelectedTodayDate] = useState<string>('');
   const [selectedComparisonTable, setSelectedComparisonTable] = useState<number>(0);
   const [comparisonSearchQuery, setComparisonSearchQuery] = useState<string>('');
 
@@ -359,6 +360,26 @@ export default function AdminDutyRoster() {
   useEffect(() => {
     fetchRosters();
   }, []);
+
+  // Synchronize selectedTodayDate to today or first roster date when currentRoster changes
+  useEffect(() => {
+    if (currentRoster && currentRoster.entries && currentRoster.entries.length > 0) {
+      const todayStr = '2026-07-13'; // Environment current date
+      const hasToday = currentRoster.entries.some(e => e.date === todayStr);
+      if (hasToday) {
+        setSelectedTodayDate(todayStr);
+      } else {
+        // Fallback to the first sorted date in the roster
+        const uniqueDates = Array.from(new Set(currentRoster.entries.map(e => e.date).filter(Boolean)))
+          .sort((a, b) => a.localeCompare(b));
+        if (uniqueDates.length > 0) {
+          setSelectedTodayDate(uniqueDates[0]);
+        }
+      }
+    } else {
+      setSelectedTodayDate('');
+    }
+  }, [currentRoster]);
 
   // Listen for SSE updates
   useEffect(() => {
@@ -824,10 +845,100 @@ export default function AdminDutyRoster() {
   };
 
   // Export & Download Reports
+  // Export & Download Reports
+  const handleDownloadTodayExcel = () => {
+    if (!currentRoster || !selectedTodayDate) return;
+    const entriesToExport = dailyEntries.map(e => ({
+      "Date": e.date,
+      "Day": e.day,
+      "Pharmacist Name": e.pharmacistName,
+      "Shift": e.shift,
+      "Location": e.location,
+      "Notes": e.notes || ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(entriesToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Daily Roster");
+    XLSX.writeFile(workbook, `Pharmacist_Daily_Roster_${selectedTodayDate}_${currentRoster.month.replace(/\s+/g, '_')}.xlsx`);
+  };
+
+  const handleDownloadTodayCSV = () => {
+    if (!currentRoster || !selectedTodayDate) return;
+    const entriesToExport = dailyEntries.map(e => ({
+      "Date": e.date,
+      "Day": e.day,
+      "Pharmacist Name": e.pharmacistName,
+      "Shift": e.shift,
+      "Location": e.location,
+      "Notes": e.notes || ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(entriesToExport);
+    const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Pharmacist_Daily_Roster_${selectedTodayDate}_${currentRoster.month.replace(/\s+/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadTodayPDF = () => {
+    if (!currentRoster || !selectedTodayDate) return;
+    const doc = new jsPDF() as any;
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(20, 83, 45); // Dark Green
+    doc.text(`Daily Pharmacists Duty Roster`, 14, 22);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Selected Date: ${formatEntryDate(selectedTodayDate)} (${dailyEntries[0]?.day || ''})`, 14, 29);
+    doc.text(`Roster Month: ${currentRoster.month}`, 14, 35);
+    doc.text(`Exported On: ${new Date().toLocaleDateString()}`, 14, 41);
+
+    const tableColumn = ["Pharmacist Name", "Shift Code", "Shift Detail", "Location", "Notes"];
+    const tableRows = dailyEntries.map(e => [
+      e.pharmacistName,
+      getShiftCode(e.shift),
+      e.shift,
+      e.location,
+      e.notes || ''
+    ]);
+
+    doc.autoTable({
+      head: [tableColumn],
+      body: tableRows,
+      startY: 47,
+      theme: 'grid',
+      headStyles: { 
+        fillColor: [20, 83, 45],
+        textColor: [255, 255, 255],
+        fontSize: 10,
+        fontStyle: 'bold'
+      },
+      styles: { 
+        fontSize: 9, 
+        cellPadding: 3 
+      }
+    });
+
+    doc.save(`Pharmacist_Daily_Roster_${selectedTodayDate}_${currentRoster.month.replace(/\s+/g, '_')}.pdf`);
+  };
+
   const handleDownloadExcel = () => {
     if (!currentRoster) return;
     if (viewMode === 'comparison') {
       handleDownloadComparisonExcel();
+      return;
+    }
+    if (viewMode === 'today') {
+      handleDownloadTodayExcel();
       return;
     }
     const entriesToExport = filteredEntries.map(e => ({
@@ -849,6 +960,10 @@ export default function AdminDutyRoster() {
     if (!currentRoster) return;
     if (viewMode === 'comparison') {
       handleDownloadComparisonCSV();
+      return;
+    }
+    if (viewMode === 'today') {
+      handleDownloadTodayCSV();
       return;
     }
     const entriesToExport = filteredEntries.map(e => ({
@@ -876,6 +991,10 @@ export default function AdminDutyRoster() {
     if (!currentRoster) return;
     if (viewMode === 'comparison') {
       handleDownloadComparisonPDF();
+      return;
+    }
+    if (viewMode === 'today') {
+      handleDownloadTodayPDF();
       return;
     }
     const doc = new jsPDF() as any;
@@ -942,6 +1061,77 @@ export default function AdminDutyRoster() {
 
     return matchesSearch && matchesPharmacist && matchesShift && matchesLocation;
   }).sort((a, b) => (a.date || '').localeCompare(b.date || '')) : [];
+
+  const dailyEntries = useMemo(() => {
+    if (!currentRoster || !selectedTodayDate) return [];
+    return currentRoster.entries.filter(e => e.date === selectedTodayDate);
+  }, [currentRoster, selectedTodayDate]);
+
+  const uniqueRosterDates = useMemo(() => {
+    if (!currentRoster) return [];
+    return Array.from(new Set(currentRoster.entries.map(e => e.date).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b));
+  }, [currentRoster]);
+
+  const handlePrevDay = () => {
+    const currentIdx = uniqueRosterDates.indexOf(selectedTodayDate);
+    if (currentIdx > 0) {
+      setSelectedTodayDate(uniqueRosterDates[currentIdx - 1]);
+    }
+  };
+
+  const handleNextDay = () => {
+    const currentIdx = uniqueRosterDates.indexOf(selectedTodayDate);
+    if (currentIdx !== -1 && currentIdx < uniqueRosterDates.length - 1) {
+      setSelectedTodayDate(uniqueRosterDates[currentIdx + 1]);
+    }
+  };
+
+  const groupedDailyEntries = useMemo(() => {
+    const result = {
+      emergencyMorning: [] as RosterEntry[],
+      emergencyEvening: [] as RosterEntry[],
+      emergencyNight: [] as RosterEntry[],
+      otherMorning: [] as RosterEntry[],
+      otherEvening: [] as RosterEntry[],
+      otherNight: [] as RosterEntry[],
+      away: [] as RosterEntry[],
+    };
+
+    dailyEntries.forEach(entry => {
+      const code = getShiftCode(entry.shift);
+      // Categorize
+      if (['Aa', 'Ap'].includes(code)) {
+        result.emergencyMorning.push(entry);
+      } else if (['Ba', 'Bp'].includes(code)) {
+        result.emergencyEvening.push(entry);
+      } else if (['Ca', 'Cp'].includes(code)) {
+        result.emergencyNight.push(entry);
+      } else if (['Ao', 'Amo', 'Ai', 'Av', 'Ar', 'An'].includes(code)) {
+        result.otherMorning.push(entry);
+      } else if (['Bi'].includes(code)) {
+        result.otherEvening.push(entry);
+      } else if (['Ci'].includes(code)) {
+        result.otherNight.push(entry);
+      } else if (['L', 'A*', 'SL', 'O'].includes(code)) {
+        result.away.push(entry);
+      } else {
+        // Fallback categorization based on text matching
+        const s = entry.shift.toLowerCase();
+        if (s.includes('leave') || s.includes('off') || s.includes('sick') || s === 'l' || s === 'o' || s === 'sl' || s === 'a*') {
+          result.away.push(entry);
+        } else if (s.includes('evening') || s.includes('afternoon') || s.includes(' pm') || s.includes('pm ')) {
+          result.otherEvening.push(entry);
+        } else if (s.includes('night') || s.includes('overnight')) {
+          result.otherNight.push(entry);
+        } else {
+          result.otherMorning.push(entry);
+        }
+      }
+    });
+
+    return result;
+  }, [dailyEntries]);
 
   return (
     <div className="min-h-screen bg-[#FDFDFD] py-8 px-4 sm:px-6 lg:px-8">
@@ -1401,8 +1591,8 @@ export default function AdminDutyRoster() {
                   </div>
                 </div>
 
-                {/* View Mode Switcher (Spreadsheet vs Comparison) */}
-                <div className="flex bg-gray-100 p-1 rounded-xl">
+                {/* View Mode Switcher (Spreadsheet vs Comparison vs Daily Control) */}
+                <div className="flex bg-gray-100 p-1 rounded-xl gap-0.5">
                   <button
                     onClick={() => setViewMode('spreadsheet')}
                     className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -1412,6 +1602,17 @@ export default function AdminDutyRoster() {
                     }`}
                   >
                     Spreadsheet View
+                  </button>
+                  <button
+                    onClick={() => setViewMode('today')}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      viewMode === 'today' 
+                        ? 'bg-white text-emerald-900 shadow-sm' 
+                        : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Daily Shift Board</span>
                   </button>
                   <button
                     onClick={() => setViewMode('comparison')}
@@ -1452,21 +1653,21 @@ export default function AdminDutyRoster() {
                     <button
                       onClick={handleDownloadExcel}
                       className="p-2 border border-gray-100 hover:border-gray-200 hover:bg-gray-50 rounded-xl bg-white cursor-pointer"
-                      title={viewMode === 'comparison' ? "Export Active Comparison to Excel" : "Export to Excel (.xlsx)"}
+                      title={viewMode === 'comparison' ? "Export Active Comparison to Excel" : viewMode === 'today' ? "Export Daily Roster to Excel" : "Export to Excel (.xlsx)"}
                     >
                       <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
                     </button>
                     <button
                       onClick={handleDownloadCSV}
                       className="p-2 border border-gray-100 hover:border-gray-200 hover:bg-gray-50 rounded-xl bg-white cursor-pointer"
-                      title={viewMode === 'comparison' ? "Export Active Comparison to CSV" : "Export to CSV (.csv)"}
+                      title={viewMode === 'comparison' ? "Export Active Comparison to CSV" : viewMode === 'today' ? "Export Daily Roster to CSV" : "Export to CSV (.csv)"}
                     >
                       <FileText className="w-4 h-4 text-teal-600" />
                     </button>
                     <button
                       onClick={handleDownloadPDF}
                       className="p-2 border border-gray-100 hover:border-gray-200 hover:bg-gray-50 rounded-xl bg-white cursor-pointer"
-                      title={viewMode === 'comparison' ? "Export Active Comparison to PDF" : "Export to PDF Report"}
+                      title={viewMode === 'comparison' ? "Export Active Comparison to PDF" : viewMode === 'today' ? "Export Daily Roster to PDF" : "Export to PDF Report"}
                     >
                       <Download className="w-4 h-4 text-red-600" />
                     </button>
@@ -1474,7 +1675,7 @@ export default function AdminDutyRoster() {
                 </div>
               </div>
 
-              {viewMode === 'spreadsheet' ? (
+              {viewMode === 'spreadsheet' && (
                 <>
                   {/* Dynamic Filter Suggestions & Search bar */}
                   <div className="p-6 bg-gray-50/50 border-b border-gray-50 flex flex-col gap-4">
@@ -1859,7 +2060,311 @@ export default function AdminDutyRoster() {
                     </table>
                   </div>
                 </>
-              ) : (
+              )}
+
+              {viewMode === 'today' && (
+                <div className="flex flex-col bg-gray-50/20">
+                  {/* Daily Control Dashboard Header bar */}
+                  <div className="p-6 bg-white border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handlePrevDay}
+                        disabled={uniqueRosterDates.indexOf(selectedTodayDate) <= 0}
+                        className="p-2.5 rounded-xl border border-gray-100 hover:bg-gray-50 disabled:opacity-40 transition-all cursor-pointer shrink-0"
+                        title="Previous Day in Roster"
+                      >
+                        <span className="text-gray-600 font-bold text-sm">◀</span>
+                      </button>
+                      
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <input
+                          type="date"
+                          value={selectedTodayDate}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              setSelectedTodayDate(e.target.value);
+                            }
+                          }}
+                          className="px-3.5 py-2 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white shadow-sm"
+                        />
+                        <button
+                          onClick={() => {
+                            const todayStr = '2026-07-13';
+                            const hasToday = currentRoster.entries.some(e => e.date === todayStr);
+                            if (hasToday) {
+                              setSelectedTodayDate(todayStr);
+                            } else if (uniqueRosterDates.length > 0) {
+                              // If real today is not in roster, find closest to real today or use first
+                              setSelectedTodayDate(uniqueRosterDates[0]);
+                            }
+                          }}
+                          className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-all cursor-pointer inline-flex items-center justify-center gap-1"
+                        >
+                          <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Back to Today</span>
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={handleNextDay}
+                        disabled={uniqueRosterDates.indexOf(selectedTodayDate) === -1 || uniqueRosterDates.indexOf(selectedTodayDate) >= uniqueRosterDates.length - 1}
+                        className="p-2.5 rounded-xl border border-gray-100 hover:bg-gray-50 disabled:opacity-40 transition-all cursor-pointer shrink-0"
+                        title="Next Day in Roster"
+                      >
+                        <span className="text-gray-600 font-bold text-sm">▶</span>
+                      </button>
+                    </div>
+
+                    {/* Summary Badges */}
+                    <div className="flex flex-wrap gap-2">
+                      <span className="px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-800 text-xs font-extrabold flex items-center gap-1.5 shadow-sm">
+                        <User className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Active: {dailyEntries.filter(e => !['L', 'A*', 'SL', 'O'].includes(getShiftCode(e.shift))).length} Staff</span>
+                      </span>
+                      <span className="px-3 py-1.5 bg-amber-50 border border-amber-100 rounded-xl text-amber-800 text-xs font-extrabold flex items-center gap-1.5 shadow-sm">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                        <span>Emergency Coverage: {dailyEntries.filter(e => ['Aa', 'Ap', 'Ba', 'Bp', 'Ca', 'Cp'].includes(getShiftCode(e.shift))).length}</span>
+                      </span>
+                      <span className="px-3 py-1.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-800 text-xs font-extrabold flex items-center gap-1.5 shadow-sm">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Leave / OFF: {dailyEntries.filter(e => ['L', 'A*', 'SL', 'O'].includes(getShiftCode(e.shift))).length}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Empty State when no entries for selected date */}
+                  {dailyEntries.length === 0 ? (
+                    <div className="p-12 text-center text-gray-400 bg-white border border-dashed border-gray-150 rounded-2xl m-6">
+                      <AlertCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm font-bold text-gray-600">No shifts scheduled for {formatEntryDate(selectedTodayDate)}</p>
+                      <p className="text-xs text-gray-400 mt-1 mb-4">Please select a different date from the calendar or roster archive dates.</p>
+                      <div className="flex flex-wrap justify-center gap-1.5 max-w-xl mx-auto">
+                        {uniqueRosterDates.slice(0, 15).map(date => (
+                          <button
+                            key={date}
+                            onClick={() => setSelectedTodayDate(date)}
+                            className="px-2.5 py-1 text-[11px] font-bold border border-gray-200 bg-white hover:bg-gray-50 rounded-lg transition-all cursor-pointer"
+                          >
+                            {formatEntryDate(date)}
+                          </button>
+                        ))}
+                        {uniqueRosterDates.length > 15 && <span className="text-xs font-bold text-gray-400 self-center">...and {uniqueRosterDates.length - 15} more days</span>}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-6 space-y-6">
+                      {/* Emergency Coverage Grid (Morning, Evening, Night) */}
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-extrabold text-amber-800 uppercase tracking-wider flex items-center gap-1.5 pl-1">
+                          <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping" />
+                          <span>Emergency Coverage (Adult & Pediatric)</span>
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* Morning Emergency */}
+                          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
+                            <h4 className="text-[10px] font-black text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-100 w-max uppercase tracking-wider">
+                              ☀ Morning Emergency
+                            </h4>
+                            {groupedDailyEntries.emergencyMorning.length === 0 ? (
+                              <p className="text-xs text-gray-400 italic py-2">No emergency morning coverage</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {groupedDailyEntries.emergencyMorning.map(entry => (
+                                  <div key={entry.pharmacistName} className="p-2.5 rounded-xl border border-gray-50 bg-gray-50/30 flex justify-between items-start gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-gray-900 truncate">{entry.pharmacistName}</p>
+                                      <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{entry.shift} • {entry.location}</p>
+                                      {entry.notes && <p className="text-[9px] text-amber-700 italic mt-1 font-semibold">★ {entry.notes}</p>}
+                                    </div>
+                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-850 border border-amber-200 text-[9px] font-black rounded-md uppercase shrink-0">
+                                      {getShiftCode(entry.shift)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Evening Emergency */}
+                          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
+                            <h4 className="text-[10px] font-black text-indigo-750 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 w-max uppercase tracking-wider">
+                              🌆 Evening Emergency
+                            </h4>
+                            {groupedDailyEntries.emergencyEvening.length === 0 ? (
+                              <p className="text-xs text-gray-400 italic py-2">No emergency evening coverage</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {groupedDailyEntries.emergencyEvening.map(entry => (
+                                  <div key={entry.pharmacistName} className="p-2.5 rounded-xl border border-gray-50 bg-gray-50/30 flex justify-between items-start gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-gray-900 truncate">{entry.pharmacistName}</p>
+                                      <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{entry.shift} • {entry.location}</p>
+                                      {entry.notes && <p className="text-[9px] text-indigo-700 italic mt-1 font-semibold">★ {entry.notes}</p>}
+                                    </div>
+                                    <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-850 border border-indigo-200 text-[9px] font-black rounded-md uppercase shrink-0">
+                                      {getShiftCode(entry.shift)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Night Emergency */}
+                          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
+                            <h4 className="text-[10px] font-black text-violet-750 bg-violet-50 px-2 py-1 rounded-lg border border-violet-100 w-max uppercase tracking-wider">
+                              🌙 Night Emergency
+                            </h4>
+                            {groupedDailyEntries.emergencyNight.length === 0 ? (
+                              <p className="text-xs text-gray-400 italic py-2">No emergency night coverage</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {groupedDailyEntries.emergencyNight.map(entry => (
+                                  <div key={entry.pharmacistName} className="p-2.5 rounded-xl border border-gray-50 bg-gray-50/30 flex justify-between items-start gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-gray-900 truncate">{entry.pharmacistName}</p>
+                                      <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{entry.shift} • {entry.location}</p>
+                                      {entry.notes && <p className="text-[9px] text-violet-700 italic mt-1 font-semibold">★ {entry.notes}</p>}
+                                    </div>
+                                    <span className="px-1.5 py-0.5 bg-violet-100 text-violet-850 border border-violet-200 text-[9px] font-black rounded-md uppercase shrink-0">
+                                      {getShiftCode(entry.shift)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Other Pharmacy Duties Grid */}
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-extrabold text-teal-850 uppercase tracking-wider flex items-center gap-1.5 pl-1">
+                          <MapPin className="w-4 h-4 text-teal-650" />
+                          <span>Other Pharmacy Duties (OPD, Inpatient, IV, Prep)</span>
+                        </h3>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* Routine Morning */}
+                          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
+                            <h4 className="text-[10px] font-black text-teal-700 bg-teal-50 px-2 py-1 rounded-lg border border-teal-100 w-max uppercase tracking-wider">
+                              ☀ Morning Duties
+                            </h4>
+                            {groupedDailyEntries.otherMorning.length === 0 ? (
+                              <p className="text-xs text-gray-400 italic py-2">No morning shifts scheduled</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {groupedDailyEntries.otherMorning.map(entry => (
+                                  <div key={entry.pharmacistName} className="p-2.5 rounded-xl border border-gray-50 bg-gray-50/30 flex justify-between items-start gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-gray-900 truncate">{entry.pharmacistName}</p>
+                                      <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{entry.shift} • {entry.location}</p>
+                                      {entry.notes && <p className="text-[9px] text-teal-700 italic mt-1 font-semibold">★ {entry.notes}</p>}
+                                    </div>
+                                    <span className="px-1.5 py-0.5 bg-teal-100 text-teal-850 border border-teal-200 text-[9px] font-black rounded-md uppercase shrink-0">
+                                      {getShiftCode(entry.shift)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Routine Evening */}
+                          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
+                            <h4 className="text-[10px] font-black text-blue-750 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 w-max uppercase tracking-wider">
+                              🌆 Evening Duties
+                            </h4>
+                            {groupedDailyEntries.otherEvening.length === 0 ? (
+                              <p className="text-xs text-gray-400 italic py-2">No evening shifts scheduled</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {groupedDailyEntries.otherEvening.map(entry => (
+                                  <div key={entry.pharmacistName} className="p-2.5 rounded-xl border border-gray-50 bg-gray-50/30 flex justify-between items-start gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-gray-900 truncate">{entry.pharmacistName}</p>
+                                      <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{entry.shift} • {entry.location}</p>
+                                      {entry.notes && <p className="text-[9px] text-blue-700 italic mt-1 font-semibold">★ {entry.notes}</p>}
+                                    </div>
+                                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-850 border border-blue-200 text-[9px] font-black rounded-md uppercase shrink-0">
+                                      {getShiftCode(entry.shift)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Routine Night */}
+                          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
+                            <h4 className="text-[10px] font-black text-purple-750 bg-purple-50 px-2 py-1 rounded-lg border border-purple-100 w-max uppercase tracking-wider">
+                              🌙 Night Duties
+                            </h4>
+                            {groupedDailyEntries.otherNight.length === 0 ? (
+                              <p className="text-xs text-gray-400 italic py-2">No night shifts scheduled</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {groupedDailyEntries.otherNight.map(entry => (
+                                  <div key={entry.pharmacistName} className="p-2.5 rounded-xl border border-gray-50 bg-gray-50/30 flex justify-between items-start gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-gray-900 truncate">{entry.pharmacistName}</p>
+                                      <p className="text-[10px] text-gray-500 font-semibold mt-0.5">{entry.shift} • {entry.location}</p>
+                                      {entry.notes && <p className="text-[9px] text-purple-700 italic mt-1 font-semibold">★ {entry.notes}</p>}
+                                    </div>
+                                    <span className="px-1.5 py-0.5 bg-purple-100 text-purple-850 border border-purple-200 text-[9px] font-black rounded-md uppercase shrink-0">
+                                      {getShiftCode(entry.shift)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Leaves & OFF Days */}
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-extrabold text-rose-800 uppercase tracking-wider flex items-center gap-1.5 pl-1">
+                          <AlertCircle className="w-4 h-4 text-rose-600" />
+                          <span>On Leave / Off Duty</span>
+                        </h3>
+                        
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                          {groupedDailyEntries.away.length === 0 ? (
+                            <p className="text-xs text-gray-400 italic py-2 pl-2">No personnel on leave or OFF today</p>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                              {groupedDailyEntries.away.map(entry => {
+                                const code = getShiftCode(entry.shift);
+                                const isOff = code === 'O';
+                                return (
+                                  <div key={entry.pharmacistName} className="p-2.5 rounded-xl border border-gray-100 bg-gray-50/20 flex justify-between items-center gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-gray-800 truncate">{entry.pharmacistName}</p>
+                                      <p className="text-[9px] text-gray-400 font-bold tracking-wide mt-0.5">{entry.shift}</p>
+                                    </div>
+                                    <span className={`px-1.5 py-0.5 border text-[9px] font-black rounded-md uppercase shrink-0 ${
+                                      isOff 
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                                        : 'bg-rose-50 text-rose-700 border-rose-100'
+                                    }`}>
+                                      {code}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {viewMode === 'comparison' && (
                 <div className="flex flex-col">
                   {/* Sub-tabs menu for 5 comparison tables */}
                   <div className="border-b border-gray-100 bg-gray-50/40 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
