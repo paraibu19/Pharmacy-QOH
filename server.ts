@@ -1289,18 +1289,50 @@ async function syncWorkloadRecordsFromFirestore(): Promise<any[]> {
     return [];
   }
   try {
-    const chunksSnapshot = await adminDb.collection('workload_records').get();
-    const docs = chunksSnapshot.docs.filter((d: any) => d.id.startsWith('chunk_'));
-    if (docs.length > 0) {
-      console.log(`[Firebase Workload Sync] Found ${docs.length} chunks. Downloading into NDJSON store...`);
+    console.log(`[Firebase Workload Sync] Fetching workload chunks with pagination to avoid 128MB query payload limits...`);
+    
+    let hasMore = true;
+    let lastDoc: any = null;
+    const pageSize = 5; // Fetch up to 5 chunks at a time (approx 5MB - 10MB of payload data)
+    const allDocData: any[] = [];
+    
+    while (hasMore) {
+      let q = adminDb.collection('workload_records')
+        .orderBy('__name__') // Order by document ID to support stable pagination
+        .limit(pageSize);
+        
+      if (lastDoc) {
+        q = q.startAfter(lastDoc);
+      }
+      
+      const snapshot = await q.get();
+      if (snapshot.empty) {
+        hasMore = false;
+        break;
+      }
+      
+      for (const doc of snapshot.docs) {
+        if (doc.id.startsWith('chunk_')) {
+          allDocData.push({ id: doc.id, data: doc.data() });
+        }
+      }
+      
+      lastDoc = snapshot.docs[snapshot.docs.length - 1];
+      if (snapshot.docs.length < pageSize) {
+        hasMore = false;
+      }
+    }
+
+    if (allDocData.length > 0) {
+      console.log(`[Firebase Workload Sync] Found ${allDocData.length} chunks. Downloading into NDJSON store...`);
       const writeStream = fs.createWriteStream(WORKLOAD_RECORDS_FILE);
       
-      docs.sort((a, b) => {
+      allDocData.sort((a, b) => {
         return a.id.localeCompare(b.id);
       });
       
-      for (const doc of docs) {
-        const data = doc.data();
+      for (const item of allDocData) {
+        const data = item.data;
         if (Array.isArray(data.records)) {
           for (const rec of data.records) {
             writeStream.write(JSON.stringify(rec) + '\n');
@@ -1407,20 +1439,24 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
 async function resetWorkloadRecordsInFirestore(): Promise<void> {
   if (!adminDb) return;
   try {
-    const chunksSnapshot = await adminDb.collection('workload_records').get();
-    let batch = adminDb.batch();
-    let count = 0;
-    for (const doc of chunksSnapshot.docs) {
-      batch.delete(doc.ref);
-      count++;
-      if (count >= 500) {
-        await batch.commit();
-        batch = adminDb.batch();
-        count = 0;
+    let hasMore = true;
+    while (hasMore) {
+      // Use select() to fetch ONLY document paths/IDs, completely avoiding downloading field contents
+      const snapshot = await adminDb.collection('workload_records').select().limit(200).get();
+      if (snapshot.empty) {
+        hasMore = false;
+        break;
       }
-    }
-    if (count > 0) {
+      
+      let batch = adminDb.batch();
+      for (const doc of snapshot.docs) {
+        batch.delete(doc.ref);
+      }
       await batch.commit();
+      
+      if (snapshot.docs.length < 200) {
+        hasMore = false;
+      }
     }
     console.log('[Firebase Sync] Purged all items and chunks from the workload_records collection.');
   } catch (err: any) {
