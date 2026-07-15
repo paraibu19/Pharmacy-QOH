@@ -2547,25 +2547,32 @@ export default function AdminDashboard() {
   };
 
   const handleSystemReset = async () => {
-    const currentAdminPassword = storage.getItem('adminPassword') || 'admin123';
-    
-    if (resetPassword !== currentAdminPassword) {
-      setResetError('Incorrect password. Reset aborted.');
-      return;
-    }
-
-    if (auth && !auth.currentUser) {
-      try {
-        await signInAnonymously(auth);
-      } catch (err) {
-        console.warn('Anonymous sign-in failed during reset, proceeding as guest:', err);
-        // We don't return here anymore, we'll let Firestore decide if permissions are sufficient
-      }
-    }
+    setIsResetting(true);
+    setResetError('');
 
     try {
-      setIsResetting(true);
-      setResetError('');
+      // Verify password via backend API
+      const verifyRes = await fetch('/api/auth/verify-admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: resetPassword.trim() })
+      });
+
+      if (!verifyRes.ok) {
+        setResetError('Incorrect password. Reset aborted.');
+        setIsResetting(false);
+        return;
+      }
+
+      if (auth && !auth.currentUser) {
+        try {
+          await signInAnonymously(auth);
+        } catch (err) {
+          console.warn('Anonymous sign-in failed during reset, proceeding as guest:', err);
+          // We don't return here anymore, we'll let Firestore decide if permissions are sufficient
+        }
+      }
+
       await systemOps.resetAll();
       await refresh();
       setSuccess('Application has been successfully reset.');
