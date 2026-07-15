@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { sharedDb } from '../lib/sharedDb';
-import { storage, sessionStorage } from '../lib/storage';
+import { storage, sessionStorage, safeReload } from '../lib/storage';
 
 export interface AuditLog {
   id: string;
@@ -101,6 +101,24 @@ export function useAudits(maxItems: number = 50) {
       (err) => {
         setError(err.message);
         setLoading(false);
+        
+        const lowerMsg = err.message.toLowerCase();
+        const isFallbackTrigger = lowerMsg.includes('quota') || 
+                                   lowerMsg.includes('limit') || 
+                                   lowerMsg.includes('exhausted') ||
+                                   lowerMsg.includes('resource_exhausted') ||
+                                   lowerMsg.includes('unavailable') ||
+                                   lowerMsg.includes('could not reach') ||
+                                   lowerMsg.includes('offline') ||
+                                   (err as any).code === 'unavailable';
+                                   
+        if (isFallbackTrigger) {
+          console.warn("[Firestore Auto-Fallback] Client-side Firestore error in audits triggered local fallback:", err.message);
+          sessionStorage.setItem('firestore_fallback', 'true');
+          safeReload("client_quota_limit_fallback");
+          return;
+        }
+
         handleFirestoreError(err, OperationType.LIST, 'inventory_audits');
       }
     );

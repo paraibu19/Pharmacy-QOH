@@ -129,12 +129,16 @@ export function useMedications(locationId?: PharmacyLocation) {
         setError(err.message);
         
         const lowerMsg = err.message.toLowerCase();
-        const isQuotaOrLimit = lowerMsg.includes('quota') || 
-                               lowerMsg.includes('limit') || 
-                               lowerMsg.includes('exhausted') ||
-                               lowerMsg.includes('resource_exhausted');
+        const isFallbackTrigger = lowerMsg.includes('quota') || 
+                                   lowerMsg.includes('limit') || 
+                                   lowerMsg.includes('exhausted') ||
+                                   lowerMsg.includes('resource_exhausted') ||
+                                   lowerMsg.includes('unavailable') ||
+                                   lowerMsg.includes('could not reach') ||
+                                   lowerMsg.includes('offline') ||
+                                   (err as any).code === 'unavailable';
         
-        if (isQuotaOrLimit) {
+        if (isFallbackTrigger) {
           console.warn("[Firestore Auto-Fallback] Client-side Firestore error triggered local fallback:", err.message);
           sessionStorage.setItem('firestore_fallback', 'true');
           // Note: We intentionally DO NOT set 'manual_local_mode' here, so that the client can auto-recover back to 

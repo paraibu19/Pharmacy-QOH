@@ -1648,16 +1648,34 @@ function setupFirestoreListeners() {
     activeUnsubscribes.push(unsubRosters);
 
     // 7. Listen to workload records chunks (only log update notifications, no local OOM sync)
-    const unsubWorkloadRecords = adminDb.collection('workload_records').onSnapshot((snapshot: any) => {
-      try {
-        console.log('[Firebase Admin Sync] Real-time Workload Records Sync: Notification received.');
-        notifyClients('workload-records', { updated: true });
-      } catch (err: any) {
-        console.error('[Firebase Admin Sync] Error processing workload records chunks snapshot:', err.message);
-      }
-    }, (err: any) => {
-      handleListenerError(err, 'listen workload records chunks');
-    });
+    // We restrict the listener to limit(1) to avoid downloading all documents in this huge collection,
+    // which otherwise fails with 128MB Firestore snapshot limits.
+    const unsubWorkloadRecords = adminDb.collection('workload_records')
+      .orderBy('updatedAt', 'desc')
+      .limit(1)
+      .onSnapshot((snapshot: any) => {
+        try {
+          console.log('[Firebase Admin Sync] Real-time Workload Records Sync: Notification received.');
+          notifyClients('workload-records', { updated: true });
+        } catch (err: any) {
+          console.error('[Firebase Admin Sync] Error processing workload records chunks snapshot:', err.message);
+        }
+      }, (err: any) => {
+        console.warn('[Firebase Admin Sync] Failed to setup ordered workload records snapshot, falling back to simple limit(1)...');
+        const fallbackUnsub = adminDb.collection('workload_records')
+          .limit(1)
+          .onSnapshot((snapshot: any) => {
+            try {
+              console.log('[Firebase Admin Sync] Real-time Workload Records Sync (fallback): Notification received.');
+              notifyClients('workload-records', { updated: true });
+            } catch (err2: any) {
+              console.error('[Firebase Admin Sync] Error processing fallback workload records snapshot:', err2.message);
+            }
+          }, (err2: any) => {
+            handleListenerError(err2, 'listen workload records chunks');
+          });
+        activeUnsubscribes.push(fallbackUnsub);
+      });
     activeUnsubscribes.push(unsubWorkloadRecords);
 
     isRealtimeListeningActive = true;

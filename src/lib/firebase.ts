@@ -50,21 +50,35 @@ try {
   console.warn("Firestore persistence: Error initializing IndexedDB or blocked by browser storage security:", e);
 }
 
-// Connection test - Disabled to save read quota
-/*
+// Connection test - Enabled to validate Firestore connection and trigger fallback
+import { doc, getDoc } from 'firebase/firestore';
+import { safeReload } from './storage';
+
 async function testConnection() {
   if (!app || !db) {
-    console.warn("Firebase is not yet configured. Please complete the setup in AI Studio.");
     return;
   }
 
   try {
-    // Prefer cached doc if available
-    await getDoc(doc(db, 'test', 'connection'));
-    console.log("Firebase connected successfully");
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration or click 'Accept' in the setup panel.");
+    // Attempt to fetch from server or cache
+    await getDoc(doc(db, 'system', 'metadata'));
+    console.log("Firebase connection active");
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    const lowerMsg = errMsg.toLowerCase();
+    const isFallbackTrigger = lowerMsg.includes('quota') || 
+                               lowerMsg.includes('limit') || 
+                               lowerMsg.includes('exhausted') ||
+                               lowerMsg.includes('resource_exhausted') ||
+                               lowerMsg.includes('unavailable') ||
+                               lowerMsg.includes('could not reach') ||
+                               lowerMsg.includes('offline') ||
+                               error?.code === 'unavailable';
+                               
+    if (isFallbackTrigger) {
+      console.warn("[Firestore Auto-Fallback] Startup connection test failed. Activating local fallback:", errMsg);
+      sessionStorage.setItem('firestore_fallback', 'true');
+      safeReload("startup_connection_failed");
     }
   }
 }
@@ -72,7 +86,6 @@ async function testConnection() {
 if (isConfigValid) {
   testConnection();
 }
-*/
 
 export enum OperationType {
   CREATE = 'create',

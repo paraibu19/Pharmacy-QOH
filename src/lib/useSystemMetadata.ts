@@ -179,8 +179,22 @@ export function useSystemMetadata() {
             }
           }
         }
-      }, (error) => {
-        console.warn('Metadata listener error:', error);
+      }, (err) => {
+        console.warn('Metadata listener error:', err);
+        const lowerMsg = err.message.toLowerCase();
+        const isFallbackTrigger = lowerMsg.includes('quota') || 
+                                   lowerMsg.includes('limit') || 
+                                   lowerMsg.includes('exhausted') ||
+                                   lowerMsg.includes('resource_exhausted') ||
+                                   lowerMsg.includes('unavailable') ||
+                                   lowerMsg.includes('could not reach') ||
+                                   lowerMsg.includes('offline') ||
+                                   (err as any).code === 'unavailable';
+        if (isFallbackTrigger) {
+          console.warn("[Firestore Auto-Fallback] Client-side Firestore error in metadata triggered local fallback:", err.message);
+          sessionStorage.setItem('firestore_fallback', 'true');
+          safeReload("client_quota_limit_fallback");
+        }
       });
     }
 
