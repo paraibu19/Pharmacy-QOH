@@ -113,6 +113,40 @@ export default function AdminDashboard() {
   const [isExportingAllDb, setIsExportingAllDb] = useState(false);
   const [appUrl, setAppUrl] = useState('');
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [confirmResetActivity, setConfirmResetActivity] = useState(false);
+  const [isResettingActivity, setIsResettingActivity] = useState(false);
+
+  useEffect(() => {
+    if (confirmResetActivity) {
+      const timer = setTimeout(() => {
+        setConfirmResetActivity(false);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [confirmResetActivity]);
+
+  const handleResetLiveActivity = async () => {
+    try {
+      setIsResettingActivity(true);
+      setError(null);
+      const res = await fetch('/api/audits/reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to reset live activity.');
+      }
+      setSuccess('Live Activity feed has been reset successfully.');
+      setConfirmResetActivity(false);
+    } catch (err: any) {
+      setError(err.message || 'Reset failed.');
+    } finally {
+      setIsResettingActivity(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -3210,9 +3244,48 @@ export default function AdminDashboard() {
 
           {/* Activity Feed Card */}
           <div className="bg-white rounded-3xl p-5 border border-[#141414]/10 shadow-sm flex flex-col h-[180px] lg:col-span-2">
-             <div className="flex items-center gap-2 mb-3">
-               <History size={16} className="text-[#F27D26]" />
-               <p className="text-[10px] font-black uppercase tracking-widest text-[#141414]/40">Live Activity</p>
+             <div className="flex items-center justify-between mb-3">
+               <div className="flex items-center gap-2">
+                 <History size={16} className="text-[#F27D26]" />
+                 <p className="text-[10px] font-black uppercase tracking-widest text-[#141414]/40">Live Activity</p>
+               </div>
+               <button
+                 id="reset-live-activity-btn"
+                 disabled={isResettingActivity || audits.length === 0}
+                 onClick={() => {
+                   if (confirmResetActivity) {
+                     handleResetLiveActivity();
+                   } else {
+                     setConfirmResetActivity(true);
+                   }
+                 }}
+                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[9px] font-bold uppercase tracking-widest border transition-all ${
+                   isResettingActivity 
+                     ? 'bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed'
+                     : audits.length === 0
+                     ? 'bg-gray-50/50 text-gray-300 border-gray-100/50 cursor-not-allowed'
+                     : confirmResetActivity
+                     ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100 cursor-pointer animate-pulse'
+                     : 'bg-[#141414]/5 text-[#141414]/60 border-[#141414]/10 hover:bg-[#141414]/10 cursor-pointer'
+                 }`}
+               >
+                 {isResettingActivity ? (
+                   <>
+                     <Loader2 size={10} className="animate-spin" />
+                     <span>Resetting...</span>
+                   </>
+                 ) : confirmResetActivity ? (
+                   <>
+                     <Trash2 size={10} />
+                     <span>Confirm?</span>
+                   </>
+                 ) : (
+                   <>
+                     <RotateCcw size={10} />
+                     <span>Reset Feed</span>
+                   </>
+                 )}
+               </button>
              </div>
              <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-hide">
                {auditsLoading ? (

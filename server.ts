@@ -2193,6 +2193,42 @@ app.post('/api/audits', async (req, res) => {
   }
 });
 
+app.post('/api/audits/reset', async (req, res) => {
+  try {
+    fs.writeFileSync(AUDITS_FILE, '[]');
+
+    if (adminDb) {
+      try {
+        const auditsSnap = await adminDb.collection('inventory_audits').get();
+        let batch = adminDb.batch();
+        let count = 0;
+        for (const doc of auditsSnap.docs) {
+          batch.delete(doc.ref);
+          count++;
+          if (count >= 500) {
+            await batch.commit();
+            batch = adminDb.batch();
+            count = 0;
+          }
+        }
+        if (count > 0) {
+          await batch.commit();
+        }
+        console.log('[Firebase Sync] Cleared inventory_audits collection on request.');
+      } catch (err: any) {
+        console.error('[Firebase Sync] Failed to clear inventory_audits in Firestore:', err.message);
+      }
+    }
+
+    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    notifyClients('audits', []);
+
+    res.json({ success: true, message: 'Live Activity feed has been reset successfully.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/translation_cache', (req, res) => {
   try {
     const data = fs.readFileSync(TRANSLATION_CACHE_FILE, 'utf8');
