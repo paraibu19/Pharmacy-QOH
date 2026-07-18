@@ -26,7 +26,8 @@ import {
   serverTimestamp,
   query,
   limit,
-  orderBy
+  orderBy,
+  startAfter
 } from 'firebase/firestore';
 
 const FieldValue = {
@@ -64,20 +65,45 @@ class ClientFirestoreAdapter {
 class CollectionRefAdapter {
   private db: any;
   private path: string;
+  private queryConstraints: any[] = [];
 
-  constructor(db: any, path: string) {
+  constructor(db: any, path: string, queryConstraints: any[] = []) {
     this.db = db;
     this.path = path;
+    this.queryConstraints = queryConstraints;
   }
 
   doc(docId: string) {
     return new DocumentRefAdapter(this.db, this.path, docId);
   }
 
+  orderBy(field: string, direction?: string) {
+    const constraint = direction ? orderBy(field, direction as any) : orderBy(field);
+    return new CollectionRefAdapter(this.db, this.path, [...this.queryConstraints, constraint]);
+  }
+
+  limit(num: number) {
+    const constraint = limit(num);
+    return new CollectionRefAdapter(this.db, this.path, [...this.queryConstraints, constraint]);
+  }
+
+  select(...fields: string[]) {
+    // select is a no-op for client-side firestore but maintains api compatibility
+    return this;
+  }
+
+  startAfter(docSnapshot: any) {
+    const rawSnap = docSnapshot?.rawSnap || docSnapshot;
+    const constraint = startAfter(rawSnap);
+    return new CollectionRefAdapter(this.db, this.path, [...this.queryConstraints, constraint]);
+  }
+
   async get() {
     const colRef = collection(this.db, this.path);
     let q: any = colRef;
-    if (this.path === 'application_storage') {
+    if (this.queryConstraints.length > 0) {
+      q = query(colRef, ...this.queryConstraints);
+    } else if (this.path === 'application_storage') {
       q = query(colRef, orderBy('savedAt', 'desc'), limit(1000));
     }
     const snap = await getDocs(q);
@@ -87,7 +113,9 @@ class CollectionRefAdapter {
   onSnapshot(onNext: any, onError: any) {
     const colRef = collection(this.db, this.path);
     let q: any = colRef;
-    if (this.path === 'application_storage') {
+    if (this.queryConstraints.length > 0) {
+      q = query(colRef, ...this.queryConstraints);
+    } else if (this.path === 'application_storage') {
       q = query(colRef, orderBy('savedAt', 'desc'), limit(1000));
     }
     return onSnapshot(q, (snap) => {
@@ -154,6 +182,10 @@ class DocumentSnapshotAdapter {
     return this.snap.ref;
   }
 
+  get rawSnap() {
+    return this.snap;
+  }
+
   data() {
     return this.snap.data();
   }
@@ -168,6 +200,10 @@ class QuerySnapshotAdapter {
 
   get docs() {
     return this.snap.docs.map((docSnap: any) => new DocumentSnapshotAdapter(docSnap));
+  }
+
+  get empty() {
+    return this.snap.empty;
   }
 
   forEach(callback: (doc: DocumentSnapshotAdapter) => void) {
@@ -563,6 +599,9 @@ app.post('/api/auth/change-password', (req, res) => {
   }
   
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  saveSettingsToFirestore(settings).catch(err => {
+    console.error('[Firebase Settings Sync] Failed to sync updated settings to Firestore:', err.message);
+  });
   res.json({ success: true });
 });
 
@@ -771,6 +810,60 @@ async function syncEntryMistakesDbFromFirestore(): Promise<any> {
     return JSON.parse(fs.readFileSync(ENTRY_MISTAKES_DB_FILE, 'utf8'));
   }
   return null;
+}
+
+async function syncSettingsFromFirestore(): Promise<any> {
+  if (!adminDb) {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    }
+    return {
+      adminPassword: 'admin123',
+      pharmacistPassword: 'pharmacist123',
+      orderPassword: 'order123',
+      adminEmail: 'admin@halth-org.com'
+    };
+  }
+  try {
+    const docRef = adminDb.collection('system').doc('settings');
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
+      const data = docSnap.data();
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
+      return data;
+    } else {
+      const localSettings = fs.existsSync(SETTINGS_FILE) 
+        ? JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))
+        : {
+            adminPassword: 'admin123',
+            pharmacistPassword: 'pharmacist123',
+            orderPassword: 'order123',
+            adminEmail: 'admin@halth-org.com'
+          };
+      await docRef.set(localSettings);
+      return localSettings;
+    }
+  } catch (err: any) {
+    console.error('[Firebase Settings Sync] Error syncing settings from Firestore:', err.message);
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    }
+    return {
+      adminPassword: 'admin123',
+      pharmacistPassword: 'pharmacist123',
+      orderPassword: 'order123',
+      adminEmail: 'admin@halth-org.com'
+    };
+  }
+}
+
+async function saveSettingsToFirestore(settings: any): Promise<void> {
+  if (!adminDb) return;
+  try {
+    await adminDb.collection('system').doc('settings').set(settings);
+  } catch (err: any) {
+    console.error('[Firebase Settings Sync] Error saving settings to Firestore:', err.message);
+  }
 }
 
 async function syncSystemMetadataFromFirestore(): Promise<any> {
@@ -1168,8 +1261,7 @@ async function generateWorkloadSummary(): Promise<any> {
     topStaff: [] as any[],
     locationBreakdown: {
       'adult-emergency': { total: 0, mismatches: 0 },
-      'pediatric': { total: 0, mismatches: 0 },
-      'mesaieed-opd': { total: 0, mismatches: 0 }
+      'pediatric': { total: 0, mismatches: 0 }
     } as any,
     workloadTrend: [] as any[]
   };
@@ -1195,6 +1287,12 @@ async function generateWorkloadSummary(): Promise<any> {
     if (!line.trim()) continue;
     try {
       const rec = JSON.parse(line);
+      
+      const key = getPharmacyLocationKey(rec.pharmacyLocation);
+      if (key !== 'adult-emergency' && key !== 'pediatric') {
+        continue; // Exclude non-adult/pediatric locations (e.g. Mesaieed OPD) from Workload Analysis
+      }
+      
       summary.total++;
       if (rec.isMismatch) {
         summary.mismatches++;
@@ -1204,8 +1302,6 @@ async function generateWorkloadSummary(): Promise<any> {
       if (rec.actionPersonnelPharmacy) staffSet.add(rec.actionPersonnelPharmacy);
 
       // Location breakdown
-      const key = getPharmacyLocationKey(rec.pharmacyLocation);
-
       if (key) {
         summary.locationBreakdown[key].total++;
         if (rec.isMismatch) {
@@ -1472,6 +1568,7 @@ async function syncAllFromFirestoreAtStartup() {
   console.log('[Firebase Startup Sync] Loading persistent data from Firestore...');
   try {
     await Promise.all([
+      syncSettingsFromFirestore().catch(e => console.error('Startup settings sync failed:', e.message)),
       syncMedicationsFromFirestore().catch(e => console.error('Startup medications sync failed:', e.message)),
       syncAuditsFromFirestore().catch(e => console.error('Startup audits sync failed:', e.message)),
       syncEntryMistakesDbFromFirestore().catch(e => console.error('Startup parameters DB sync failed:', e.message)),
@@ -1713,6 +1810,23 @@ function setupFirestoreListeners() {
         activeUnsubscribes.push(fallbackUnsub);
       });
     activeUnsubscribes.push(unsubWorkloadRecords);
+
+    // 8. Listen to system settings (allows instant administrative credentials/password sync between dev and preview environments)
+    const unsubSystemSettings = adminDb.collection('system').doc('settings').onSnapshot((docSnap: any) => {
+      try {
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
+          console.log('[Firebase Admin Sync] Real-time System Settings Sync: Updated.');
+          notifyClients('settings', data);
+        }
+      } catch (err: any) {
+        console.error('[Firebase Admin Sync] Error processing system settings snapshot:', err.message);
+      }
+    }, (err: any) => {
+      handleListenerError(err, 'listen system settings');
+    });
+    activeUnsubscribes.push(unsubSystemSettings);
 
     isRealtimeListeningActive = true;
     console.log('[Firebase Admin Sync] Real-time listeners active and running.');
@@ -2510,11 +2624,14 @@ app.get('/api/workload-records', async (req, res) => {
         try {
           const rec = JSON.parse(line);
           
+          const key = getPharmacyLocationKey(rec.pharmacyLocation);
+          if (key !== 'adult-emergency' && key !== 'pediatric') {
+            continue; // Force exclusive Adult and Pediatric emergency pharmacy records only
+          }
+          
           if (filterLocation && filterLocation !== 'all') {
-            const key = getPharmacyLocationKey(rec.pharmacyLocation);
             const matched = (filterLocation === 'adult' && key === 'adult-emergency') ||
-                            (filterLocation === 'pediatric' && key === 'pediatric') ||
-                            (filterLocation === 'mesaieed' && key === 'mesaieed-opd');
+                            (filterLocation === 'pediatric' && key === 'pediatric');
             if (!matched) continue;
           }
           
@@ -2577,8 +2694,7 @@ app.get('/api/workload-records', async (req, res) => {
               if (filterTrendLocation && filterTrendLocation !== 'all') {
                 const key = getPharmacyLocationKey(rec.pharmacyLocation);
                 const matched = (filterTrendLocation === 'adult' && key === 'adult-emergency') ||
-                                (filterTrendLocation === 'pediatric' && key === 'pediatric') ||
-                                (filterTrendLocation === 'mesaieed' && key === 'mesaieed-opd');
+                                (filterTrendLocation === 'pediatric' && key === 'pediatric');
                 if (!matched) {
                   matchesTrend = false;
                 }
@@ -2622,8 +2738,7 @@ app.get('/api/workload-records', async (req, res) => {
       
     const locationBreakdown = {
       'adult-emergency': { total: 0, mismatches: 0 },
-      'pediatric': { total: 0, mismatches: 0 },
-      'mesaieed-opd': { total: 0, mismatches: 0 }
+      'pediatric': { total: 0, mismatches: 0 }
     };
     for (const rec of filteredRecords) {
       const key = getPharmacyLocationKey(rec.pharmacyLocation);
@@ -2780,37 +2895,220 @@ app.post('/api/workload-records/reset', async (req, res) => {
 // POST to generate AI analytical reporting insights
 app.post('/api/workload-records/ai-analysis', async (req, res) => {
   try {
-    const { total, mismatches, rate, location, startDate, endDate, topMedications, topStaff, mismatchSamples } = req.body;
+    const { department, startDate, endDate } = req.body;
     
+    // Default to general analysis if no department is specified, otherwise filter specifically for adult or pediatric
+    const deptFilter = department || 'all'; 
+    
+    let records: any[] = [];
+    if (fs.existsSync(WORKLOAD_RECORDS_FILE)) {
+      try {
+        const fileContent = fs.readFileSync(WORKLOAD_RECORDS_FILE, 'utf8');
+        records = fileContent.split('\n')
+          .filter(Boolean)
+          .map(line => JSON.parse(line));
+      } catch (err) {
+        console.warn('Error reading workloads in AI analysis:', err);
+      }
+    }
+
+    // Filter by department if specified
+    if (deptFilter === 'adult') {
+      records = records.filter(r => getPharmacyLocationKey(r.pharmacyLocation) === 'adult-emergency');
+    } else if (deptFilter === 'pediatric') {
+      records = records.filter(r => getPharmacyLocationKey(r.pharmacyLocation) === 'pediatric');
+    }
+
+    // Filter by dates if provided
+    if (startDate) {
+      records = records.filter(r => (r.actionDateTime || '') >= startDate);
+    }
+    if (endDate) {
+      records = records.filter(r => (r.actionDateTime || '') <= endDate);
+    }
+
+    const totalCount = records.length;
+    const mismatches = records.filter(r => r.isMismatch);
+    const mismatchesCount = mismatches.length;
+    const rate = totalCount > 0 ? ((mismatchesCount / totalCount) * 100).toFixed(1) : '0.0';
+
+    // Top dispensed medications for this filtered set
+    const medCounts: Record<string, { desc: string, count: number }> = {};
+    const staffCounts: Record<string, number> = {};
+    for (const r of records) {
+      const num = r.itemNumber;
+      if (num) {
+        if (!medCounts[num]) {
+          medCounts[num] = { desc: r.labelDescription || 'Unknown', count: 0 };
+        }
+        medCounts[num].count++;
+      }
+      const staff = r.actionPersonnelPharmacy;
+      if (staff) {
+        staffCounts[staff] = (staffCounts[staff] || 0) + 1;
+      }
+    }
+
+    const topMedications = Object.keys(medCounts)
+      .map(num => ({ itemNumber: num, desc: medCounts[num].desc, count: medCounts[num].count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    const topStaff = Object.keys(staffCounts)
+      .map(name => ({ name, count: staffCounts[name] }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    const mismatchSamples = mismatches
+      .slice(0, 20)
+      .map(r => ({
+        actionDateTime: r.actionDateTime,
+        pharmacyLocation: r.pharmacyLocation,
+        labelDescription: r.labelDescription,
+        itemNumber: r.itemNumber,
+        actionPersonnelPharmacy: r.actionPersonnelPharmacy,
+        reasons: r.reasons
+      }));
+
+    // Retrieve monthly duty rosters to check staffing roster compliance
+    let rosters: any[] = [];
+    if (fs.existsSync(ROSTERS_FILE)) {
+      try {
+        rosters = JSON.parse(fs.readFileSync(ROSTERS_FILE, 'utf8'));
+      } catch (err) {
+        console.warn('Failed to parse rosters:', err);
+      }
+    }
+
+    // Evaluate staffing compliance for mismatch sample events
+    const complianceIssues: any[] = [];
+    for (const rec of mismatches.slice(0, 30)) {
+      const pharmacist = rec.actionPersonnelPharmacy;
+      const rawDate = rec.actionDateTime;
+      if (!pharmacist || !rawDate) continue;
+      
+      let dateStr = '';
+      try {
+        dateStr = rawDate.split('T')[0].split(' ')[0].trim();
+      } catch {
+        continue;
+      }
+      
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+
+      let scheduledEntry: any = null;
+      for (const r of rosters) {
+        if (r.entries && Array.isArray(r.entries)) {
+          scheduledEntry = r.entries.find((e: any) => {
+            const eDate = (e.date || '').trim();
+            const eName = (e.pharmacistName || '').toLowerCase().trim();
+            return eDate === dateStr && eName === pharmacist.toLowerCase().trim();
+          });
+          if (scheduledEntry) break;
+        }
+      }
+
+      const recLocKey = getPharmacyLocationKey(rec.pharmacyLocation);
+
+      if (!scheduledEntry) {
+        complianceIssues.push({
+          pharmacist,
+          date: dateStr,
+          incident: `${rec.labelDescription || 'Medication'} dispensing`,
+          type: 'Unscheduled Pharmacy Activity',
+          details: `Log shows pharmacist performed clinical dispensing actions, but they have no scheduled shift in the duty roster for ${dateStr}.`
+        });
+      } else {
+        const rosterLocKey = getPharmacyLocationKey(scheduledEntry.location);
+        if (rosterLocKey && recLocKey && rosterLocKey !== recLocKey) {
+          complianceIssues.push({
+            pharmacist,
+            date: dateStr,
+            incident: `${rec.labelDescription || 'Medication'} dispensing`,
+            type: 'Location Compliance Variance',
+            details: `Duty roster schedules this pharmacist at "${scheduledEntry.location || 'Unknown'}" on ${dateStr}, but they performed dispensing at "${rec.pharmacyLocation || 'Unknown'}".`
+          });
+        }
+      }
+    }
+
+    const complianceStr = complianceIssues.length > 0
+      ? complianceIssues.slice(0, 10).map((issue, idx) => 
+          `${idx + 1}. [${issue.type}] ${issue.pharmacist} on ${issue.date}: ${issue.details} (During incident: ${issue.incident})`
+        ).join('\n')
+      : "No duty roster compliance exceptions detected. Registered staff are fully aligned with scheduled shifts.";
+
+    const brandPrescriptionPolicies = `
+QATAR NATIONAL HEALTHCARE & HBKMC PRESCRIPTION POLICIES:
+- Non-Qatari patients MUST receive bioequivalent Generic equivalent medications if they are in stock.
+- Dispensing a Brand-name medication to a Non-Qatari patient when a bioequivalent Generic is in stock (QOH > 0) is a direct clinical and billing compliance violation.
+- Qatari patients have full authorization for Brand-name dispensing as prescribed.
+- High-Alert, refrigerated, or restricted therapeutic classes (e.g. insulin, narcotics, psychotropics) have strict dual-signature and cold-chain compliance requirements.
+`;
+
+    const departmentName = deptFilter === 'adult' 
+      ? 'Adult Emergency Pharmacy (Aw-Adult Emergency)' 
+      : deptFilter === 'pediatric'
+        ? 'Pediatric Pharmacy (Aw-Pediatric Pharmacy)'
+        : 'General Pharmacy (All Locations)';
+
     const client = getGeminiClient();
     
     const contextStr = `
-Pharmacy Location Filter: ${location || 'All'}
+========================================
+CLINICAL DEPARTMENT AUDIT DATA: ${departmentName.toUpperCase()}
+========================================
+Pharmacy Location ID: ${deptFilter}
 Date Range: ${startDate || 'None'} to ${endDate || 'None'}
-Total Audited Workloads: ${total || 0}
-Total Discrepancies/Mismatches: ${mismatches || 0}
-Error / Mismatch Rate: ${rate || '0.0'}%
+Total Audited Workloads for this Department: ${totalCount}
+Total Discrepancies/Mismatches for this Department: ${mismatchesCount}
+Error / Mismatch Rate: ${rate}%
 
 Top Dispensed Medications:
-${(topMedications || []).map((m: any, idx: number) => `${idx + 1}. ${m.desc} (Code: ${m.itemNumber}) - ${m.count} actions`).join('\n')}
+${topMedications.map((m, idx) => `${idx + 1}. ${m.desc} (Code: ${m.itemNumber}) - ${m.count} actions`).join('\n')}
 
 Top Active Staff Personnel:
-${(topStaff || []).map((s: any, idx: number) => `${idx + 1}. ${s.name} - ${s.count} actions`).join('\n')}
+${topStaff.map((s, idx) => `${idx + 1}. ${s.name} - ${s.count} actions`).join('\n')}
 
 Sample Discrepancy Incidents:
-${(mismatchSamples || []).map((m: any, idx: number) => `- Event: ${m.actionDateTime || 'Unknown Date'} | Location: ${m.pharmacyLocation || 'Unknown'} | Dispensed Item: ${m.labelDescription} (${m.itemNumber}) by ${m.actionPersonnelPharmacy || 'Unknown'} | Discrepancy details: ${(m.reasons || []).join(', ')}`).join('\n')}
+${mismatchSamples.map((m, idx) => `- Event: ${m.actionDateTime || 'Unknown Date'} | Location: ${m.pharmacyLocation || 'Unknown'} | Dispensed Item: ${m.labelDescription} (${m.itemNumber}) by ${m.actionPersonnelPharmacy || 'Unknown'} | Discrepancy details: ${(m.reasons || []).join(', ')}`).join('\n')}
+
+========================================
+STAFFING DUTY ROSTER COMPLIANCE LOG:
+========================================
+${complianceStr}
+
+========================================
+BRAND PRESCRIPTION POLICY REFERENCE:
+========================================
+${brandPrescriptionPolicies}
 `;
 
-    const systemPrompt = `You are an expert Clinical Pharmacy Auditor and Healthcare Quality Assurance consultant.
-Your role is to analyze a summarized audit of pharmacy dispensing workloads from Al Wakra & Mesaieed Pharmacy (HBKMC) and generate deep, actionable reporting insights.
+    const systemPrompt = `You are an expert Clinical Pharmacy Auditor and Healthcare Quality Assurance consultant specializing in Joint Commission International (JCI) Medication Management and Use (MMU) standards.
+Your role is to analyze a clinical workload audit, brand policy alignment, and staffing roster compliance log specifically for ${departmentName} and generate an executive-quality Clinical Audit Report.
 
-Generate a comprehensive clinical workload audit report with the following structure:
-1. **Executive Summary**: A concise summary of the workload quality, focusing on the mismatch rate, volume, and location comparison.
-2. **Systemic Vulnerabilities & Root Causes**: Based on the mismatch sample logs and top medications, identify the main error patterns (e.g., Brand vs Generic dispensing for non-Qataris, roster compliance, or unregistered items).
-3. **Personnel & Location Risk Index**: Highlight if any specific locations or staffing patterns present elevated risk.
-4. **Actionable Recommendations**: Clear, professional, and practical steps to reduce dispensing mistakes at HBKMC. These should be numbered or bulleted and align with Joint Commission International (JCI) and pharmacy safety standards.
+Produce an elegant, professional, JCI-compliant executive report with the following structure:
 
-Use elegant Markdown, deep medical domain expertise, and clear formatting. Keep the tone clinical, professional, and constructive. DO NOT use unverified or overly dramatic branding terms.`;
+1. # Executive Summary & Department KPI Scorecard
+   - Provide a high-level clinical assessment of the department's dispensing accuracy.
+   - Summarize key KPIs: Audited Volume (${totalCount}), Discrepancies (${mismatchesCount}), and Error Rate (${rate}%).
+   - Assign a professional Safety and Compliance Grade (e.g., "A - Excellent Alignment", "B - Satisfactory", "C - Action Required", "F - Critical Risk").
+
+2. # Brand-to-Generic Policy Compliance Analysis
+   - Evaluate the cross-referenced brand prescription policy violations (dispensing Brand medications to Non-Qataris when Generics are in stock).
+   - Reference specific medication and discrepancy examples from the provided context.
+
+3. # Staffing Duty Roster & Operational Compliance Evaluation
+   - Directly analyze the correlated Staffing Duty Roster Compliance log.
+   - Address cases where staff logged actions while unscheduled or at incorrect locations, discussing fatigue risk, lack of accountability, and billing discrepancy vulnerabilities.
+
+4. # Systemic Vulnerabilities & Root Causes
+   - Highlight medication or workflow-level bottlenecks causing issues.
+
+5. # JCI-Aligned Corrective and Preventive Action (CAPA) Plan
+   - Actionable, structured, numbered recommendations.
+
+Use highly professional clinical terminology, clean markdown headings, and clear formatting. Keep the tone constructive and authoritative. DO NOT expose database structure or paths.`;
 
     const response = await client.models.generateContent({
       model: "gemini-3.5-flash",
@@ -2819,7 +3117,7 @@ Use elegant Markdown, deep medical domain expertise, and clear formatting. Keep 
       ],
       config: {
         systemInstruction: systemPrompt,
-        temperature: 0.3,
+        temperature: 0.2,
       }
     });
     

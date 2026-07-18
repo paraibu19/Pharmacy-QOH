@@ -51,8 +51,7 @@ export default function AdminWorkload() {
   const [topStaff, setTopStaff] = useState<any[]>([]);
   const [locationBreakdown, setLocationBreakdown] = useState<any>({
     'adult-emergency': { total: 0, mismatches: 0 },
-    'pediatric': { total: 0, mismatches: 0 },
-    'mesaieed-opd': { total: 0, mismatches: 0 }
+    'pediatric': { total: 0, mismatches: 0 }
   });
   const [workloadTrend, setWorkloadTrend] = useState<any[]>([]);
   const [selectedTrendLocation, setSelectedTrendLocation] = useState<string>('all');
@@ -66,7 +65,9 @@ export default function AdminWorkload() {
   const [isResetting, setIsResetting] = useState(false);
 
   // AI Audit State
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [adultAnalysis, setAdultAnalysis] = useState<string | null>(null);
+  const [pediatricAnalysis, setPediatricAnalysis] = useState<string | null>(null);
+  const [activeReportTab, setActiveReportTab] = useState<'adult' | 'pediatric'>('adult');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiLoadingStep, setAiLoadingStep] = useState('');
   const [aiError, setAiError] = useState<string | null>(null);
@@ -74,16 +75,17 @@ export default function AdminWorkload() {
   const handleGenerateAIAnalysis = async () => {
     setAiLoading(true);
     setAiError(null);
-    setAiAnalysis(null);
+    setAdultAnalysis(null);
+    setPediatricAnalysis(null);
     
     const steps = [
       "Initializing Gemini Clinical Auditor...",
-      "Parsing HBKMC workload distribution...",
-      "Calculating error frequency by medication...",
-      "Evaluating brand-to-generic dispensing variance...",
-      "Correlating staff roster compliance...",
-      "Drafting Executive Summary...",
-      "Compiling Joint Commission compliant recommendations..."
+      "Analyzing Adult Emergency workload records...",
+      "Analyzing Pediatric Pharmacy workload records...",
+      "Cross-referencing Brand Prescription Policies...",
+      "Evaluating Staff Duty Roster Compliance...",
+      "Drafting separate clinical quality assessments...",
+      "Compiling tailored JCI-compliant CAPA recommendations..."
     ];
     
     let stepIdx = 0;
@@ -91,43 +93,47 @@ export default function AdminWorkload() {
     const stepInterval = setInterval(() => {
       stepIdx = (stepIdx + 1) % steps.length;
       setAiLoadingStep(steps[stepIdx]);
-    }, 1500);
+    }, 1400);
 
     try {
-      const res = await fetch('/api/workload-records/ai-analysis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          total: metrics.total,
-          mismatches: metrics.mismatches,
-          rate: metrics.rate,
-          location: selectedLocation,
-          startDate: startDate,
-          endDate: endDate,
-          topMedications: topMedications,
-          topStaff: topStaff,
-          mismatchSamples: records.filter(r => r.isMismatch).slice(0, 25).map(r => ({
-            actionDateTime: r.actionDateTime,
-            pharmacyLocation: r.pharmacyLocation,
-            labelDescription: r.labelDescription,
-            itemNumber: r.itemNumber,
-            actionPersonnelPharmacy: r.actionPersonnelPharmacy,
-            reasons: r.reasons
-          }))
+      // Run both adult and pediatric audit report generations in parallel
+      const [resAdult, resPediatric] = await Promise.all([
+        fetch('/api/workload-records/ai-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            department: 'adult',
+            startDate: startDate,
+            endDate: endDate
+          })
+        }),
+        fetch('/api/workload-records/ai-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            department: 'pediatric',
+            startDate: startDate,
+            endDate: endDate
+          })
         })
-      });
+      ]);
 
       clearInterval(stepInterval);
-      if (res.ok) {
-        const data = await res.json();
-        setAiAnalysis(data.analysis);
+
+      if (resAdult.ok && resPediatric.ok) {
+        const dataAdult = await resAdult.json();
+        const dataPediatric = await resPediatric.json();
+        setAdultAnalysis(dataAdult.analysis);
+        setPediatricAnalysis(dataPediatric.analysis);
+        setActiveReportTab('adult'); // default view to adult
       } else {
-        const errData = await res.json().catch(() => ({}));
-        setAiError(errData.error || 'Failed to generate audit insights. Please try again.');
+        const errAdult = !resAdult.ok ? await resAdult.json().catch(() => ({})) : {};
+        const errPediatric = !resPediatric.ok ? await resPediatric.json().catch(() => ({})) : {};
+        setAiError(errAdult.error || errPediatric.error || 'Failed to compile department-specific clinical audits. Please retry.');
       }
-    } catch {
+    } catch (err: any) {
       clearInterval(stepInterval);
-      setAiError('Connection error while contacting Gemini AI engine.');
+      setAiError('Network connection issue contacting the Gemini AI engine: ' + err.message);
     } finally {
       setAiLoading(false);
     }
@@ -302,11 +308,11 @@ export default function AdminWorkload() {
         setTopStaff([]);
         setLocationBreakdown({
           'adult-emergency': { total: 0, mismatches: 0 },
-          'pediatric': { total: 0, mismatches: 0 },
-          'mesaieed-opd': { total: 0, mismatches: 0 }
+          'pediatric': { total: 0, mismatches: 0 }
         });
         setWorkloadTrend([]);
-        setAiAnalysis(null);
+        setAdultAnalysis(null);
+        setPediatricAnalysis(null);
         setTimeout(() => {
           setIsResetModalOpen(false);
           setResetSuccess('');
@@ -474,8 +480,7 @@ export default function AdminWorkload() {
       head: [['Pharmacy Location', 'Total Volume', 'Mismatch Incidents', 'Local Mismatch Rate']],
       body: [
         ['Aw-Adult Emergency Pharmacy', `${locationBreakdown['adult-emergency'].total} Recs`, `${locationBreakdown['adult-emergency'].mismatches} Mismatches`, `${locationBreakdown['adult-emergency'].total > 0 ? ((locationBreakdown['adult-emergency'].mismatches / locationBreakdown['adult-emergency'].total) * 100).toFixed(1) : '0.0'}%`],
-        ['Aw-Pediatric Pharmacy', `${locationBreakdown['pediatric'].total} Recs`, `${locationBreakdown['pediatric'].mismatches} Mismatches`, `${locationBreakdown['pediatric'].total > 0 ? ((locationBreakdown['pediatric'].mismatches / locationBreakdown['pediatric'].total) * 100).toFixed(1) : '0.0'}%`],
-        ['Aw-Mesaieed OPD Pharmacy', `${locationBreakdown['mesaieed-opd'].total} Recs`, `${locationBreakdown['mesaieed-opd'].mismatches} Mismatches`, `${locationBreakdown['mesaieed-opd'].total > 0 ? ((locationBreakdown['mesaieed-opd'].mismatches / locationBreakdown['mesaieed-opd'].total) * 100).toFixed(1) : '0.0'}%`]
+        ['Aw-Pediatric Pharmacy', `${locationBreakdown['pediatric'].total} Recs`, `${locationBreakdown['pediatric'].mismatches} Mismatches`, `${locationBreakdown['pediatric'].total > 0 ? ((locationBreakdown['pediatric'].mismatches / locationBreakdown['pediatric'].total) * 100).toFixed(1) : '0.0'}%`]
       ],
       headStyles: { fillColor: [242, 125, 38], textColor: [255, 255, 255], fontStyle: 'bold' },
       styles: { fontSize: 9, cellPadding: 3.5 },
@@ -1044,10 +1049,9 @@ export default function AdminWorkload() {
             onChange={e => setSelectedLocation(e.target.value)}
             className="px-4 py-2.5 rounded-2xl text-xs font-bold border border-[#141414]/10 bg-white"
           >
-            <option value="all">All Locations</option>
-            <option value="adult">Adult Emergency</option>
+            <option value="all">AWH-Emergency Pharmacy (Total)</option>
+            <option value="adult">Adult Emergency Pharmacy</option>
             <option value="pediatric">Pediatric Pharmacy</option>
-            <option value="mesaieed">Mesaieed OPD</option>
           </select>
 
           {/* Mismatch filter toggle */}
@@ -1082,10 +1086,9 @@ export default function AdminWorkload() {
                 onChange={e => setSelectedTrendLocation(e.target.value)}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold border border-[#141414]/10 bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
               >
-                <option value="all">All Locations (Trend)</option>
-                <option value="adult">Adult Emergency</option>
+                <option value="all">AWH-Emergency Pharmacy (Total Trend)</option>
+                <option value="adult">Adult Emergency Pharmacy</option>
                 <option value="pediatric">Pediatric Pharmacy</option>
-                <option value="mesaieed">Mesaieed OPD</option>
               </select>
               <div className="flex items-center gap-1.5">
                 <span className="flex w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
@@ -1205,11 +1208,14 @@ export default function AdminWorkload() {
 
           <div className="space-y-5 py-4">
             {(() => {
-              const maxVal = Math.max(1, ...Object.keys(locationBreakdown).map(k => locationBreakdown[k].total));
+              const safeBreakdown = {
+                'adult-emergency': locationBreakdown['adult-emergency'] || { total: 0, mismatches: 0 },
+                'pediatric': locationBreakdown['pediatric'] || { total: 0, mismatches: 0 }
+              };
+              const maxVal = Math.max(1, ...Object.keys(safeBreakdown).map(k => safeBreakdown[k as 'adult-emergency' | 'pediatric'].total));
               return [
-                { id: 'adult-emergency', label: 'Adult Emergency', color: 'bg-[#F27D26]', val: locationBreakdown['adult-emergency'] },
-                { id: 'pediatric', label: 'Pediatric Pharmacy', color: 'bg-emerald-500', val: locationBreakdown['pediatric'] },
-                { id: 'mesaieed-opd', label: 'Mesaieed OPD', color: 'bg-indigo-500', val: locationBreakdown['mesaieed-opd'] }
+                { id: 'adult-emergency', label: 'Adult Emergency', color: 'bg-[#F27D26]', val: safeBreakdown['adult-emergency'] },
+                { id: 'pediatric', label: 'Pediatric Pharmacy', color: 'bg-emerald-500', val: safeBreakdown['pediatric'] }
               ].map(loc => {
                 const widthPct = ((loc.val.total / maxVal) * 100).toFixed(0);
                 const localMismatchRate = loc.val.total > 0 ? ((loc.val.mismatches / loc.val.total) * 100).toFixed(1) : '0.0';
@@ -1574,36 +1580,91 @@ export default function AdminWorkload() {
           </div>
         )}
 
-        {aiAnalysis && (
-          <div className="bg-white border border-indigo-100 rounded-2xl p-6 md:p-8 shadow-sm max-h-[550px] overflow-y-auto space-y-4">
+        {(adultAnalysis || pediatricAnalysis) && (
+          <div className="bg-white border border-indigo-100 rounded-3xl p-6 md:p-8 shadow-sm space-y-6">
+            {/* Elegant Department Selector Tabs */}
+            <div className="flex flex-col sm:flex-row gap-2 border-b border-indigo-50 pb-2">
+              <button
+                onClick={() => setActiveReportTab('adult')}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                  activeReportTab === 'adult'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10'
+                    : 'bg-indigo-50/50 text-indigo-950/60 hover:bg-indigo-50 hover:text-indigo-950'
+                }`}
+              >
+                🏥 Adult Emergency Audit Report
+              </button>
+              <button
+                onClick={() => setActiveReportTab('pediatric')}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                  activeReportTab === 'pediatric'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10'
+                    : 'bg-indigo-50/50 text-indigo-950/60 hover:bg-indigo-50 hover:text-indigo-950'
+                }`}
+              >
+                👶 Pediatric Pharmacy Audit Report
+              </button>
+            </div>
+
+            {/* Active Report Header */}
             <div className="flex items-center justify-between border-b border-indigo-50 pb-4">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping animate-duration-1000"></span>
                 <p className="text-[10px] uppercase font-extrabold tracking-widest text-indigo-900 bg-indigo-50 px-2.5 py-1 rounded-full">
-                  Verified Audit Report Active
+                  Verified {activeReportTab === 'adult' ? 'Adult' : 'Pediatric'} Clinical Audit Active
                 </p>
               </div>
               <p className="text-[10px] font-mono text-[#141414]/40 font-bold uppercase">
-                Audited Size: {records.length} Workloads
+                Audited Cohort: {
+                  activeReportTab === 'adult'
+                    ? records.filter(r => (r.pharmacyLocation || '').toLowerCase().includes('adult')).length
+                    : records.filter(r => (r.pharmacyLocation || '').toLowerCase().includes('pediatric')).length
+                } Workloads
               </p>
             </div>
             
-            <div className="prose max-w-none">
-              <Markdown
-                components={{
-                  h1: ({node, ...props}) => <h1 className="text-xs font-extrabold text-indigo-950 mt-6 mb-3 border-b pb-1.5 border-indigo-100 uppercase tracking-wide" {...props} />,
-                  h2: ({node, ...props}) => <h2 className="text-xs font-extrabold text-indigo-900 mt-5 mb-2 flex items-center gap-1.5" {...props} />,
-                  h3: ({node, ...props}) => <h3 className="text-xs font-bold text-indigo-800 mt-4 mb-2" {...props} />,
-                  p: ({node, ...props}) => <p className="text-xs text-[#141414]/80 leading-relaxed mb-3" {...props} />,
-                  ul: ({node, ...props}) => <ul className="list-disc pl-5 text-xs text-[#141414]/80 space-y-1.5 mb-4" {...props} />,
-                  ol: ({node, ...props}) => <ol className="list-decimal pl-5 text-xs text-[#141414]/80 space-y-1.5 mb-4" {...props} />,
-                  li: ({node, ...props}) => <li className="pl-1" {...props} />,
-                  strong: ({node, ...props}) => <strong className="font-extrabold text-[#141414]" {...props} />,
-                  blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-indigo-400 pl-4 italic text-[#141414]/70 my-3 bg-indigo-50/20 py-2 rounded-r" {...props} />,
-                }}
-              >
-                {aiAnalysis}
-              </Markdown>
+            <div className="prose max-w-none max-h-[500px] overflow-y-auto pr-2">
+              {activeReportTab === 'adult' ? (
+                adultAnalysis ? (
+                  <Markdown
+                    components={{
+                      h1: ({node, ...props}) => <h1 className="text-xs font-extrabold text-indigo-950 mt-6 mb-3 border-b pb-1.5 border-indigo-100 uppercase tracking-wide" {...props} />,
+                      h2: ({node, ...props}) => <h2 className="text-xs font-extrabold text-indigo-900 mt-5 mb-2 flex items-center gap-1.5" {...props} />,
+                      h3: ({node, ...props}) => <h3 className="text-xs font-bold text-indigo-800 mt-4 mb-2" {...props} />,
+                      p: ({node, ...props}) => <p className="text-xs text-[#141414]/80 leading-relaxed mb-3" {...props} />,
+                      ul: ({node, ...props}) => <ul className="list-disc pl-5 text-xs text-[#141414]/80 space-y-1.5 mb-4" {...props} />,
+                      ol: ({node, ...props}) => <ol className="list-decimal pl-5 text-xs text-[#141414]/80 space-y-1.5 mb-4" {...props} />,
+                      li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                      strong: ({node, ...props}) => <strong className="font-extrabold text-[#141414]" {...props} />,
+                      blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-indigo-400 pl-4 italic text-[#141414]/70 my-3 bg-indigo-50/20 py-2 rounded-r" {...props} />,
+                    }}
+                  >
+                    {adultAnalysis}
+                  </Markdown>
+                ) : (
+                  <p className="text-xs text-indigo-950/40 text-center py-8 font-extrabold">Adult Audit Report data not loaded.</p>
+                )
+              ) : (
+                pediatricAnalysis ? (
+                  <Markdown
+                    components={{
+                      h1: ({node, ...props}) => <h1 className="text-xs font-extrabold text-indigo-950 mt-6 mb-3 border-b pb-1.5 border-indigo-100 uppercase tracking-wide" {...props} />,
+                      h2: ({node, ...props}) => <h2 className="text-xs font-extrabold text-indigo-900 mt-5 mb-2 flex items-center gap-1.5" {...props} />,
+                      h3: ({node, ...props}) => <h3 className="text-xs font-bold text-indigo-800 mt-4 mb-2" {...props} />,
+                      p: ({node, ...props}) => <p className="text-xs text-[#141414]/80 leading-relaxed mb-3" {...props} />,
+                      ul: ({node, ...props}) => <ul className="list-disc pl-5 text-xs text-[#141414]/80 space-y-1.5 mb-4" {...props} />,
+                      ol: ({node, ...props}) => <ol className="list-decimal pl-5 text-xs text-[#141414]/80 space-y-1.5 mb-4" {...props} />,
+                      li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                      strong: ({node, ...props}) => <strong className="font-extrabold text-[#141414]" {...props} />,
+                      blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-indigo-400 pl-4 italic text-[#141414]/70 my-3 bg-indigo-50/20 py-2 rounded-r" {...props} />,
+                    }}
+                  >
+                    {pediatricAnalysis}
+                  </Markdown>
+                ) : (
+                  <p className="text-xs text-indigo-950/40 text-center py-8 font-extrabold">Pediatric Audit Report data not loaded.</p>
+                )
+              )}
             </div>
           </div>
         )}

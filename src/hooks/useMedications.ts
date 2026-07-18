@@ -57,7 +57,9 @@ export function useMedications(locationId?: PharmacyLocation) {
   useEffect(() => {
     if (!db) {
       const loadShared = async () => {
-        setLoading(true);
+        if (!hasInitialData.current) {
+          setLoading(true);
+        }
         await refresh();
         setLoading(false);
       };
@@ -98,7 +100,9 @@ export function useMedications(locationId?: PharmacyLocation) {
       };
     }
 
-    setLoading(true);
+    if (!hasInitialData.current) {
+      setLoading(true);
+    }
     const medsRef = collection(db, 'medications');
     let q = query(medsRef, orderBy('itemName', 'asc'));
 
