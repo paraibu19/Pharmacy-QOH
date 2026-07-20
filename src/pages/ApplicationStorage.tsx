@@ -514,10 +514,10 @@ export default function ApplicationStorage() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#141414]/5 pb-4">
           <div>
             <h3 className="text-sm font-black text-[#141414] uppercase tracking-wide">
-              Global Entry Mistakes Data Library
+              Global centralized repository of verified workload transcription entry mistakes and item mismatches.
             </h3>
             <p className="text-xs text-[#141414]/60">
-              Browse securely logged clinical pharmacist dispensing errors. Access reports and trace workload logs.
+              Showing filtered list of identified pharmacists and medication transaction entries discrepancies.
             </p>
           </div>
 

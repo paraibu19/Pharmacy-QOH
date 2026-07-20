@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   BarChart3, 
   Calendar, 
@@ -17,7 +17,11 @@ import {
   ShieldAlert, 
   CheckCircle,
   FileDown,
-  Sparkles
+  Sparkles,
+  Upload,
+  Loader2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { WorkloadRecord } from '../types';
@@ -63,6 +67,588 @@ export default function AdminWorkload() {
   const [resetError, setResetError] = useState('');
   const [resetSuccess, setResetSuccess] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+
+  // Multiple Excel Upload State
+  const [dbState, setDbState] = useState<{
+    configured: boolean;
+    parameters: any[];
+    pharmacists: any[];
+  }>({
+    configured: false,
+    parameters: [],
+    pharmacists: []
+  });
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadProgressPercent, setUploadProgressPercent] = useState<number | null>(null);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState('');
+  const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [diagnosticLogs, setDiagnosticLogs] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const extractFuzzyValueCache = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    const fetchDb = async () => {
+      try {
+        const res = await fetch('/api/entry-mistakes/db');
+        if (res.ok) {
+          const data = await res.json();
+          setDbState({
+            configured: !!data?.configured,
+            parameters: Array.isArray(data?.parameters) ? data.parameters : [],
+            pharmacists: Array.isArray(data?.pharmacists) ? data.pharmacists : []
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load database parameters for validation:', err);
+      }
+    };
+    fetchDb();
+  }, []);
+
+  const formatActionDateTime = (val: any): string => {
+    if (!val) return 'N/A';
+    let date: Date;
+    if (val instanceof Date) {
+      date = val;
+    } else if (typeof val === 'number') {
+      const ms = (val - 25569) * 86400 * 1000;
+      date = new Date(ms);
+    } else {
+      const strVal = String(val).trim();
+      if (!strVal || strVal.toLowerCase() === 'n/a') return 'N/A';
+      if (/^\d+(\.\d+)?$/.test(strVal)) {
+        const ms = (parseFloat(strVal) - 25569) * 86400 * 1000;
+        date = new Date(ms);
+      } else {
+        date = new Date(strVal);
+        if (isNaN(date.getTime())) {
+          const slashParts = strVal.split(/[\/\-\s:]+/);
+          if (slashParts.length >= 5) {
+            const p1 = parseInt(slashParts[0], 10);
+            const p2 = parseInt(slashParts[1], 10);
+            const p3 = parseInt(slashParts[2], 10);
+            const hr = parseInt(slashParts[3], 10);
+            const min = parseInt(slashParts[4], 10);
+            const sec = slashParts[5] ? parseInt(slashParts[5], 10) : 0;
+            if (p3 > 1000) {
+              if (p1 > 12) {
+                date = new Date(p3, p2 - 1, p1, hr, min, sec);
+              } else {
+                date = new Date(p3, p1 - 1, p2, hr, min, sec);
+              }
+            }
+          }
+        }
+      }
+    }
+    if (isNaN(date.getTime())) return String(val);
+    return format(date, 'yyyy-MM-dd HH:mm:ss');
+  };
+
+  const extractFuzzyValue = (row: any, candidates: string[], cache?: Record<string, string>): string => {
+    if (!row) return '';
+    const cacheKey = candidates[0];
+    const activeCache = cache || extractFuzzyValueCache.current;
+    const cachedField = activeCache[cacheKey];
+    if (cachedField !== undefined) {
+      return cachedField ? String(row[cachedField] || '').trim() : '';
+    }
+    for (const cand of candidates) {
+      if (row[cand] !== undefined && row[cand] !== null) {
+        activeCache[cacheKey] = cand;
+        return String(row[cand]).trim();
+      }
+    }
+    const keys = Object.keys(row);
+    for (const cand of candidates) {
+      const normCand = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const k of keys) {
+        const normK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normK === normCand) {
+          activeCache[cacheKey] = k;
+          return String(row[k]).trim();
+        }
+      }
+    }
+    for (const cand of candidates) {
+      const normCand = cand.toLowerCase();
+      for (const k of keys) {
+        const normK = k.toLowerCase();
+        if (normK.includes(normCand) || normCand.includes(normK)) {
+          activeCache[cacheKey] = k;
+          return String(row[k]).trim();
+        }
+      }
+    }
+    activeCache[cacheKey] = '';
+    return '';
+  };
+
+  const isLocationMatches = (loc1: string, loc2: string): boolean => {
+    const clean1 = (loc1 || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
+    const clean2 = (loc2 || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
+    if (!clean1 || !clean2) return false;
+    if (clean1 === clean2) return true;
+    const stripChars = (val: string) => val.replace(/[^a-z0-9]/g, '');
+    const stripped1 = stripChars(clean1);
+    const stripped2 = stripChars(clean2);
+    if (stripped1 === stripped2 || stripped1.includes(stripped2) || stripped2.includes(stripped1)) {
+      return true;
+    }
+    const resolveGroup = (val: string): string => {
+      const cleanVal = val.toLowerCase().trim();
+      if (cleanVal.includes('pediatric') || cleanVal.includes('ped') || cleanVal.includes('peds') || cleanVal.includes('child') || cleanVal.includes('kids') || cleanVal.includes('infant')) {
+        return 'pediatric';
+      }
+      if (cleanVal.includes('mesaieed') || cleanVal.includes('mesai') || cleanVal.includes('msd') || cleanVal.includes('mes') || cleanVal.includes('gopd') || cleanVal.includes('aw ms gopd rx') || cleanVal.includes('aw ms gopd')) {
+        return 'mesaieed';
+      }
+      if (cleanVal.includes('adult') || cleanVal.includes('emergency') || cleanVal.includes('male') || cleanVal.includes('main') || cleanVal.includes('ip') || cleanVal.includes('opd') || cleanVal.includes('a&e') || cleanVal.includes('a/e') || cleanVal.includes('a & e') || cleanVal.includes('a and e') || cleanVal.includes('ae') || cleanVal.includes('er') || cleanVal.includes('acc') || cleanVal.includes('trauma') || cleanVal.includes('general') || cleanVal.includes('casualty')) {
+        return 'adult';
+      }
+      return cleanVal;
+    };
+    return resolveGroup(clean1) === resolveGroup(clean2);
+  };
+
+  const parseSheetWithDynamicHeader = (ws: XLSX.WorkSheet): any[] => {
+    const wsRows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+    if (wsRows.length === 0) return [];
+    const headerKeywords = [
+      'item number', 'item code', 'dispense quantity', 'dispensed quantity', 'qty',
+      'person name', 'patient name', 'mrn', 'pharmacy location', 'action personnel', 'action date'
+    ];
+    let headerIndex = -1;
+    let maxMatchedKeywords = 0;
+    for (let i = 0; i < Math.min(wsRows.length, 25); i++) {
+      const row = wsRows[i];
+      if (!row || !Array.isArray(row)) continue;
+      let matchCount = 0;
+      for (const cell of row) {
+        if (cell !== undefined && cell !== null) {
+          const cellStr = String(cell).toLowerCase().trim();
+          if (headerKeywords.some(keyword => cellStr.includes(keyword))) {
+            matchCount++;
+          }
+        }
+      }
+      if (matchCount > maxMatchedKeywords && matchCount >= 2) {
+        maxMatchedKeywords = matchCount;
+        headerIndex = i;
+      }
+    }
+    if (headerIndex === -1) {
+      for (let i = 0; i < wsRows.length; i++) {
+        const row = wsRows[i];
+        if (row && row.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '')) {
+          headerIndex = i;
+          break;
+        }
+      }
+    }
+    if (headerIndex === -1) return [];
+    const headers = wsRows[headerIndex].map(h => (h !== undefined && h !== null) ? String(h).trim() : '');
+    const dataRows: any[] = [];
+    for (let i = headerIndex + 1; i < wsRows.length; i++) {
+      const row = wsRows[i];
+      if (!row || row.length === 0) continue;
+      const hasData = row.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '');
+      if (!hasData) continue;
+      const rowObj: any = {};
+      headers.forEach((header, colIdx) => {
+        if (header) {
+          rowObj[header] = row[colIdx];
+        } else {
+          rowObj[`__EMPTY_${colIdx}`] = row[colIdx];
+        }
+      });
+      dataRows.push(rowObj);
+    }
+    return dataRows;
+  };
+
+  const parseSingleWorkloadFile = (file: File): Promise<any[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const ab = e.target?.result;
+          const wb = XLSX.read(ab, { type: 'array' });
+          let targetSheetName = wb.SheetNames.find(n => {
+            const sName = n.trim().toLowerCase();
+            return sName.includes('yesterday hbkmc workload') || 
+                   (sName.includes('yesterday') && sName.includes('workload') && sName.includes('detai')) ||
+                   sName.includes('hbkmc workload') ||
+                   sName.includes('yesterday hbkmc');
+          });
+          if (!targetSheetName) {
+            let maxScore = 0;
+            let bestSheet = '';
+            const workloadKeywords = [
+              'item number', 'item code', 'dispense quantity', 'dispensed quantity', 
+              'mrn', 'pharmacy location', 'action personnel', 'action date'
+            ];
+            for (const sName of wb.SheetNames) {
+              const ws = wb.Sheets[sName];
+              const wsRows = XLSX.utils.sheet_to_json(ws, { header: 1, range: 0 }) as any[][];
+              if (!wsRows || wsRows.length === 0) continue;
+              let matches = 0;
+              for (let i = 0; i < Math.min(wsRows.length, 15); i++) {
+                const r = wsRows[i];
+                if (!r || !Array.isArray(r)) continue;
+                for (const cell of r) {
+                  if (cell !== undefined && cell !== null) {
+                    const cStr = String(cell).toLowerCase();
+                    if (workloadKeywords.some(kw => cStr.includes(kw))) {
+                      matches++;
+                    }
+                  }
+                }
+              }
+              if (matches > maxScore) {
+                maxScore = matches;
+                bestSheet = sName;
+              }
+            }
+            if (maxScore >= 2 && bestSheet) {
+              targetSheetName = bestSheet;
+            }
+          }
+          if (!targetSheetName) {
+            targetSheetName = wb.SheetNames.find(n => n.trim().toLowerCase().includes('detai'));
+          }
+          if (!targetSheetName) {
+            targetSheetName = wb.SheetNames.find(n => {
+              const sName = n.trim().toLowerCase();
+              return sName.includes('workload') && !sName.includes('location') && !sName.includes('staff');
+            });
+          }
+          if (!targetSheetName && wb.SheetNames.length >= 3) {
+            targetSheetName = wb.SheetNames[2];
+          }
+          if (!targetSheetName && wb.SheetNames.length > 0) {
+            targetSheetName = wb.SheetNames[0];
+          }
+          if (!targetSheetName) {
+            throw new Error(`The file "${file.name}" does not contain a workload worksheet.`);
+          }
+          const ws = wb.Sheets[targetSheetName];
+          const rawJson = parseSheetWithDynamicHeader(ws);
+          if (rawJson.length === 0) {
+            throw new Error(`The worksheet "${targetSheetName}" is empty.`);
+          }
+          resolve(rawJson);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const parseAndProcessWorkload = async (files: FileList | File[]) => {
+    extractFuzzyValueCache.current = {};
+    setUploadLoading(true);
+    setUploadProgressMsg('Starting parser session...');
+    setUploadProgressPercent(0);
+    setUploadError('');
+    setDiagnosticLogs([]);
+
+    const logDiag = (msg: string) => {
+      setDiagnosticLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+      console.log(`[Upload Diagnostics] ${msg}`);
+    };
+
+    try {
+      const fileArray = Array.from(files);
+      if (fileArray.length === 0) {
+        setUploadLoading(false);
+        return;
+      }
+
+      logDiag(`Selected files count: ${fileArray.length}`);
+      const allStructuredRows: any[] = [];
+
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
+        const pct = Math.round((i / fileArray.length) * 20);
+        setUploadProgressPercent(pct);
+        setUploadProgressMsg(`Parsing file ${i + 1} of ${fileArray.length} (${file.name})...`);
+        logDiag(`Parsing "${file.name}"...`);
+        await new Promise(resolve => setTimeout(resolve, 30));
+
+        try {
+          const rawRows = await parseSingleWorkloadFile(file);
+          logDiag(`Parsed ${file.name} - found ${rawRows.length} raw rows.`);
+          const fileSpecificCache: Record<string, string> = {};
+
+          for (let j = 0; j < rawRows.length; j++) {
+            const rawRow = rawRows[j];
+
+            const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime'], fileSpecificCache);
+            const actionDateTime = formatActionDateTime(actionDateTimeRaw);
+            const facilityOrder = extractFuzzyValue(rawRow, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order'], fileSpecificCache);
+            const nursingLocationOrder = extractFuzzyValue(rawRow, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order'], fileSpecificCache);
+            const encounterType = extractFuzzyValue(rawRow, ['Encounter Type', 'EncounterType', 'Encounter_Type'], fileSpecificCache);
+            const orderDateTimePhysicianRaw = extractFuzzyValue(rawRow, ['Order Date & Time - Physician', 'Order Date & Time', 'Order Date and Time - Physician', 'Order Date & Time -Physician', 'Order Date and Time'], fileSpecificCache);
+            const orderDateTimePhysician = formatActionDateTime(orderDateTimePhysicianRaw);
+            const lastUpdateProvider = extractFuzzyValue(rawRow, ['Last Update Provider', 'LastUpdateProvider', 'Last_Update_Provider', 'Provider'], fileSpecificCache);
+            const mrnOrganization = extractFuzzyValue(rawRow, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization'], fileSpecificCache);
+            const personNameFull = extractFuzzyValue(rawRow, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name'], fileSpecificCache);
+            const sex = extractFuzzyValue(rawRow, ['Sex', 'Gender', 'M/F'], fileSpecificCache);
+            const nationality = extractFuzzyValue(rawRow, ['Nationality', 'Nation', 'Country'], fileSpecificCache);
+            const ageYearsVisit = extractFuzzyValue(rawRow, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years'], fileSpecificCache);
+            const parentOrderId = extractFuzzyValue(rawRow, ['Parent Order ID', 'Parent Order Id', 'Parent_Order_ID', 'ParentOrderID'], fileSpecificCache);
+            const orderEntryMode = extractFuzzyValue(rawRow, ['Order Entry Mode', 'OrderEntryMode', 'Order_Entry_Mode'], fileSpecificCache);
+            const mnemonicName = extractFuzzyValue(rawRow, ['Mnemonic Name', 'MnemonicName', 'Mnemonic'], fileSpecificCache);
+            const orderedAsMnemonic = extractFuzzyValue(rawRow, ['Ordered As Mnemonic', 'OrderedAsMnemonic', 'Ordered As'], fileSpecificCache);
+            const orderDisplayLine = extractFuzzyValue(rawRow, ['Order Display Line', 'OrderDisplayLine'], fileSpecificCache);
+            const prn = extractFuzzyValue(rawRow, ['PRN'], fileSpecificCache);
+            const oci = extractFuzzyValue(rawRow, ['OCI'], fileSpecificCache);
+            const orderComments = extractFuzzyValue(rawRow, ['Order Comments', 'OrderComments', 'Comments'], fileSpecificCache);
+            const physicianOrdering = extractFuzzyValue(rawRow, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician'], fileSpecificCache);
+            const pharmacyLocation = extractFuzzyValue(rawRow, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location'], fileSpecificCache);
+            const actionType = extractFuzzyValue(rawRow, ['Action Type', 'Type', 'Action_Type'], fileSpecificCache);
+            const childOrderId = extractFuzzyValue(rawRow, ['Child Order ID', 'Child Order Id', 'Child_Order_ID', 'ChildOrderID'], fileSpecificCache);
+            const itemId = extractFuzzyValue(rawRow, ['Item Id', 'ItemId', 'Item_Id'], fileSpecificCache);
+            const itemNumber = extractFuzzyValue(rawRow, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item'], fileSpecificCache);
+            const labelDescription = extractFuzzyValue(rawRow, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name'], fileSpecificCache);
+            const pharmacyDisplayLine = extractFuzzyValue(rawRow, ['Pharmacy Display Line', 'PharmacyDisplayLine'], fileSpecificCache);
+            const pharmacySig = extractFuzzyValue(rawRow, ['Pharmacy SIG', 'PharmacySIG', 'SIG'], fileSpecificCache);
+            const pharmacyExpandedSig = extractFuzzyValue(rawRow, ['Pharmacy Expanded SIG', 'Pharmacy Expanded SIG', 'PharmacyExpandedSIG', 'Expanded SIG'], fileSpecificCache);
+            const dispenseUnit = extractFuzzyValue(rawRow, ['Dispense Unit', 'DispenseUnit', 'Unit'], fileSpecificCache);
+            const billQuantity = extractFuzzyValue(rawRow, ['Bill Quantity', 'BillQuantity', 'Bill Qty'], fileSpecificCache);
+            const actionPersonnelPharmacy = extractFuzzyValue(rawRow, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy'], fileSpecificCache);
+            const departmentOrderStatus = extractFuzzyValue(rawRow, ['Department Order Status', 'DepartmentOrderStatus'], fileSpecificCache);
+            const orderStatus = extractFuzzyValue(rawRow, ['Order Status', 'OrderStatus'], fileSpecificCache);
+            const dispenseDateTime = extractFuzzyValue(rawRow, ['Dispense Date & Time', 'Dispense Date and Time', 'Dispense Date', 'Dispense Date/Time'], fileSpecificCache);
+            const dispenseEventTypeVar = extractFuzzyValue(rawRow, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event'], fileSpecificCache);
+            const productDispenseHXID = extractFuzzyValue(rawRow, ['Product Dispense HX ID', 'Product Dispense HX Id', 'ProductDispenseHXID', 'HX ID', 'HX_ID'], fileSpecificCache);
+            const dispenseQuantity = extractFuzzyValue(rawRow, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity'], fileSpecificCache);
+            const trackingItemId = extractFuzzyValue(rawRow, ['Tracking Item Id', 'Tracking Item ID', 'TrackingItemId', 'Tracking_Item_ID'], fileSpecificCache);
+
+            if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) continue;
+
+            const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
+            if (!isNaN(parsedDispenseQty) && parsedDispenseQty < 0) continue;
+
+            allStructuredRows.push({
+              actionDateTime,
+              facilityOrder,
+              nursingLocationOrder,
+              encounterType,
+              orderDateTimePhysician,
+              lastUpdateProvider,
+              mrnOrganization,
+              personNameFull,
+              sex,
+              nationality,
+              ageYearsVisit,
+              parentOrderId,
+              orderEntryMode,
+              mnemonicName,
+              orderedAsMnemonic,
+              orderDisplayLine,
+              prn,
+              oci,
+              orderComments,
+              physicianOrdering,
+              pharmacyLocation,
+              actionType,
+              childOrderId,
+              itemId,
+              itemNumber,
+              labelDescription,
+              dispenseQuantity,
+              pharmacyDisplayLine,
+              pharmacySig,
+              pharmacyExpandedSig,
+              dispenseUnit,
+              billQuantity,
+              actionPersonnelPharmacy,
+              departmentOrderStatus,
+              orderStatus,
+              vDispenseDateTime: formatActionDateTime(dispenseDateTime),
+              vDispenseEventType: dispenseEventTypeVar,
+              vProductDispenseHXID: productDispenseHXID,
+              vDispenseQuantity: dispenseQuantity,
+              vTrackingItemId: trackingItemId
+            });
+          }
+          rawRows.length = 0;
+        } catch (singleErr: any) {
+          logDiag(`Error parsing file ${file.name}: ${singleErr?.message || singleErr}`);
+        }
+      }
+
+      logDiag(`Total structured records in buffer: ${allStructuredRows.length}`);
+      if (allStructuredRows.length === 0) {
+        throw new Error('All uploaded files had empty workloads or failed to parse.');
+      }
+
+      // Evaluate Parameter Database Matching for mistargets / reasons
+      const evaluated: WorkloadRecord[] = [];
+      allStructuredRows.forEach((row, index) => {
+        const reasons: string[] = [];
+        
+        const normalizedPharmacist = String(row.actionPersonnelPharmacy || '').toLowerCase().trim();
+        const pharmacistConfig = (dbState.pharmacists || []).find(p => String(p.name || '').toLowerCase().trim() === normalizedPharmacist);
+        
+        if (!pharmacistConfig && row.actionPersonnelPharmacy) {
+          reasons.push(`Action Personnel "${row.actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
+        }
+
+        const normalizedItemNum = String(row.itemNumber || '').toLowerCase().trim();
+        const matchedItemDbParameters = (dbState.parameters || []).filter(p => String(p.itemNumber || '').toLowerCase().trim() === normalizedItemNum);
+
+        if (matchedItemDbParameters.length === 0) {
+          if (row.itemNumber) {
+            reasons.push(`Item Number ${row.itemNumber} is not registered in base Parameter sheet`);
+          }
+        } else {
+          const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, row.pharmacyLocation));
+          if (!locationConfigWord) {
+            if (row.pharmacyLocation) {
+              reasons.push(`Item ${row.itemNumber} is not configured to be dispensed from "${row.pharmacyLocation}" location`);
+            }
+          } else {
+            const allowedList = locationConfigWord.allowedQuantities;
+            const normalizedDispQty = String(row.dispenseQuantity || '').trim();
+            const dNum = Number(normalizedDispQty);
+            const isAllowed = allowedList.some(allowVal => {
+              const aNum = Number(allowVal);
+              if (!isNaN(dNum) && !isNaN(aNum)) return dNum === aNum;
+              return allowVal.toLowerCase().trim() === normalizedDispQty.toLowerCase();
+            });
+            if (!isAllowed && normalizedDispQty !== '') {
+              reasons.push(`Dispense Qty "${row.dispenseQuantity}" is unmatched (Allowed: [${allowedList.join(', ')}])`);
+            }
+          }
+        }
+
+        const uniqueId = `workload-rec-${index}-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`;
+        evaluated.push({
+          id: uniqueId,
+          actionDateTime: row.actionDateTime,
+          mrnOrganization: row.mrnOrganization,
+          personNameFull: row.personNameFull,
+          sex: row.sex,
+          nationality: row.nationality,
+          pharmacyLocation: row.pharmacyLocation,
+          actionType: row.actionType,
+          itemNumber: row.itemNumber,
+          labelDescription: row.labelDescription,
+          dispenseQuantity: row.dispenseQuantity,
+          actionPersonnelPharmacy: row.actionPersonnelPharmacy,
+          reasons,
+          isMismatch: reasons.length > 0,
+          isExcludedByVariance: false,
+          facilityOrder: row.facilityOrder,
+          nursingLocationOrder: row.nursingLocationOrder,
+          encounterType: row.encounterType,
+          ageYearsVisit: row.ageYearsVisit,
+          physicianOrdering: row.physicianOrdering,
+          dispenseEventType: row.vDispenseEventType
+        });
+      });
+
+      // Save to server
+      const uploadFilenames = fileArray.map(f => f.name);
+      if (evaluated.length <= 1500) {
+        logDiag(`Saving ${evaluated.length} records to server...`);
+        setUploadProgressPercent(85);
+        setUploadProgressMsg(`Saving ${evaluated.length} records to server database...`);
+        const saveRes = await fetch('/api/workload-records', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ records: evaluated, filenames: uploadFilenames })
+        });
+        if (!saveRes.ok) throw new Error('Failed to save records.');
+        setUploadProgressPercent(100);
+        setUploadProgressMsg('Saved successfully!');
+      } else {
+        logDiag(`Initializing chunked bulk upload for ${evaluated.length} records...`);
+        setUploadProgressPercent(40);
+        setUploadProgressMsg('Initializing bulk upload session...');
+        const startRes = await fetch('/api/workload-records/upload/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const { uploadId } = await startRes.json();
+        logDiag(`Session ID created: ${uploadId}`);
+
+        const CHUNK_SIZE = 1500;
+        const totalChunks = Math.ceil(evaluated.length / CHUNK_SIZE);
+        for (let i = 0; i < evaluated.length; i += CHUNK_SIZE) {
+          const chunkItems = evaluated.slice(i, i + CHUNK_SIZE);
+          const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
+          const ratio = i / evaluated.length;
+          const pct = Math.round(40 + ratio * 50);
+
+          setUploadProgressPercent(pct);
+          setUploadProgressMsg(`Saving database: chunk ${chunkIndex} of ${totalChunks}...`);
+          logDiag(`Sending chunk ${chunkIndex}/${totalChunks}...`);
+
+          const chunkRes = await fetch('/api/workload-records/upload/chunk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uploadId, items: chunkItems })
+          });
+          if (!chunkRes.ok) throw new Error(`Failed to upload chunk starting at index ${i}`);
+          
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        logDiag('Finishing chunked session. Running deduplication and backup...');
+        setUploadProgressPercent(95);
+        setUploadProgressMsg('Finalizing database upload and deduplicating...');
+        const endRes = await fetch('/api/workload-records/upload/end', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uploadId, filenames: uploadFilenames })
+        });
+        if (!endRes.ok) throw new Error('Failed to finalize upload session.');
+        setUploadProgressPercent(100);
+        setUploadProgressMsg('Records saved successfully!');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+      fetchWorkloadData(); // REFRESH THE PAGE RECORDS IMMEDIATELY
+    } catch (err: any) {
+      logDiag(`Upload Error: ${err.message}`);
+      setUploadError(err.message || 'Parsing / Uploading failed.');
+    } finally {
+      setUploadLoading(false);
+      setUploadProgressPercent(null);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      parseAndProcessWorkload(files);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingUpload(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDraggingUpload(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingUpload(false);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      parseAndProcessWorkload(files);
+    }
+  };
 
   // AI Audit State
   const [adultAnalysis, setAdultAnalysis] = useState<string | null>(null);
@@ -849,6 +1435,108 @@ export default function AdminWorkload() {
         </div>
       </div>
 
+      {/* Isolated Multi-File Excel Uploader Zone */}
+      <div className="bg-white border border-[#141414]/10 rounded-3xl p-6 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-[#141414] flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-indigo-600" />
+              <span>Upload Workload Spreadsheet Files</span>
+            </h2>
+            <p className="text-xs text-[#141414]/50 mt-1 font-medium">
+              Upload multiple yesterday HBKMC workload excel sheets to populate the workload analytics database directly.
+            </p>
+          </div>
+          {diagnosticLogs.length > 0 && (
+            <button
+              onClick={() => setDiagnosticLogs([])}
+              className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-all px-3 py-1.5 rounded-lg"
+            >
+              Clear Logs
+            </button>
+          )}
+        </div>
+
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center min-h-[140px] ${
+            isDraggingUpload
+              ? 'border-indigo-600 bg-indigo-50/50'
+              : 'border-[#141414]/15 hover:border-[#141414]/30 hover:bg-[#141414]/5'
+          }`}
+        >
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept=".xlsx,.xls"
+            multiple
+            className="hidden"
+          />
+
+          {uploadLoading ? (
+            <div className="space-y-4 w-full max-w-md">
+              <div className="flex items-center justify-center gap-3">
+                <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
+                <span className="text-sm font-bold text-[#141414]">{uploadProgressMsg}</span>
+              </div>
+              {uploadProgressPercent !== null && (
+                <div className="w-full bg-[#141414]/5 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-indigo-600 h-full transition-all duration-300 rounded-full"
+                    style={{ width: `${uploadProgressPercent}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl inline-block">
+                <Upload className="w-6 h-6" />
+              </div>
+              <p className="text-sm font-bold text-[#141414]">
+                Drag and drop your Excel workload files here, or <span className="text-indigo-600 underline">browse</span>
+              </p>
+              <p className="text-[11px] text-[#141414]/40 font-medium">
+                Supports multiple .xlsx or .xls files from Yesterday HBKMC Workload exports
+              </p>
+            </div>
+          )}
+        </div>
+
+        {uploadError && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <p className="text-xs font-bold text-red-800">Processing Failed</p>
+              <p className="text-xs text-red-700/80 font-medium">{uploadError}</p>
+            </div>
+            <button
+              onClick={() => setUploadError('')}
+              className="text-xs font-bold text-red-600 bg-red-100 hover:bg-red-200 transition-all px-2 py-1 rounded-md"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {diagnosticLogs.length > 0 && (
+          <div className="border border-[#141414]/10 rounded-xl overflow-hidden bg-[#141414]/5">
+            <div className="bg-[#141414]/5 px-4 py-2 border-b border-[#141414]/10 flex justify-between items-center text-xs font-bold text-[#141414]">
+              <span>Parsing & Upload Logs ({diagnosticLogs.length})</span>
+            </div>
+            <div className="p-3 max-h-40 overflow-y-auto font-mono text-[11px] text-[#141414]/70 space-y-1 scrollbar-thin">
+              {diagnosticLogs.map((log, idx) => (
+                <div key={idx} className="leading-relaxed border-b border-[#141414]/5 pb-1 last:border-0">{log}</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Overview Analytics Dashboard */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {/* 1. Total records */}
@@ -1052,6 +1740,7 @@ export default function AdminWorkload() {
             <option value="all">AWH-Emergency Pharmacy (Total)</option>
             <option value="adult">Adult Emergency Pharmacy</option>
             <option value="pediatric">Pediatric Pharmacy</option>
+            <option value="mesaieed">Mesaieed OPD Pharmacy</option>
           </select>
 
           {/* Mismatch filter toggle */}
@@ -1089,6 +1778,7 @@ export default function AdminWorkload() {
                 <option value="all">AWH-Emergency Pharmacy (Total Trend)</option>
                 <option value="adult">Adult Emergency Pharmacy</option>
                 <option value="pediatric">Pediatric Pharmacy</option>
+                <option value="mesaieed">Mesaieed OPD Pharmacy</option>
               </select>
               <div className="flex items-center gap-1.5">
                 <span className="flex w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>

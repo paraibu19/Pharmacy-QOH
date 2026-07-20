@@ -3,6 +3,51 @@ import {
   serverTimestamp, writeBatch, query, where, getDocs, getDoc, setDoc 
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
+
+class FirestoreWriteQueue {
+  private promise: Promise<any> = Promise.resolve();
+
+  async enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const nextPromise = this.promise.then(async () => {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Firestore operation timed out')), 10000);
+        });
+        const result = await Promise.race([operation(), timeoutPromise]);
+        await new Promise(resolve => setTimeout(resolve, 800));
+        return result;
+      } catch (err: any) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+        throw err;
+      }
+    });
+    this.promise = nextPromise.catch(() => {});
+    return nextPromise;
+  }
+}
+
+const firestoreWriteQueue = new FirestoreWriteQueue();
+
+async function queuedAddDoc(colRef: any, data: any) {
+  return firestoreWriteQueue.enqueue(() => addDoc(colRef, data));
+}
+
+async function queuedUpdateDoc(docRef: any, data: any) {
+  return firestoreWriteQueue.enqueue(() => updateDoc(docRef, data));
+}
+
+async function queuedDeleteDoc(docRef: any) {
+  return firestoreWriteQueue.enqueue(() => deleteDoc(docRef));
+}
+
+async function queuedSetDoc(docRef: any, data: any, options?: any) {
+  return firestoreWriteQueue.enqueue(() => options ? setDoc(docRef, data, options) : setDoc(docRef, data));
+}
+
+async function queuedCommit(batch: any) {
+  return firestoreWriteQueue.enqueue(() => batch.commit());
+}
+
 import { Medication, PharmacyLocation } from '../types';
 import { sharedDb } from './sharedDb';
 import { localDb } from './localStorageDb';
@@ -119,7 +164,7 @@ export const medicationOps = {
         throw new Error(`Item code ${med.itemCode} already exists in this location.`);
       }
 
-      const result = await addDoc(collection(db, path), cleanUndefined({
+      const result = await queuedAddDoc(collection(db, path), cleanUndefined({
         ...dataToSave,
         addedAt: serverTimestamp(),
         lastUpdatedAt: serverTimestamp(),
@@ -141,7 +186,7 @@ export const medicationOps = {
     }
     const path = `medications/${id}`;
     try {
-      const result = await updateDoc(doc(db, 'medications', id), cleanUndefined({
+      const result = await queuedUpdateDoc(doc(db, 'medications', id), cleanUndefined({
         ...dataToSave,
         lastUpdatedAt: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system',
@@ -180,15 +225,16 @@ export const medicationOps = {
         }));
 
         count++;
-        if (count >= 500) {
-          await batch.commit();
+        if (count >= 150) {
+          await queuedCommit(batch);
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
           batch = writeBatch(db);
           count = 0;
         }
       }
 
       if (count > 0) {
-        await batch.commit();
+        await queuedCommit(batch);
       }
       await systemOps.syncGlobalMetadata();
     } catch (error) {
@@ -202,7 +248,7 @@ export const medicationOps = {
     }
     const path = `medications/${id}`;
     try {
-      const result = await deleteDoc(doc(db, 'medications', id));
+      const result = await queuedDeleteDoc(doc(db, 'medications', id));
       await systemOps.syncGlobalMetadata();
       return result;
     } catch (error) {
@@ -346,7 +392,7 @@ export const medicationOps = {
 
         opCount++;
         processedCount++;
-        if (opCount >= 500) {
+        if (opCount >= 150) {
           if (onProgress) {
             onProgress({
               current: processedCount,
@@ -354,7 +400,8 @@ export const medicationOps = {
               stage: `Saving medications: batch commit (${processedCount} / ${meds.length})`
             });
           }
-          await currentBatch.commit();
+          await queuedCommit(currentBatch);
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
           currentBatch = writeBatch(db);
           opCount = 0;
         }
@@ -368,7 +415,7 @@ export const medicationOps = {
             stage: `Finalizing bulk import commit (${meds.length} / ${meds.length})`
           });
         }
-        await currentBatch.commit();
+        await queuedCommit(currentBatch);
       }
       
       if (onProgress) {
@@ -436,12 +483,13 @@ export const auditOps = {
       recordedQoh,
       variance: physicalCount - recordedQoh,
       auditedAt: serverTimestamp(),
+      auditedAtServer: serverTimestamp(),
       auditedBy: auth?.currentUser?.uid || auditedBy,
       correctionTimestamp: timestampStr,
     }));
 
     try {
-      await batch.commit();
+      await queuedCommit(batch);
       await systemOps.syncGlobalMetadata();
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'audit_reconciliation');
@@ -454,7 +502,7 @@ export const systemOps = {
     if (!db) return;
     try {
       const metaRef = doc(db, 'system', 'metadata');
-      await setDoc(metaRef, {
+      await queuedSetDoc(metaRef, {
         lastDataUpdate: serverTimestamp(),
         updatedBy: auth?.currentUser?.uid || 'system'
       }, { merge: true });
@@ -480,7 +528,7 @@ export const systemOps = {
         
         if (snapshot.empty) continue;
 
-        // Delete in batches of 500 (Firestore limit)
+        // Delete in batches of 150 to prevent stream exhaustion
         let batch = writeBatch(db);
         let count = 0;
 
@@ -488,15 +536,16 @@ export const systemOps = {
           batch.delete(d.ref);
           count++;
           
-          if (count >= 500) {
-            await batch.commit();
+          if (count >= 150) {
+            await queuedCommit(batch);
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
             batch = writeBatch(db);
             count = 0;
           }
         }
 
         if (count > 0) {
-          await batch.commit();
+          await queuedCommit(batch);
         }
       }
       await systemOps.syncGlobalMetadata();
@@ -518,11 +567,11 @@ export const technicianAuthOps = {
       if (!docSnap.exists()) {
         // Initialize with default if not exists
         try {
-          await updateDoc(docRef, { password: defaultPass, updatedAt: serverTimestamp() }).catch(async (e) => {
+          await queuedUpdateDoc(docRef, { password: defaultPass, updatedAt: serverTimestamp() }).catch(async (e) => {
              // If update fails because it doesn't exist, try set
              const batch = writeBatch(db);
              batch.set(docRef, { password: defaultPass, updatedAt: serverTimestamp() });
-             await batch.commit();
+             await queuedCommit(batch);
           });
         } catch (e) {
           console.warn(`Could not initialize ${portal} password in Firestore, using default.`);
@@ -540,7 +589,7 @@ export const technicianAuthOps = {
     if (!db) return;
     const path = `settings/${portal}_portal`;
     try {
-      await updateDoc(doc(db, 'settings', `${portal}_portal`), {
+      await queuedUpdateDoc(doc(db, 'settings', `${portal}_portal`), {
         password: newPassword,
         updatedAt: serverTimestamp()
       });
@@ -678,15 +727,16 @@ export const translationCacheOps = {
         }, { merge: true });
 
         count++;
-        if (count >= 500) {
-          await batch.commit();
+        if (count >= 150) {
+          await queuedCommit(batch);
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
           batch = writeBatch(db);
           count = 0;
         }
       }
 
       if (count > 0) {
-        await batch.commit();
+        await queuedCommit(batch);
       }
     } catch (err) {
       console.warn('Firestore translation cache write failed:', err);

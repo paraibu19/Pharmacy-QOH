@@ -1,6 +1,6 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { storage, sessionStorage } from './storage';
 
@@ -27,28 +27,12 @@ export const app = isConfigValid
   : null;
 
 export const db = app 
-  ? initializeFirestore(app, { 
-      experimentalForceLongPolling: true,
-      useFetchStreams: false
-    } as any, firebaseConfig.firestoreDatabaseId) 
+  ? initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId) 
   : null;
 export const auth = app ? getAuth(app) : null;
 export const googleProvider = new GoogleAuthProvider();
 
-// Enable offline persistence to save on read units (Spark plan limit is 50k reads/day)
-try {
-  if (db && typeof window !== 'undefined') {
-    enableIndexedDbPersistence(db).catch((err) => {
-      if (err.code === 'failed-precondition') {
-        console.warn("Firestore persistence: Multiple tabs open, only one can have persistence.");
-      } else if (err.code === 'unimplemented') {
-        console.warn("Firestore persistence: Not supported by this browser.");
-      }
-    });
-  }
-} catch (e) {
-  console.warn("Firestore persistence: Error initializing IndexedDB or blocked by browser storage security:", e);
-}
+// Offline persistence is disabled to prevent sticky offline write queue stream exhaustion in iframe environments
 
 // Connection test - Enabled to validate Firestore connection and trigger fallback
 import { doc, getDoc } from 'firebase/firestore';
@@ -60,8 +44,13 @@ async function testConnection() {
   }
 
   try {
-    // Attempt to fetch from server or cache
-    await getDoc(doc(db, 'system', 'metadata'));
+    // Attempt to fetch from server with a timeout to prevent hanging when offline/exhausted
+    const connectionPromise = getDoc(doc(db, 'system', 'metadata'));
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Connection timeout - Firestore service took too long to respond')), 4500)
+    );
+    
+    await Promise.race([connectionPromise, timeoutPromise]);
     console.log("Firebase connection active");
   } catch (error: any) {
     const errMsg = error?.message || String(error);
@@ -73,7 +62,9 @@ async function testConnection() {
                                lowerMsg.includes('unavailable') ||
                                lowerMsg.includes('could not reach') ||
                                lowerMsg.includes('offline') ||
-                               error?.code === 'unavailable';
+                               lowerMsg.includes('timeout') ||
+                               error?.code === 'unavailable' ||
+                               error?.code === 'resource-exhausted';
                                
     if (isFallbackTrigger) {
       console.warn("[Firestore Auto-Fallback] Startup connection test failed. Activating local fallback:", errMsg);
@@ -109,7 +100,27 @@ export interface FirestoreErrorInfo {
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errMsg = error instanceof Error ? error.message : String(error);
+  const lowerMsg = errMsg.toLowerCase();
   
+  const isFallbackTrigger = lowerMsg.includes('quota') || 
+                             lowerMsg.includes('limit') || 
+                             lowerMsg.includes('exhausted') ||
+                             lowerMsg.includes('resource_exhausted') ||
+                             lowerMsg.includes('unavailable') ||
+                             lowerMsg.includes('could not reach') ||
+                             lowerMsg.includes('offline') ||
+                             lowerMsg.includes('timeout') ||
+                             (error && (error as any).code === 'unavailable') ||
+                             (error && (error as any).code === 'resource-exhausted');
+
+  if (isFallbackTrigger) {
+    console.warn("[Firestore Auto-Fallback] Critical Firestore operation error. Activating local fallback:", errMsg);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('firestore_fallback', 'true');
+      safeReload("client_critical_fallback_" + operationType);
+    }
+  }
+
   const errInfo: FirestoreErrorInfo = {
     error: errMsg,
     authInfo: {

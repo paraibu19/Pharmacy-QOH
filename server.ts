@@ -34,16 +34,39 @@ const FieldValue = {
   serverTimestamp: () => serverTimestamp()
 };
 
+class FirestoreWriteQueue {
+  private promise: Promise<any> = Promise.resolve();
+
+  async enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const nextPromise = this.promise.then(async () => {
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Firestore operation timed out')), 10000);
+        });
+        const result = await Promise.race([operation(), timeoutPromise]);
+        // Delay after every write operation to ensure client SDK can safely flush without overloading the GrpcConnection stream.
+        await new Promise(resolve => setTimeout(resolve, 800));
+        return result;
+      } catch (err: any) {
+        // Delay still occurs to prevent a fast-failing loop from spamming the stream.
+        await new Promise(resolve => setTimeout(resolve, 800));
+        throw err;
+      }
+    });
+    this.promise = nextPromise.catch(() => {}); // prevent chain rejection
+    return nextPromise;
+  }
+}
+
+const firestoreWriteQueue = new FirestoreWriteQueue();
+
 class ClientFirestoreAdapter {
   private db: any;
 
   constructor(firebaseConfig: any) {
     const app = getApps().length > 0 ? getApp() : initializeClientApp(firebaseConfig);
     try {
-      this.db = initializeFirestore(app, { 
-        experimentalForceLongPolling: true,
-        useFetchStreams: false
-      } as any, firebaseConfig.firestoreDatabaseId);
+      this.db = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId);
     } catch (e) {
       this.db = getClientFirestore(app, firebaseConfig.firestoreDatabaseId);
     }
@@ -106,7 +129,10 @@ class CollectionRefAdapter {
     } else if (this.path === 'application_storage') {
       q = query(colRef, orderBy('savedAt', 'desc'), limit(1000));
     }
-    const snap = await getDocs(q);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Firestore getDocs timed out')), 10000);
+    });
+    const snap = await Promise.race([getDocs(q), timeoutPromise]) as any;
     return new QuerySnapshotAdapter(snap);
   }
 
@@ -140,20 +166,27 @@ class DocumentRefAdapter {
   }
 
   async get() {
-    const snap = await getDoc(this.ref);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Firestore getDoc timed out')), 10000);
+    });
+    const snap = await Promise.race([getDoc(this.ref), timeoutPromise]) as any;
     return new DocumentSnapshotAdapter(snap);
   }
 
   async set(data: any, options?: any) {
-    if (options) {
-      await setDoc(this.ref, data, options);
-    } else {
-      await setDoc(this.ref, data);
-    }
+    return firestoreWriteQueue.enqueue(async () => {
+      if (options) {
+        await setDoc(this.ref, data, options);
+      } else {
+        await setDoc(this.ref, data);
+      }
+    });
   }
 
   async delete() {
-    await deleteDoc(this.ref);
+    return firestoreWriteQueue.enqueue(async () => {
+      await deleteDoc(this.ref);
+    });
   }
 
   onSnapshot(onNext: any, onError: any) {
@@ -235,7 +268,9 @@ class WriteBatchAdapter {
   }
 
   async commit() {
-    await this.batch.commit();
+    return firestoreWriteQueue.enqueue(async () => {
+      await this.batch.commit();
+    });
   }
 }
 
@@ -243,9 +278,23 @@ dotenv.config();
 
 // Initialize Firebase Client sync adapter
 let adminDb: any = null;
+let lastInitAttemptTime = 0;
+let consecutiveInitFailures = 0;
 
 function tryInitializeAdminDb(force: boolean = false) {
   if (adminDb && !force) return;
+
+  const now = Date.now();
+  const baseDelay = 10000; // 10 seconds
+  const maxDelay = 300000; // 5 minutes
+  const retryDelay = Math.min(baseDelay * Math.pow(2, consecutiveInitFailures), maxDelay);
+
+  if (!force && now - lastInitAttemptTime < retryDelay) {
+    return;
+  }
+
+  lastInitAttemptTime = now;
+
   try {
     const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
     if (fs.existsSync(configPath)) {
@@ -255,13 +304,18 @@ function tryInitializeAdminDb(force: boolean = false) {
       // Asynchronously trigger sync and setup listeners
       syncAllFromFirestoreAtStartup()
         .then(() => {
+          consecutiveInitFailures = 0;
           setupFirestoreListeners();
         })
-        .catch(err => console.error('[Firebase Client Sync] Delayed startup sync failed:', err.message));
+        .catch(err => {
+          consecutiveInitFailures++;
+          console.error('[Firebase Client Sync] Delayed startup sync failed:', err.message);
+        });
     } else {
       console.warn('[Firebase Client Sync] No configuration file found yet. Running in local-only fallback.');
     }
   } catch (err: any) {
+    consecutiveInitFailures++;
     console.warn('[Firebase Client Sync] Initialization failure:', err.message);
   }
 }
@@ -272,11 +326,13 @@ try {
   if (fs.existsSync(configPath)) {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     adminDb = new ClientFirestoreAdapter(config);
+    lastInitAttemptTime = Date.now();
     console.log(`[Firebase Client Sync] Firestore initialized successfully with client credentials for project: ${config.projectId}`);
   } else {
     console.warn('[Firebase Client Sync] No configuration file found. Running in local-only fallback.');
   }
 } catch (err: any) {
+  consecutiveInitFailures++;
   console.warn('[Firebase Client Sync] Graceful initialization failure:', err.message);
 }
 
@@ -663,9 +719,11 @@ function handleAdminDbError(err: any, context: string) {
   );
   
   if (isFallbackTrigger) {
+    consecutiveInitFailures++;
     if (adminDb) {
       console.warn(`[Firebase Sync Fallback] Server credentials, quota, or service state triggered fallback (${context}). Gracefully disabling live server-side Firestore sync and using local filesystem storage fallback.`);
       adminDb = null;
+      cleanupFirestoreListeners();
     }
   } else {
     console.error(`[Firebase Sync] Failed: ${context}:`, errMsg);
@@ -729,8 +787,9 @@ async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
       batch.set(docRef, cleaned, { merge: true });
       
       count++;
-      if (count >= 500) {
+      if (count >= 100) {
         await batch.commit();
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
         count = 0;
       }
@@ -916,14 +975,12 @@ async function updateSystemMetadataInFirestore(): Promise<void> {
   notifyClients('metadata', metaPayload);
 
   if (adminDb) {
-    try {
-      await adminDb.collection('system').doc('metadata').set({
-        lastDataUpdate: new Date(),
-        updatedBy: 'server'
-      }, { merge: true });
-    } catch (err: any) {
+    adminDb.collection('system').doc('metadata').set({
+      lastDataUpdate: new Date(),
+      updatedBy: 'server'
+    }, { merge: true }).catch((err: any) => {
       console.error('[Firebase Admin] Failed to update global metadata:', err.message);
-    }
+    });
   }
 }
 
@@ -1019,7 +1076,12 @@ async function syncApplicationStorageFromFirestore(): Promise<any[]> {
     const snapshot = await adminDb.collection('application_storage').get();
     const items: any[] = [];
     snapshot.forEach(doc => {
-      items.push(parseFirestoreDoc(doc));
+      const data = parseFirestoreDoc(doc);
+      if (data && Array.isArray(data.records)) {
+        items.push(...data.records);
+      } else if (data) {
+        items.push(data);
+      }
     });
     
     if (items.length > 0) {
@@ -1045,19 +1107,21 @@ async function saveMismatchesBulkToFirestore(items: any[]): Promise<void> {
   try {
     let batch = adminDb.batch();
     let count = 0;
+    
     for (const item of items) {
       const id = item.id || `${item.mrnOrganization || ''}_${item.actionDateTime || ''}_${item.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
       const docRef = adminDb.collection('application_storage').doc(id);
-      const cleaned = cleanServerUndefined({
+      const cleanedItem = cleanServerUndefined({
         ...item,
-        id: id,
+        id,
         savedAt: item.savedAt || new Date().toISOString()
       });
-      batch.set(docRef, cleaned, { merge: true });
-      
+      batch.set(docRef, cleanedItem);
       count++;
+      
       if (count >= 500) {
         await batch.commit();
+        await new Promise(resolve => setTimeout(resolve, 500));
         batch = adminDb.batch();
         count = 0;
       }
@@ -1066,37 +1130,41 @@ async function saveMismatchesBulkToFirestore(items: any[]): Promise<void> {
       await batch.commit();
     }
   } catch (err: any) {
-    console.error('[Firebase Sync] Failed bulk-save mismatches to Firestore:', err.message);
-  }
-}
-
-async function deleteMismatchFromFirestore(item: any): Promise<void> {
-  if (!adminDb) return;
-  try {
-    const id = item.id || `${item.mrnOrganization || ''}_${item.actionDateTime || ''}_${item.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
-    await adminDb.collection('application_storage').doc(id).delete();
-  } catch (err: any) {
-    console.error('[Firebase Sync] Failed to delete mismatch from Firestore:', err.message);
+    console.error('[Firebase Sync] Failed chunk-save mismatches to Firestore:', err.message);
   }
 }
 
 async function resetApplicationStorageInFirestore(): Promise<void> {
   if (!adminDb) return;
   try {
-    const snapshot = await adminDb.collection('application_storage').get();
-    let batch = adminDb.batch();
-    let count = 0;
-    for (const doc of snapshot.docs) {
-      batch.delete(doc.ref);
-      count++;
-      if (count >= 500) {
-        await batch.commit();
-        batch = adminDb.batch();
-        count = 0;
+    let hasMore = true;
+    while (hasMore) {
+      const snapshot = await adminDb.collection('application_storage').limit(500).get();
+      if (snapshot.empty) {
+        hasMore = false;
+        break;
       }
-    }
-    if (count > 0) {
-      await batch.commit();
+
+      let batch = adminDb.batch();
+      let count = 0;
+      for (const doc of snapshot.docs) {
+        batch.delete(doc.ref);
+        count++;
+        if (count >= 500) {
+          await batch.commit();
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Throttling delay
+          batch = adminDb.batch();
+          count = 0;
+        }
+      }
+      if (count > 0) {
+        await batch.commit();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      if (snapshot.docs.length < 500) {
+        hasMore = false;
+      }
     }
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to reset application storage in Firestore:', err.message);
@@ -1261,7 +1329,8 @@ async function generateWorkloadSummary(): Promise<any> {
     topStaff: [] as any[],
     locationBreakdown: {
       'adult-emergency': { total: 0, mismatches: 0 },
-      'pediatric': { total: 0, mismatches: 0 }
+      'pediatric': { total: 0, mismatches: 0 },
+      'mesaieed-opd': { total: 0, mismatches: 0 }
     } as any,
     workloadTrend: [] as any[]
   };
@@ -1289,8 +1358,8 @@ async function generateWorkloadSummary(): Promise<any> {
       const rec = JSON.parse(line);
       
       const key = getPharmacyLocationKey(rec.pharmacyLocation);
-      if (key !== 'adult-emergency' && key !== 'pediatric') {
-        continue; // Exclude non-adult/pediatric locations (e.g. Mesaieed OPD) from Workload Analysis
+      if (key !== 'adult-emergency' && key !== 'pediatric' && key !== 'mesaieed-opd') {
+        continue; // Exclude non-core locations (e.g. general outpatient, satellite) from Workload Analysis
       }
       
       summary.total++;
@@ -1456,10 +1525,17 @@ async function saveWorkloadRecordsBulkToFirestore(allItems: any[]): Promise<void
   await saveWorkloadRecordsBulkToFirestoreNdjson();
 }
 
+let isSyncingWorkload = false;
+
 async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
   if (!adminDb) return;
+  if (isSyncingWorkload) {
+    console.log('[Firebase Sync] Workload sync already in progress, skipping concurrent duplicate request.');
+    return;
+  }
+  isSyncingWorkload = true;
   try {
-    const CHUNK_SIZE = 1000;
+    const CHUNK_SIZE = 250;
     let chunkIdx = 0;
     let currentChunk: any[] = [];
     
@@ -1488,12 +1564,19 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
             records: cleanServerUndefined(currentChunk)
           };
           // Save chunk document individually to prevent exceeding WriteBatch payload size limit of 10MB
-          await docRef.set(chunkData, { merge: false });
+          try {
+            await docRef.set(chunkData, { merge: false });
+            await new Promise(resolve => setTimeout(resolve, 800)); // Throttling delay to prevent stream exhaustion
+          } catch (writeErr: any) {
+            console.error(`[Firebase Sync] Failed to write chunk ${chunkIdx}:`, writeErr.message);
+          }
           
           chunkIdx++;
           currentChunk = [];
         }
-      } catch {}
+      } catch (e: any) {
+        // Ignore JSON parse errors for individual lines
+      }
     }
     
     if (currentChunk.length > 0) {
@@ -1518,6 +1601,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
       
       if (cleanupCount >= 400) {
         await cleanupBatch.commit().catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay
         cleanupBatch = adminDb.batch();
         cleanupCount = 0;
       }
@@ -1529,6 +1613,8 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
     console.log(`[Firebase Sync] Successfully saved ${chunkIdx} chunks to 'workload_records'.`);
   } catch (err: any) {
     console.error('[Firebase Sync] Failed chunk-save workload records to Firestore:', err.message);
+  } finally {
+    isSyncingWorkload = false;
   }
 }
 
@@ -1549,6 +1635,7 @@ async function resetWorkloadRecordsInFirestore(): Promise<void> {
         batch.delete(doc.ref);
       }
       await batch.commit();
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
       
       if (snapshot.docs.length < 200) {
         hasMore = false;
@@ -1565,19 +1652,17 @@ async function syncAllFromFirestoreAtStartup() {
     console.log('[Firebase Startup Sync] Firestore admin database not active. Skipping startup pull.');
     return;
   }
-  console.log('[Firebase Startup Sync] Loading persistent data from Firestore...');
+  console.log('[Firebase Startup Sync] Loading persistent data sequentially from Firestore...');
   try {
-    await Promise.all([
-      syncSettingsFromFirestore().catch(e => console.error('Startup settings sync failed:', e.message)),
-      syncMedicationsFromFirestore().catch(e => console.error('Startup medications sync failed:', e.message)),
-      syncAuditsFromFirestore().catch(e => console.error('Startup audits sync failed:', e.message)),
-      syncEntryMistakesDbFromFirestore().catch(e => console.error('Startup parameters DB sync failed:', e.message)),
-      syncApplicationStorageFromFirestore().catch(e => console.error('Startup application storage sync failed:', e.message)),
-      syncSystemMetadataFromFirestore().catch(e => console.error('Startup system metadata sync failed:', e.message)),
-      syncRostersFromFirestore().catch(e => console.error('Startup rosters sync failed:', e.message)),
-      syncWorkloadRecordsFromFirestore().catch(e => console.error('Startup workload records sync failed:', e.message)),
-      syncUploadedFilesFromFirestore().catch(e => console.error('Startup uploaded files sync failed:', e.message))
-    ]);
+    await syncSettingsFromFirestore().catch(e => console.error('Startup settings sync failed:', e.message));
+    await syncMedicationsFromFirestore().catch(e => console.error('Startup medications sync failed:', e.message));
+    await syncAuditsFromFirestore().catch(e => console.error('Startup audits sync failed:', e.message));
+    await syncEntryMistakesDbFromFirestore().catch(e => console.error('Startup parameters DB sync failed:', e.message));
+    await syncApplicationStorageFromFirestore().catch(e => console.error('Startup application storage sync failed:', e.message));
+    await syncSystemMetadataFromFirestore().catch(e => console.error('Startup system metadata sync failed:', e.message));
+    await syncRostersFromFirestore().catch(e => console.error('Startup rosters sync failed:', e.message));
+    await syncWorkloadRecordsFromFirestore().catch(e => console.error('Startup workload records sync failed:', e.message));
+    await syncUploadedFilesFromFirestore().catch(e => console.error('Startup uploaded files sync failed:', e.message));
     console.log('[Firebase Startup Sync] All persistent data loaded successfully!');
   } catch (err: any) {
     console.error('[Firebase Startup Sync] Error during startup fetch:', err.message);
@@ -1712,7 +1797,12 @@ function setupFirestoreListeners() {
       try {
         const items: any[] = [];
         snapshot.forEach((doc: any) => {
-          items.push(parseFirestoreDoc(doc));
+          const data = parseFirestoreDoc(doc);
+          if (data && Array.isArray(data.records)) {
+            items.push(...data.records);
+          } else if (data && !data.chunkId) {
+            items.push(data);
+          }
         });
         items.sort((a, b) => {
           const sa = a.savedAt || '';
@@ -1846,8 +1936,9 @@ async function resetAllInFirestore(): Promise<void> {
     for (const doc of medsSnap.docs) {
       batch.delete(doc.ref);
       count++;
-      if (count >= 500) {
+      if (count >= 100) {
         await batch.commit();
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
         count = 0;
       }
@@ -1861,8 +1952,9 @@ async function resetAllInFirestore(): Promise<void> {
     for (const doc of auditsSnap.docs) {
       batch.delete(doc.ref);
       count++;
-      if (count >= 500) {
+      if (count >= 100) {
         await batch.commit();
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
         count = 0;
       }
@@ -2205,8 +2297,9 @@ app.post('/api/audits/reset', async (req, res) => {
         for (const doc of auditsSnap.docs) {
           batch.delete(doc.ref);
           count++;
-          if (count >= 500) {
+          if (count >= 100) {
             await batch.commit();
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
             batch = adminDb.batch();
             count = 0;
           }
@@ -2379,10 +2472,10 @@ app.post('/api/system/metadata/settings', async (req, res) => {
     fs.writeFileSync(METADATA_SYNC_FILE, JSON.stringify(currentPayload, null, 2));
     
     if (adminDb) {
-      await adminDb.collection('system').doc('metadata').set({
+      adminDb.collection('system').doc('metadata').set({
         isMesaieedHidden: !!isMesaieedHidden,
         lastSettingUpdate: new Date()
-      }, { merge: true });
+      }, { merge: true }).catch((err: any) => console.error(err));
     }
     
     notifyClients('metadata', currentPayload);
@@ -2661,13 +2754,18 @@ app.get('/api/workload-records', async (req, res) => {
           const rec = JSON.parse(line);
           
           const key = getPharmacyLocationKey(rec.pharmacyLocation);
-          if (key !== 'adult-emergency' && key !== 'pediatric') {
-            continue; // Force exclusive Adult and Pediatric emergency pharmacy records only
+          if (key !== 'adult-emergency' && key !== 'pediatric' && key !== 'mesaieed-opd') {
+            continue; // Exclude non-core locations (e.g. general outpatient, satellite) from Workload and Ledger views
           }
           
           if (filterLocation && filterLocation !== 'all') {
+            const cleanRec = (rec.pharmacyLocation || '').toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
+            const cleanSel = filterLocation.toLowerCase().replace(/[\u00A0\s]+/g, ' ').trim();
             const matched = (filterLocation === 'adult' && key === 'adult-emergency') ||
-                            (filterLocation === 'pediatric' && key === 'pediatric');
+                            (filterLocation === 'pediatric' && key === 'pediatric') ||
+                            (filterLocation === 'mesaieed' && key === 'mesaieed-opd') ||
+                            (cleanRec === cleanSel) ||
+                            (key === cleanSel);
             if (!matched) continue;
           }
           
@@ -2730,7 +2828,8 @@ app.get('/api/workload-records', async (req, res) => {
               if (filterTrendLocation && filterTrendLocation !== 'all') {
                 const key = getPharmacyLocationKey(rec.pharmacyLocation);
                 const matched = (filterTrendLocation === 'adult' && key === 'adult-emergency') ||
-                                (filterTrendLocation === 'pediatric' && key === 'pediatric');
+                                (filterTrendLocation === 'pediatric' && key === 'pediatric') ||
+                                (filterTrendLocation === 'mesaieed' && key === 'mesaieed-opd');
                 if (!matched) {
                   matchesTrend = false;
                 }
@@ -2772,18 +2871,19 @@ app.get('/api/workload-records', async (req, res) => {
       .sort((a, b) => a.day.localeCompare(b.day))
       .slice(-10);
       
-    const locationBreakdown = {
+    const locationBreakdown: Record<string, { total: number; mismatches: number }> = {
       'adult-emergency': { total: 0, mismatches: 0 },
-      'pediatric': { total: 0, mismatches: 0 }
+      'pediatric': { total: 0, mismatches: 0 },
+      'mesaieed-opd': { total: 0, mismatches: 0 }
     };
     for (const rec of filteredRecords) {
-      const key = getPharmacyLocationKey(rec.pharmacyLocation);
-      
-      if (key) {
-        locationBreakdown[key as keyof typeof locationBreakdown].total++;
-        if (rec.isMismatch) {
-          locationBreakdown[key as keyof typeof locationBreakdown].mismatches++;
-        }
+      const key = getPharmacyLocationKey(rec.pharmacyLocation) || 'other';
+      if (!locationBreakdown[key]) {
+        locationBreakdown[key] = { total: 0, mismatches: 0 };
+      }
+      locationBreakdown[key].total++;
+      if (rec.isMismatch) {
+        locationBreakdown[key].mismatches++;
       }
     }
     
@@ -2914,8 +3014,8 @@ app.post('/api/workload-records/reset', async (req, res) => {
     }
     
     if (adminDb) {
-      await resetWorkloadRecordsInFirestore().catch(err => console.error(err));
-      await adminDb.collection('system').doc('uploaded_files').set({ files: [] }).catch((err: any) => {
+      resetWorkloadRecordsInFirestore().catch(err => console.error(err));
+      adminDb.collection('system').doc('uploaded_files').set({ files: [] }).catch((err: any) => {
         console.error('[Firebase Reset Error] Failed to reset uploaded files in Firestore:', err.message);
       });
     }
@@ -3239,7 +3339,8 @@ app.post('/api/application-storage', async (req, res) => {
     if (addedCount > 0) {
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
       if (adminDb) {
-        await saveMismatchesBulkToFirestore(newlyAddedItems).catch(err => console.error(err));
+        // Run in background to avoid blocking the HTTP response cycle and timing out
+        saveMismatchesBulkToFirestore(items).catch(err => console.error(err));
       }
       await updateSystemMetadataInFirestore().catch(err => console.error(err));
     }
@@ -3276,7 +3377,7 @@ app.post('/api/application-storage/delete', async (req, res) => {
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
       
       if (adminDb) {
-        await deleteMismatchFromFirestore(itemToDelete).catch(err => console.error(err));
+        saveMismatchesBulkToFirestore(items).catch(err => console.error(err));
       }
       await updateSystemMetadataInFirestore().catch(err => console.error(err));
     }
@@ -3299,7 +3400,8 @@ app.post('/api/application-storage/reset', async (req, res) => {
     fs.writeFileSync(APPLICATION_STORAGE_FILE, '[]');
 
     if (adminDb) {
-      await resetApplicationStorageInFirestore().catch(err => console.error(err));
+      // Run in background to prevent request timeout during large database resets
+      resetApplicationStorageInFirestore().catch(err => console.error(err));
     }
 
     await updateSystemMetadataInFirestore().catch(err => console.error(err));

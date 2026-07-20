@@ -1535,13 +1535,18 @@ export default function AdminEntryMistakes() {
       let recordCounter = 0;
       
       await chunkedForEach(allStructuredRows, 2500, "Evaluating parameters & database match constraints", 50, 75, (row, index) => {
+        const pharmacyLocation = row.pharmacyLocation;
+        const key = resolvePharmacyLocationKey(pharmacyLocation);
+        if (key !== 'adult-emergency' && key !== 'pediatric' && key !== 'mesaieed-opd') {
+          return; // Skip records from unmapped/unsupported locations (like Outpatient Pharmacy or Satellite Units)
+        }
+
         recordCounter++;
         const actionDateTime = row.actionDateTime;
         const mrnOrganization = row.mrnOrganization;
         const personNameFull = row.personNameFull;
         const sex = row.sex;
         const nationality = row.nationality;
-        const pharmacyLocation = row.pharmacyLocation;
         const actionType = row.actionType;
         const itemNumber = row.itemNumber;
         const labelDescription = row.labelDescription;
@@ -1633,9 +1638,21 @@ export default function AdminEntryMistakes() {
 
       logDiag(`📊 Evaluated ${evaluated.length} total records. Identified ${evaluated.filter(e => e.isMismatch).length} mismatches.`);
 
-      // Update UI state with first 100 preview rows to ensure UI rendering stays fluid and fast
-      setWorkloadRecords(evaluated.slice(0, 100));
-      sessionStorage.setItem('daily_workload_records', JSON.stringify(evaluated.slice(0, 100)));
+      // Update UI state with full evaluated records to ensure all locations and pharmacists are filterable.
+      // Pagination handles the fluid UI rendering automatically.
+      setWorkloadRecords(evaluated);
+      try {
+        sessionStorage.setItem('daily_workload_records', JSON.stringify(evaluated));
+      } catch (quotaError) {
+        console.warn('sessionStorage quota exceeded, trying to store only mismatch records for persistence:', quotaError);
+        try {
+          // Fallback: save only mismatch records which are highly critical for the Mismatch Ledger, up to 2000
+          const mismatches = evaluated.filter(e => e.isMismatch);
+          sessionStorage.setItem('daily_workload_records', JSON.stringify(mismatches.slice(0, 2000)));
+        } catch (innerError) {
+          console.error('Failed to write even subset to sessionStorage:', innerError);
+        }
+      }
       setUploadedTotalCount(evaluated.length);
       sessionStorage.setItem('uploaded_total_count', String(evaluated.length));
       setWorkloadUploaded(true);
@@ -1643,91 +1660,9 @@ export default function AdminEntryMistakes() {
 
       const uploadFilenames = fileArray.map(f => f.name);
 
-      // Auto-save all parsed workload records to the server for persistent analysis in the Workload Page
-      try {
-        if (evaluated.length <= 1500) {
-          logDiag(`🌐 Saving ${evaluated.length} records to server via atomic transaction...`);
-          setWorkloadProgressPercent(85);
-          setWorkloadProgressMsg(`Saving ${evaluated.length} records to server database...`);
-          await new Promise(resolve => setTimeout(resolve, 10));
-          const saveRes = await fetch('/api/workload-records', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ records: evaluated, filenames: uploadFilenames })
-          });
-          if (saveRes.ok) {
-            logDiag('✔️ Saved successfully to atomic storage!');
-          } else {
-            logDiag('❌ Server returned non-ok for atomic save. Check server logs.');
-            console.error('Failed to auto-save workload records to server.');
-          }
-          setWorkloadProgressPercent(100);
-          setWorkloadProgressMsg('Records saved successfully!');
-          await new Promise(resolve => setTimeout(resolve, 500));
-        } else {
-          logDiag(`🌐 Initializing multi-part bulk upload for ${evaluated.length} records...`);
-          setWorkloadProgressPercent(75);
-          setWorkloadProgressMsg(`Initializing database bulk upload session...`);
-          await new Promise(resolve => setTimeout(resolve, 10));
-          const startRes = await fetch('/api/workload-records/upload/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-          });
-          const { uploadId } = await startRes.json();
-          logDiag(`🔑 Chunked Session ID created: ${uploadId}`);
-          
-          // Use smaller safe chunk sizes (1500 instead of 10000) to guarantee fast and reliable requests
-          const CHUNK_SIZE = 1500;
-          const totalChunks = Math.ceil(evaluated.length / CHUNK_SIZE);
-          logDiag(`🧩 Segmented into ${totalChunks} database chunks. Uploading sequentially...`);
-
-          for (let i = 0; i < evaluated.length; i += CHUNK_SIZE) {
-            const chunkItems = evaluated.slice(i, i + CHUNK_SIZE);
-            const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
-            const ratio = i / evaluated.length;
-            const pct = Math.round(75 + ratio * 20); // range 75 to 95
-            
-            setWorkloadProgressPercent(pct);
-            setWorkloadProgressMsg(`Saving database: chunk ${chunkIndex} of ${totalChunks} (${Math.round(ratio * 100)}%)...`);
-            
-            logDiag(`🛫 Sending chunk ${chunkIndex}/${totalChunks} (${chunkItems.length} records)...`);
-            await new Promise(resolve => setTimeout(resolve, 15));
-            
-            const chunkRes = await fetch('/api/workload-records/upload/chunk', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ uploadId, items: chunkItems })
-            });
-            if (!chunkRes.ok) {
-              logDiag(`❌ Failed to send chunk ${chunkIndex}. Aborting.`);
-              throw new Error(`Failed to upload chunk starting at index ${i}`);
-            }
-          }
-          
-          logDiag(`🏁 Finishing chunked session. Running server deduplication, indexing, and persistent backup...`);
-          setWorkloadProgressPercent(95);
-          setWorkloadProgressMsg(`Finalizing database upload and running cloud deduplication...`);
-          await new Promise(resolve => setTimeout(resolve, 10));
-          const endRes = await fetch('/api/workload-records/upload/end', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uploadId, filenames: uploadFilenames })
-          });
-          if (endRes.ok) {
-            logDiag('✔️ Cloud consolidation completed and stored permanently.');
-            console.log('Chunked workload records successfully persisted on the server.');
-          } else {
-            logDiag('❌ Failed to finalize chunked session on server.');
-            console.error('Failed to finalize chunked workload records on the server.');
-          }
-          setWorkloadProgressPercent(100);
-          setWorkloadProgressMsg('Records saved successfully!');
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      } catch (saveErr: any) {
-        logDiag(`❌ Network error saving to database: ${saveErr?.message || saveErr}`);
-        console.error('Network error saving workload records to server:', saveErr?.message || saveErr);
-      }
+      setWorkloadProgressPercent(100);
+      setWorkloadProgressMsg('Workload processed locally for analysis!');
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Auto-save discovered mismatches to Application Storage forever upon upload
       {
@@ -1764,27 +1699,8 @@ export default function AdminEntryMistakes() {
         }).filter(Boolean) as WorkloadRecord[];
 
         const allMismatchesToSave = [...standardMismatches, ...brandVsGenericMismatches];
-        logDiag(`💾 Found ${allMismatchesToSave.length} total policy mistakes. Storing in persistent registry...`);
-        if (allMismatchesToSave.length > 0) {
-          try {
-            const appStorageRes = await fetch('/api/application-storage', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(allMismatchesToSave)
-            });
-            if (appStorageRes.ok) {
-              logDiag('✔️ Mistake registry synchronized successfully.');
-              console.log('Successfully auto-saved mismatches to application storage.');
-              fetchSavedStorageItems();
-            } else {
-              logDiag('❌ Mistake registry sync failed on server.');
-              console.error('Failed to auto-save mismatches to application storage.');
-            }
-          } catch (err) {
-            logDiag('❌ Error saving to mistake registry.');
-            console.error('Network error auto-saving mismatches to application storage:', err);
-          }
-        }
+        logDiag(`💾 Found ${allMismatchesToSave.length} total policy mistakes.`);
+        // Auto-saving to application storage has been disabled.
       }
 
       logDiag("=================================================");

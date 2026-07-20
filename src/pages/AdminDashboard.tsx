@@ -2746,6 +2746,8 @@ export default function AdminDashboard() {
       setTranslationProgress({ current: 0, total: remainingMeds.length });
       
       const batchSize = 10;
+      const allUpdates: { id: string; data: Partial<Medication> }[] = [];
+      const allCacheToSave: Record<string, any> = {};
       
       for (let i = 0; i < remainingMeds.length; i += batchSize) {
         const chunk = remainingMeds.slice(i, i + batchSize);
@@ -2758,10 +2760,6 @@ export default function AdminDashboard() {
         console.log(`Processing translation batch ${Math.floor(i / batchSize) + 1}...`);
         const translationsMap = await batchTranslateIndications(itemsToTranslate, ['hi', 'ur', 'ml', 'bn', 'tl']);
         
-        // Prepare bulk update data for medications & cache storage
-        const updates: { id: string; data: Partial<Medication> }[] = [];
-        const cacheToSave: Record<string, any> = {};
-
         chunk.forEach(med => {
           const trans = translationsMap[med.id];
           if (trans) {
@@ -2772,7 +2770,7 @@ export default function AdminDashboard() {
               bnIndications: trans.bn || '',
               tlIndications: trans.tl || ''
             };
-            updates.push({
+            allUpdates.push({
               id: med.id,
               data: dataToSet
             });
@@ -2781,19 +2779,10 @@ export default function AdminDashboard() {
             const text = (med.enIndications && med.enIndications.trim() !== '') ? med.enIndications : med.arIndications || '';
             const cleanText = text.trim();
             if (cleanText) {
-              cacheToSave[cleanText] = dataToSet;
+              allCacheToSave[cleanText] = dataToSet;
             }
           }
         });
-
-        if (updates.length > 0) {
-          await medicationOps.bulkUpdate(updates);
-        }
-
-        // Store translations in our central storage cache
-        if (Object.keys(cacheToSave).length > 0) {
-          await translationCacheOps.saveTranslations(cacheToSave);
-        }
         
         const nextProgress = Math.min(i + batchSize, remainingMeds.length);
         setTranslationProgress({ current: nextProgress, total: remainingMeds.length });
@@ -2802,6 +2791,16 @@ export default function AdminDashboard() {
         if (i + batchSize < remainingMeds.length) {
           await new Promise(resolve => setTimeout(resolve, 3000));
         }
+      }
+
+      if (allUpdates.length > 0) {
+        setSuccess(`Saving ${allUpdates.length} translated medications to the database...`);
+        await medicationOps.bulkUpdate(allUpdates);
+      }
+
+      if (Object.keys(allCacheToSave).length > 0) {
+        setSuccess(`Saving ${Object.keys(allCacheToSave).length} translations to the central cache...`);
+        await translationCacheOps.saveTranslations(allCacheToSave);
       }
       
       await refreshAll(true);
