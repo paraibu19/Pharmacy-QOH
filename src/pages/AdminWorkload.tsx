@@ -369,13 +369,13 @@ export default function AdminWorkload() {
       }
 
       logDiag(`Selected files count: ${fileArray.length}`);
-      const allStructuredRows: any[] = [];
-
       for (let i = 0; i < fileArray.length; i++) {
         const file = fileArray[i];
-        const pct = Math.round((i / fileArray.length) * 20);
-        setUploadProgressPercent(pct);
-        setUploadProgressMsg(`Parsing file ${i + 1} of ${fileArray.length} (${file.name})...`);
+        const allStructuredRows: any[] = [];
+        
+        const overallPct = Math.round((i / fileArray.length) * 100);
+        setUploadProgressPercent(overallPct);
+        setUploadProgressMsg(`Processing file ${i + 1} of ${fileArray.length}: ${file.name}...`);
         logDiag(`Parsing "${file.name}"...`);
         await new Promise(resolve => setTimeout(resolve, 30));
 
@@ -435,41 +435,11 @@ export default function AdminWorkload() {
             if (!isNaN(parsedDispenseQty) && parsedDispenseQty < 0) continue;
 
             allStructuredRows.push({
-              actionDateTime,
-              facilityOrder,
-              nursingLocationOrder,
-              encounterType,
-              orderDateTimePhysician,
-              lastUpdateProvider,
-              mrnOrganization,
-              personNameFull,
-              sex,
-              nationality,
-              ageYearsVisit,
-              parentOrderId,
-              orderEntryMode,
-              mnemonicName,
-              orderedAsMnemonic,
-              orderDisplayLine,
-              prn,
-              oci,
-              orderComments,
-              physicianOrdering,
-              pharmacyLocation,
-              actionType,
-              childOrderId,
-              itemId,
-              itemNumber,
-              labelDescription,
-              dispenseQuantity,
-              pharmacyDisplayLine,
-              pharmacySig,
-              pharmacyExpandedSig,
-              dispenseUnit,
-              billQuantity,
-              actionPersonnelPharmacy,
-              departmentOrderStatus,
-              orderStatus,
+              actionDateTime, facilityOrder, nursingLocationOrder, encounterType, orderDateTimePhysician, lastUpdateProvider,
+              mrnOrganization, personNameFull, sex, nationality, ageYearsVisit, parentOrderId, orderEntryMode, mnemonicName,
+              orderedAsMnemonic, orderDisplayLine, prn, oci, orderComments, physicianOrdering, pharmacyLocation, actionType,
+              childOrderId, itemId, itemNumber, labelDescription, dispenseQuantity, pharmacyDisplayLine, pharmacySig,
+              pharmacyExpandedSig, dispenseUnit, billQuantity, actionPersonnelPharmacy, departmentOrderStatus, orderStatus,
               vDispenseDateTime: formatActionDateTime(dispenseDateTime),
               vDispenseEventType: dispenseEventTypeVar,
               vProductDispenseHXID: productDispenseHXID,
@@ -478,142 +448,127 @@ export default function AdminWorkload() {
             });
           }
           rawRows.length = 0;
+
+          if (allStructuredRows.length === 0) {
+            logDiag(`File ${file.name} had empty workloads or failed to parse.`);
+            continue; // Skip evaluating empty files
+          }
+
+          // Evaluate Parameter Database Matching for mistargets / reasons
+          const evaluated: WorkloadRecord[] = [];
+          allStructuredRows.forEach((row, index) => {
+            const reasons: string[] = [];
+            
+            const normalizedPharmacist = String(row.actionPersonnelPharmacy || '').toLowerCase().trim();
+            const pharmacistConfig = (dbState.pharmacists || []).find(p => String(p.name || '').toLowerCase().trim() === normalizedPharmacist);
+            
+            if (!pharmacistConfig && row.actionPersonnelPharmacy) {
+              reasons.push(`Action Personnel "${row.actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
+            }
+
+            const normalizedItemNum = String(row.itemNumber || '').toLowerCase().trim();
+            const matchedItemDbParameters = (dbState.parameters || []).filter(p => String(p.itemNumber || '').toLowerCase().trim() === normalizedItemNum);
+
+            if (matchedItemDbParameters.length === 0) {
+              if (row.itemNumber) {
+                reasons.push(`Item Number ${row.itemNumber} is not registered in base Parameter sheet`);
+              }
+            } else {
+              const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, row.pharmacyLocation));
+              if (!locationConfigWord) {
+                if (row.pharmacyLocation) {
+                  reasons.push(`Item ${row.itemNumber} is not configured to be dispensed from "${row.pharmacyLocation}" location`);
+                }
+              } else {
+                const allowedList = locationConfigWord.allowedQuantities;
+                const normalizedDispQty = String(row.dispenseQuantity || '').trim();
+                const dNum = Number(normalizedDispQty);
+                const isAllowed = allowedList.some(allowVal => {
+                  const aNum = Number(allowVal);
+                  if (!isNaN(dNum) && !isNaN(aNum)) return dNum === aNum;
+                  return allowVal.toLowerCase().trim() === normalizedDispQty.toLowerCase();
+                });
+                if (!isAllowed && normalizedDispQty !== '') {
+                  reasons.push(`Dispense Qty "${row.dispenseQuantity}" is unmatched (Allowed: [${allowedList.join(', ')}])`);
+                }
+              }
+            }
+
+            const uniqueId = `workload-rec-${index}-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`;
+            evaluated.push({
+              id: uniqueId,
+              actionDateTime: row.actionDateTime,
+              mrnOrganization: row.mrnOrganization,
+              personNameFull: row.personNameFull,
+              sex: row.sex,
+              nationality: row.nationality,
+              pharmacyLocation: row.pharmacyLocation,
+              actionType: row.actionType,
+              itemNumber: row.itemNumber,
+              labelDescription: row.labelDescription,
+              dispenseQuantity: row.dispenseQuantity,
+              actionPersonnelPharmacy: row.actionPersonnelPharmacy,
+              reasons,
+              isMismatch: reasons.length > 0,
+              isExcludedByVariance: false,
+              facilityOrder: row.facilityOrder,
+              nursingLocationOrder: row.nursingLocationOrder,
+              encounterType: row.encounterType,
+              ageYearsVisit: row.ageYearsVisit,
+              physicianOrdering: row.physicianOrdering,
+              dispenseEventType: row.vDispenseEventType
+            });
+          });
+
+          // Save to server
+          const uploadFilenames = [file.name];
+          if (evaluated.length <= 1500) {
+            logDiag(`Saving ${evaluated.length} records to server for ${file.name}...`);
+            const saveRes = await fetch('/api/workload-records', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ records: evaluated, filenames: uploadFilenames })
+            });
+            if (!saveRes.ok) throw new Error(`Failed to save records for ${file.name}.`);
+          } else {
+            logDiag(`Initializing chunked bulk upload for ${evaluated.length} records in ${file.name}...`);
+            const startRes = await fetch('/api/workload-records/upload/start', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const { uploadId } = await startRes.json();
+            
+            const CHUNK_SIZE = 1500;
+            const totalChunks = Math.ceil(evaluated.length / CHUNK_SIZE);
+            for (let chunk_i = 0; chunk_i < evaluated.length; chunk_i += CHUNK_SIZE) {
+              const chunkItems = evaluated.slice(chunk_i, chunk_i + CHUNK_SIZE);
+              const chunkIndex = Math.floor(chunk_i / CHUNK_SIZE) + 1;
+              
+              setUploadProgressMsg(`Saving ${file.name}: chunk ${chunkIndex} of ${totalChunks}...`);
+              const chunkRes = await fetch('/api/workload-records/upload/chunk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uploadId, items: chunkItems })
+              });
+              if (!chunkRes.ok) throw new Error(`Failed to upload chunk starting at index ${chunk_i}`);
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            const endRes = await fetch('/api/workload-records/upload/end', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uploadId, filenames: uploadFilenames })
+            });
+            if (!endRes.ok) throw new Error(`Failed to finalize upload session for ${file.name}.`);
+          }
+
         } catch (singleErr: any) {
           logDiag(`Error parsing file ${file.name}: ${singleErr?.message || singleErr}`);
         }
       }
 
-      logDiag(`Total structured records in buffer: ${allStructuredRows.length}`);
-      if (allStructuredRows.length === 0) {
-        throw new Error('All uploaded files had empty workloads or failed to parse.');
-      }
-
-      // Evaluate Parameter Database Matching for mistargets / reasons
-      const evaluated: WorkloadRecord[] = [];
-      allStructuredRows.forEach((row, index) => {
-        const reasons: string[] = [];
-        
-        const normalizedPharmacist = String(row.actionPersonnelPharmacy || '').toLowerCase().trim();
-        const pharmacistConfig = (dbState.pharmacists || []).find(p => String(p.name || '').toLowerCase().trim() === normalizedPharmacist);
-        
-        if (!pharmacistConfig && row.actionPersonnelPharmacy) {
-          reasons.push(`Action Personnel "${row.actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
-        }
-
-        const normalizedItemNum = String(row.itemNumber || '').toLowerCase().trim();
-        const matchedItemDbParameters = (dbState.parameters || []).filter(p => String(p.itemNumber || '').toLowerCase().trim() === normalizedItemNum);
-
-        if (matchedItemDbParameters.length === 0) {
-          if (row.itemNumber) {
-            reasons.push(`Item Number ${row.itemNumber} is not registered in base Parameter sheet`);
-          }
-        } else {
-          const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, row.pharmacyLocation));
-          if (!locationConfigWord) {
-            if (row.pharmacyLocation) {
-              reasons.push(`Item ${row.itemNumber} is not configured to be dispensed from "${row.pharmacyLocation}" location`);
-            }
-          } else {
-            const allowedList = locationConfigWord.allowedQuantities;
-            const normalizedDispQty = String(row.dispenseQuantity || '').trim();
-            const dNum = Number(normalizedDispQty);
-            const isAllowed = allowedList.some(allowVal => {
-              const aNum = Number(allowVal);
-              if (!isNaN(dNum) && !isNaN(aNum)) return dNum === aNum;
-              return allowVal.toLowerCase().trim() === normalizedDispQty.toLowerCase();
-            });
-            if (!isAllowed && normalizedDispQty !== '') {
-              reasons.push(`Dispense Qty "${row.dispenseQuantity}" is unmatched (Allowed: [${allowedList.join(', ')}])`);
-            }
-          }
-        }
-
-        const uniqueId = `workload-rec-${index}-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`;
-        evaluated.push({
-          id: uniqueId,
-          actionDateTime: row.actionDateTime,
-          mrnOrganization: row.mrnOrganization,
-          personNameFull: row.personNameFull,
-          sex: row.sex,
-          nationality: row.nationality,
-          pharmacyLocation: row.pharmacyLocation,
-          actionType: row.actionType,
-          itemNumber: row.itemNumber,
-          labelDescription: row.labelDescription,
-          dispenseQuantity: row.dispenseQuantity,
-          actionPersonnelPharmacy: row.actionPersonnelPharmacy,
-          reasons,
-          isMismatch: reasons.length > 0,
-          isExcludedByVariance: false,
-          facilityOrder: row.facilityOrder,
-          nursingLocationOrder: row.nursingLocationOrder,
-          encounterType: row.encounterType,
-          ageYearsVisit: row.ageYearsVisit,
-          physicianOrdering: row.physicianOrdering,
-          dispenseEventType: row.vDispenseEventType
-        });
-      });
-
-      // Save to server
-      const uploadFilenames = fileArray.map(f => f.name);
-      if (evaluated.length <= 1500) {
-        logDiag(`Saving ${evaluated.length} records to server...`);
-        setUploadProgressPercent(85);
-        setUploadProgressMsg(`Saving ${evaluated.length} records to server database...`);
-        const saveRes = await fetch('/api/workload-records', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ records: evaluated, filenames: uploadFilenames })
-        });
-        if (!saveRes.ok) throw new Error('Failed to save records.');
-        setUploadProgressPercent(100);
-        setUploadProgressMsg('Saved successfully!');
-      } else {
-        logDiag(`Initializing chunked bulk upload for ${evaluated.length} records...`);
-        setUploadProgressPercent(40);
-        setUploadProgressMsg('Initializing bulk upload session...');
-        const startRes = await fetch('/api/workload-records/upload/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-        const { uploadId } = await startRes.json();
-        logDiag(`Session ID created: ${uploadId}`);
-
-        const CHUNK_SIZE = 1500;
-        const totalChunks = Math.ceil(evaluated.length / CHUNK_SIZE);
-        for (let i = 0; i < evaluated.length; i += CHUNK_SIZE) {
-          const chunkItems = evaluated.slice(i, i + CHUNK_SIZE);
-          const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
-          const ratio = i / evaluated.length;
-          const pct = Math.round(40 + ratio * 50);
-
-          setUploadProgressPercent(pct);
-          setUploadProgressMsg(`Saving database: chunk ${chunkIndex} of ${totalChunks}...`);
-          logDiag(`Sending chunk ${chunkIndex}/${totalChunks}...`);
-
-          const chunkRes = await fetch('/api/workload-records/upload/chunk', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uploadId, items: chunkItems })
-          });
-          if (!chunkRes.ok) throw new Error(`Failed to upload chunk starting at index ${i}`);
-          
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        logDiag('Finishing chunked session. Running deduplication and backup...');
-        setUploadProgressPercent(95);
-        setUploadProgressMsg('Finalizing database upload and deduplicating...');
-        const endRes = await fetch('/api/workload-records/upload/end', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uploadId, filenames: uploadFilenames })
-        });
-        if (!endRes.ok) throw new Error('Failed to finalize upload session.');
-        setUploadProgressPercent(100);
-        setUploadProgressMsg('Records saved successfully!');
-      }
-
+      setUploadProgressPercent(100);
+      setUploadProgressMsg('All files processed successfully!');
       await new Promise(resolve => setTimeout(resolve, 500));
       fetchWorkloadData(); // REFRESH THE PAGE RECORDS IMMEDIATELY
     } catch (err: any) {

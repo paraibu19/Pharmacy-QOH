@@ -11,7 +11,7 @@ class FirestoreWriteQueue {
     const nextPromise = this.promise.then(async () => {
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Firestore operation timed out')), 10000);
+          setTimeout(() => reject(new Error('Firestore operation timed out')), 60000);
         });
         const result = await Promise.race([operation(), timeoutPromise]);
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -225,7 +225,7 @@ export const medicationOps = {
         }));
 
         count++;
-        if (count >= 150) {
+        if (count >= 400) {
           await queuedCommit(batch);
           await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
           batch = writeBatch(db);
@@ -392,7 +392,7 @@ export const medicationOps = {
 
         opCount++;
         processedCount++;
-        if (opCount >= 150) {
+        if (opCount >= 400) {
           if (onProgress) {
             onProgress({
               current: processedCount,
@@ -536,7 +536,7 @@ export const systemOps = {
           batch.delete(d.ref);
           count++;
           
-          if (count >= 150) {
+          if (count >= 400) {
             await queuedCommit(batch);
             await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
             batch = writeBatch(db);
@@ -727,7 +727,7 @@ export const translationCacheOps = {
         }, { merge: true });
 
         count++;
-        if (count >= 150) {
+        if (count >= 400) {
           await queuedCommit(batch);
           await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
           batch = writeBatch(db);

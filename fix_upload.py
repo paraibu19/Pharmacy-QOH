@@ -1,0 +1,228 @@
+import re
+
+with open('src/pages/AdminWorkload.tsx', 'r') as f:
+    content = f.read()
+
+# We want to replace from `const allStructuredRows: any[] = [];` to `fetchWorkloadData(); // REFRESH THE PAGE RECORDS IMMEDIATELY`
+# Since it's large and complex, we can use regex or just string replacement if we are careful.
+
+target_start = "      const allStructuredRows: any[] = [];\n\n      for (let i = 0; i < fileArray.length; i++) {"
+target_end = "      fetchWorkloadData(); // REFRESH THE PAGE RECORDS IMMEDIATELY"
+
+# Find the start and end indices
+start_idx = content.find(target_start)
+end_idx = content.find(target_end) + len(target_end)
+
+if start_idx == -1 or end_idx == -1:
+    print("Could not find target block")
+    exit(1)
+
+new_code = """      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
+        const allStructuredRows: any[] = [];
+        
+        const overallPct = Math.round((i / fileArray.length) * 100);
+        setUploadProgressPercent(overallPct);
+        setUploadProgressMsg(`Processing file ${i + 1} of ${fileArray.length}: ${file.name}...`);
+        logDiag(`Parsing "${file.name}"...`);
+        await new Promise(resolve => setTimeout(resolve, 30));
+
+        try {
+          const rawRows = await parseSingleWorkloadFile(file);
+          logDiag(`Parsed ${file.name} - found ${rawRows.length} raw rows.`);
+          const fileSpecificCache: Record<string, string> = {};
+
+          for (let j = 0; j < rawRows.length; j++) {
+            const rawRow = rawRows[j];
+
+            const actionDateTimeRaw = extractFuzzyValue(rawRow, ['Action Date & Time', 'Action Date and Time', 'Action Date', 'Date & Time', 'Date Time', 'ActionDateTime'], fileSpecificCache);
+            const actionDateTime = formatActionDateTime(actionDateTimeRaw);
+            const facilityOrder = extractFuzzyValue(rawRow, ['Facility - Order', 'Facility', 'Facility Order', 'Facility_Order'], fileSpecificCache);
+            const nursingLocationOrder = extractFuzzyValue(rawRow, ['Nursing Location - Order', 'Nursing Location', 'Nursing Location Order', 'Nursing_Location_Order', 'Nursing Location -Order'], fileSpecificCache);
+            const encounterType = extractFuzzyValue(rawRow, ['Encounter Type', 'EncounterType', 'Encounter_Type'], fileSpecificCache);
+            const orderDateTimePhysicianRaw = extractFuzzyValue(rawRow, ['Order Date & Time - Physician', 'Order Date & Time', 'Order Date and Time - Physician', 'Order Date & Time -Physician', 'Order Date and Time'], fileSpecificCache);
+            const orderDateTimePhysician = formatActionDateTime(orderDateTimePhysicianRaw);
+            const lastUpdateProvider = extractFuzzyValue(rawRow, ['Last Update Provider', 'LastUpdateProvider', 'Last_Update_Provider', 'Provider'], fileSpecificCache);
+            const mrnOrganization = extractFuzzyValue(rawRow, ['MRN- Organization', 'MRN - Organization', 'MRN Organization', 'MRN', 'MRN_Organization'], fileSpecificCache);
+            const personNameFull = extractFuzzyValue(rawRow, ['Person Name- Full', 'Person Name - Full', 'Person Name Full', 'Person Name', 'Patient Name', 'Full Name'], fileSpecificCache);
+            const sex = extractFuzzyValue(rawRow, ['Sex', 'Gender', 'M/F'], fileSpecificCache);
+            const nationality = extractFuzzyValue(rawRow, ['Nationality', 'Nation', 'Country'], fileSpecificCache);
+            const ageYearsVisit = extractFuzzyValue(rawRow, ['Age- Years (Visit)', 'Age - Years (Visit)', 'Age', 'Age- Years(Visit)', 'Age Years', 'Age-Years'], fileSpecificCache);
+            const parentOrderId = extractFuzzyValue(rawRow, ['Parent Order ID', 'Parent Order Id', 'Parent_Order_ID', 'ParentOrderID'], fileSpecificCache);
+            const orderEntryMode = extractFuzzyValue(rawRow, ['Order Entry Mode', 'OrderEntryMode', 'Order_Entry_Mode'], fileSpecificCache);
+            const mnemonicName = extractFuzzyValue(rawRow, ['Mnemonic Name', 'MnemonicName', 'Mnemonic'], fileSpecificCache);
+            const orderedAsMnemonic = extractFuzzyValue(rawRow, ['Ordered As Mnemonic', 'OrderedAsMnemonic', 'Ordered As'], fileSpecificCache);
+            const orderDisplayLine = extractFuzzyValue(rawRow, ['Order Display Line', 'OrderDisplayLine'], fileSpecificCache);
+            const prn = extractFuzzyValue(rawRow, ['PRN'], fileSpecificCache);
+            const oci = extractFuzzyValue(rawRow, ['OCI'], fileSpecificCache);
+            const orderComments = extractFuzzyValue(rawRow, ['Order Comments', 'OrderComments', 'Comments'], fileSpecificCache);
+            const physicianOrdering = extractFuzzyValue(rawRow, ['Physician - Ordering', 'Physician Ordering', 'Physician', 'Ordering Physician'], fileSpecificCache);
+            const pharmacyLocation = extractFuzzyValue(rawRow, ['Pharmacy Location', 'Location', 'PharmacyName', 'Pharmacy_Location'], fileSpecificCache);
+            const actionType = extractFuzzyValue(rawRow, ['Action Type', 'Type', 'Action_Type'], fileSpecificCache);
+            const childOrderId = extractFuzzyValue(rawRow, ['Child Order ID', 'Child Order Id', 'Child_Order_ID', 'ChildOrderID'], fileSpecificCache);
+            const itemId = extractFuzzyValue(rawRow, ['Item Id', 'ItemId', 'Item_Id'], fileSpecificCache);
+            const itemNumber = extractFuzzyValue(rawRow, ['Item Number', 'Item Code', 'ItemNo', 'Item_No', 'Item'], fileSpecificCache);
+            const labelDescription = extractFuzzyValue(rawRow, ['Label Description', 'Description', 'Item Description', 'Drug Name', 'Item Name'], fileSpecificCache);
+            const pharmacyDisplayLine = extractFuzzyValue(rawRow, ['Pharmacy Display Line', 'PharmacyDisplayLine'], fileSpecificCache);
+            const pharmacySig = extractFuzzyValue(rawRow, ['Pharmacy SIG', 'PharmacySIG', 'SIG'], fileSpecificCache);
+            const pharmacyExpandedSig = extractFuzzyValue(rawRow, ['Pharmacy Expanded SIG', 'Pharmacy Expanded SIG', 'PharmacyExpandedSIG', 'Expanded SIG'], fileSpecificCache);
+            const dispenseUnit = extractFuzzyValue(rawRow, ['Dispense Unit', 'DispenseUnit', 'Unit'], fileSpecificCache);
+            const billQuantity = extractFuzzyValue(rawRow, ['Bill Quantity', 'BillQuantity', 'Bill Qty'], fileSpecificCache);
+            const actionPersonnelPharmacy = extractFuzzyValue(rawRow, ['Action Personnel - Pharmacy', 'Action Personnel', 'Pharmacist', 'Personnel', 'Action Personnel Pharmacy', 'Staff', 'Action Personnel -Pharmacy'], fileSpecificCache);
+            const departmentOrderStatus = extractFuzzyValue(rawRow, ['Department Order Status', 'DepartmentOrderStatus'], fileSpecificCache);
+            const orderStatus = extractFuzzyValue(rawRow, ['Order Status', 'OrderStatus'], fileSpecificCache);
+            const dispenseDateTime = extractFuzzyValue(rawRow, ['Dispense Date & Time', 'Dispense Date and Time', 'Dispense Date', 'Dispense Date/Time'], fileSpecificCache);
+            const dispenseEventTypeVar = extractFuzzyValue(rawRow, ['Dispense Event Type', 'DispenseEventType', 'Event Type', 'Event'], fileSpecificCache);
+            const productDispenseHXID = extractFuzzyValue(rawRow, ['Product Dispense HX ID', 'Product Dispense HX Id', 'ProductDispenseHXID', 'HX ID', 'HX_ID'], fileSpecificCache);
+            const dispenseQuantity = extractFuzzyValue(rawRow, ['Dispense Quantity', 'Dispensed Quantity', 'Disp Qty', 'Dispensed Qty', 'Qty', 'Quantity'], fileSpecificCache);
+            const trackingItemId = extractFuzzyValue(rawRow, ['Tracking Item Id', 'Tracking Item ID', 'TrackingItemId', 'Tracking_Item_ID'], fileSpecificCache);
+
+            if (!itemNumber && !personNameFull && !actionPersonnelPharmacy) continue;
+
+            const parsedDispenseQty = parseFloat(String(dispenseQuantity).trim());
+            if (!isNaN(parsedDispenseQty) && parsedDispenseQty < 0) continue;
+
+            allStructuredRows.push({
+              actionDateTime, facilityOrder, nursingLocationOrder, encounterType, orderDateTimePhysician, lastUpdateProvider,
+              mrnOrganization, personNameFull, sex, nationality, ageYearsVisit, parentOrderId, orderEntryMode, mnemonicName,
+              orderedAsMnemonic, orderDisplayLine, prn, oci, orderComments, physicianOrdering, pharmacyLocation, actionType,
+              childOrderId, itemId, itemNumber, labelDescription, dispenseQuantity, pharmacyDisplayLine, pharmacySig,
+              pharmacyExpandedSig, dispenseUnit, billQuantity, actionPersonnelPharmacy, departmentOrderStatus, orderStatus,
+              vDispenseDateTime: formatActionDateTime(dispenseDateTime),
+              vDispenseEventType: dispenseEventTypeVar,
+              vProductDispenseHXID: productDispenseHXID,
+              vDispenseQuantity: dispenseQuantity,
+              vTrackingItemId: trackingItemId
+            });
+          }
+          rawRows.length = 0;
+
+          if (allStructuredRows.length === 0) {
+            logDiag(`File ${file.name} had empty workloads or failed to parse.`);
+            continue; // Skip evaluating empty files
+          }
+
+          // Evaluate Parameter Database Matching for mistargets / reasons
+          const evaluated: WorkloadRecord[] = [];
+          allStructuredRows.forEach((row, index) => {
+            const reasons: string[] = [];
+            
+            const normalizedPharmacist = String(row.actionPersonnelPharmacy || '').toLowerCase().trim();
+            const pharmacistConfig = (dbState.pharmacists || []).find(p => String(p.name || '').toLowerCase().trim() === normalizedPharmacist);
+            
+            if (!pharmacistConfig && row.actionPersonnelPharmacy) {
+              reasons.push(`Action Personnel "${row.actionPersonnelPharmacy}" not listed in Pharmacists sheet`);
+            }
+
+            const normalizedItemNum = String(row.itemNumber || '').toLowerCase().trim();
+            const matchedItemDbParameters = (dbState.parameters || []).filter(p => String(p.itemNumber || '').toLowerCase().trim() === normalizedItemNum);
+
+            if (matchedItemDbParameters.length === 0) {
+              if (row.itemNumber) {
+                reasons.push(`Item Number ${row.itemNumber} is not registered in base Parameter sheet`);
+              }
+            } else {
+              const locationConfigWord = matchedItemDbParameters.find(p => isLocationMatches(p.pharmacyLocation, row.pharmacyLocation));
+              if (!locationConfigWord) {
+                if (row.pharmacyLocation) {
+                  reasons.push(`Item ${row.itemNumber} is not configured to be dispensed from "${row.pharmacyLocation}" location`);
+                }
+              } else {
+                const allowedList = locationConfigWord.allowedQuantities;
+                const normalizedDispQty = String(row.dispenseQuantity || '').trim();
+                const dNum = Number(normalizedDispQty);
+                const isAllowed = allowedList.some(allowVal => {
+                  const aNum = Number(allowVal);
+                  if (!isNaN(dNum) && !isNaN(aNum)) return dNum === aNum;
+                  return allowVal.toLowerCase().trim() === normalizedDispQty.toLowerCase();
+                });
+                if (!isAllowed && normalizedDispQty !== '') {
+                  reasons.push(`Dispense Qty "${row.dispenseQuantity}" is unmatched (Allowed: [${allowedList.join(', ')}])`);
+                }
+              }
+            }
+
+            const uniqueId = `workload-rec-${index}-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`;
+            evaluated.push({
+              id: uniqueId,
+              actionDateTime: row.actionDateTime,
+              mrnOrganization: row.mrnOrganization,
+              personNameFull: row.personNameFull,
+              sex: row.sex,
+              nationality: row.nationality,
+              pharmacyLocation: row.pharmacyLocation,
+              actionType: row.actionType,
+              itemNumber: row.itemNumber,
+              labelDescription: row.labelDescription,
+              dispenseQuantity: row.dispenseQuantity,
+              actionPersonnelPharmacy: row.actionPersonnelPharmacy,
+              reasons,
+              isMismatch: reasons.length > 0,
+              isExcludedByVariance: false,
+              facilityOrder: row.facilityOrder,
+              nursingLocationOrder: row.nursingLocationOrder,
+              encounterType: row.encounterType,
+              ageYearsVisit: row.ageYearsVisit,
+              physicianOrdering: row.physicianOrdering,
+              dispenseEventType: row.vDispenseEventType
+            });
+          });
+
+          // Save to server
+          const uploadFilenames = [file.name];
+          if (evaluated.length <= 1500) {
+            logDiag(`Saving ${evaluated.length} records to server for ${file.name}...`);
+            const saveRes = await fetch('/api/workload-records', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ records: evaluated, filenames: uploadFilenames })
+            });
+            if (!saveRes.ok) throw new Error(`Failed to save records for ${file.name}.`);
+          } else {
+            logDiag(`Initializing chunked bulk upload for ${evaluated.length} records in ${file.name}...`);
+            const startRes = await fetch('/api/workload-records/upload/start', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const { uploadId } = await startRes.json();
+            
+            const CHUNK_SIZE = 1500;
+            const totalChunks = Math.ceil(evaluated.length / CHUNK_SIZE);
+            for (let chunk_i = 0; chunk_i < evaluated.length; chunk_i += CHUNK_SIZE) {
+              const chunkItems = evaluated.slice(chunk_i, chunk_i + CHUNK_SIZE);
+              const chunkIndex = Math.floor(chunk_i / CHUNK_SIZE) + 1;
+              
+              setUploadProgressMsg(`Saving ${file.name}: chunk ${chunkIndex} of ${totalChunks}...`);
+              const chunkRes = await fetch('/api/workload-records/upload/chunk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uploadId, items: chunkItems })
+              });
+              if (!chunkRes.ok) throw new Error(`Failed to upload chunk starting at index ${chunk_i}`);
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            const endRes = await fetch('/api/workload-records/upload/end', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uploadId, filenames: uploadFilenames })
+            });
+            if (!endRes.ok) throw new Error(`Failed to finalize upload session for ${file.name}.`);
+          }
+
+        } catch (singleErr: any) {
+          logDiag(`Error parsing file ${file.name}: ${singleErr?.message || singleErr}`);
+        }
+      }
+
+      setUploadProgressPercent(100);
+      setUploadProgressMsg('All files processed successfully!');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      fetchWorkloadData(); // REFRESH THE PAGE RECORDS IMMEDIATELY"""
+
+new_content = content[:start_idx] + new_code + content[end_idx:]
+
+with open('src/pages/AdminWorkload.tsx', 'w') as f:
+    f.write(new_content)
+
+print("Replacement successful")

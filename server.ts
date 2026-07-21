@@ -2,6 +2,18 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
+const logFile = fs.createWriteStream('server_debug.log', { flags: 'a' });
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+console.log = function (...args) {
+  logFile.write(args.join(' ') + '\n');
+  originalConsoleLog.apply(console, args);
+};
+console.error = function (...args) {
+  logFile.write('ERROR: ' + args.join(' ') + '\n');
+  originalConsoleError.apply(console, args);
+};
+
 import readline from 'readline';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
@@ -41,7 +53,7 @@ class FirestoreWriteQueue {
     const nextPromise = this.promise.then(async () => {
       try {
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Firestore operation timed out')), 10000);
+          setTimeout(() => reject(new Error('Firestore operation timed out')), 60000);
         });
         const result = await Promise.race([operation(), timeoutPromise]);
         // Delay after every write operation to ensure client SDK can safely flush without overloading the GrpcConnection stream.
@@ -130,7 +142,7 @@ class CollectionRefAdapter {
       q = query(colRef, orderBy('savedAt', 'desc'), limit(1000));
     }
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Firestore getDocs timed out')), 10000);
+      setTimeout(() => reject(new Error('Firestore getDocs timed out')), 60000);
     });
     const snap = await Promise.race([getDocs(q), timeoutPromise]) as any;
     return new QuerySnapshotAdapter(snap);
@@ -167,7 +179,7 @@ class DocumentRefAdapter {
 
   async get() {
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Firestore getDoc timed out')), 10000);
+      setTimeout(() => reject(new Error('Firestore getDoc timed out')), 60000);
     });
     const snap = await Promise.race([getDoc(this.ref), timeoutPromise]) as any;
     return new DocumentSnapshotAdapter(snap);
@@ -542,89 +554,6 @@ if (!fs.existsSync(SETTINGS_FILE)) {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// AI Studio Dev Proxy: Proxy all /api requests from ais-dev- to ais-pre-
-app.use('/api', async (req, res, next) => {
-  const host = req.get('host') || '';
-  if (host.startsWith('ais-dev-') && !req.path.startsWith('/sync-test-broadcast')) {
-    const targetHost = host.replace('ais-dev-', 'ais-pre-');
-    const targetUrl = `https://${targetHost}${req.originalUrl}`;
-    
-    console.log(`[AI Studio Dev Proxy] Intercepted ${req.method} ${req.path}. Forwarding to ${targetUrl}`);
-
-    // SSE stream endpoint special handling
-    if (req.path === '/sync-stream') {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      if (res.flushHeaders) {
-        res.flushHeaders();
-      }
-      
-      try {
-        const response = await fetch(targetUrl, {
-          headers: {
-            'Accept': 'text/event-stream'
-          }
-        });
-        
-        if (!response.body) {
-          res.end();
-          return;
-        }
-        
-        const reader = response.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
-        }
-        res.end();
-      } catch (err: any) {
-        console.error('[AI Studio Dev Proxy] SSE Stream proxy error:', err.message);
-        res.end();
-      }
-      return;
-    }
-    
-    // Standard API proxy
-    try {
-      const headers: Record<string, string> = {};
-      for (const [key, value] of Object.entries(req.headers)) {
-        if (typeof value === 'string' && key.toLowerCase() !== 'host') {
-          headers[key] = value;
-        }
-      }
-      
-      const options: RequestInit = {
-        method: req.method,
-        headers,
-      };
-      
-      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-        if (req.body !== undefined) {
-          options.body = typeof req.body === 'object' ? JSON.stringify(req.body) : req.body;
-        }
-      }
-      
-      const response = await fetch(targetUrl, options);
-      
-      res.status(response.status);
-      for (const [key, value] of response.headers.entries()) {
-        res.setHeader(key, value);
-      }
-      
-      const blob = await response.blob();
-      const buffer = Buffer.from(await blob.arrayBuffer());
-      res.send(buffer);
-    } catch (err: any) {
-      console.error(`[AI Studio Dev Proxy] Failed to proxy API request ${req.method} ${req.path}:`, err.message);
-      res.status(500).json({ error: 'Dev Proxy Error', details: err.message, targetUrl });
-    }
-    return;
-  }
-  next();
-});
-
 app.post('/api/auth/admin', (req, res) => {
   const { password } = req.body;
   const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
@@ -787,7 +716,7 @@ async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
       batch.set(docRef, cleaned, { merge: true });
       
       count++;
-      if (count >= 100) {
+      if (count >= 400) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
@@ -1119,7 +1048,7 @@ async function saveMismatchesBulkToFirestore(items: any[]): Promise<void> {
       batch.set(docRef, cleanedItem);
       count++;
       
-      if (count >= 500) {
+      if (count >= 400) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 500));
         batch = adminDb.batch();
@@ -1138,36 +1067,44 @@ async function resetApplicationStorageInFirestore(): Promise<void> {
   if (!adminDb) return;
   try {
     let hasMore = true;
+    let totalDeleted = 0;
+    let iterations = 0;
     while (hasMore) {
-      const snapshot = await adminDb.collection('application_storage').limit(500).get();
+      iterations++;
+      console.log(`[Firebase Sync] Reset Application Storage Iteration ${iterations}... fetching 50`);
+      if (iterations > 50) {
+        console.error('[Firebase Sync] Force stopping loop to prevent infinite loop!');
+        break;
+      }
+      
+      const fetchPromise = adminDb.collection('application_storage').limit(50).get();
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore fetch timeout')), 30000));
+      const snapshot = await Promise.race([fetchPromise, timeoutPromise]) as any;
+      
+      console.log(`[Firebase Sync] Fetched ${snapshot.docs?.length} documents`);
       if (snapshot.empty) {
         hasMore = false;
         break;
       }
-
-      let batch = adminDb.batch();
-      let count = 0;
+      const batch = adminDb.batch();
       for (const doc of snapshot.docs) {
         batch.delete(doc.ref);
-        count++;
-        if (count >= 500) {
-          await batch.commit();
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Throttling delay
-          batch = adminDb.batch();
-          count = 0;
-        }
       }
-      if (count > 0) {
-        await batch.commit();
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-
-      if (snapshot.docs.length < 500) {
+      
+      const commitPromise = batch.commit();
+      const commitTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore commit timeout')), 60000));
+      await Promise.race([commitPromise, commitTimeout]);
+      
+      console.log(`[Firebase Sync] Batch committed for ${snapshot.docs.length} docs`);
+      totalDeleted += snapshot.docs.length;
+      if (snapshot.docs.length < 50) {
         hasMore = false;
       }
     }
+    console.log(`[Firebase Sync] Purged ${totalDeleted} items from the application_storage collection.`);
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to reset application storage in Firestore:', err.message);
+    throw err;
   }
 }
 
@@ -1458,10 +1395,12 @@ async function syncWorkloadRecordsFromFirestore(): Promise<any[]> {
     
     let hasMore = true;
     let lastDoc: any = null;
-    const pageSize = 5; // Fetch up to 5 chunks at a time (approx 5MB - 10MB of payload data)
+    const pageSize = 50; // Fetch up to 50 chunks at a time
     const allDocData: any[] = [];
+    let iterations = 0;
     
-    while (hasMore) {
+    while (hasMore && iterations < 5) { // Limit to 5 iterations initially for stability
+      iterations++;
       let q = adminDb.collection('workload_records')
         .orderBy('__name__') // Order by document ID to support stable pagination
         .limit(pageSize);
@@ -1470,7 +1409,10 @@ async function syncWorkloadRecordsFromFirestore(): Promise<any[]> {
         q = q.startAfter(lastDoc);
       }
       
-      const snapshot = await q.get();
+      const fetchPromise = q.get();
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore fetch timeout')), 30000));
+      const snapshot = await Promise.race([fetchPromise, timeoutPromise]) as any;
+      
       if (snapshot.empty) {
         hasMore = false;
         break;
@@ -1621,29 +1563,29 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
 async function resetWorkloadRecordsInFirestore(): Promise<void> {
   if (!adminDb) return;
   try {
-    let hasMore = true;
-    while (hasMore) {
-      // Use select() to fetch ONLY document paths/IDs, completely avoiding downloading field contents
-      const snapshot = await adminDb.collection('workload_records').select().limit(200).get();
-      if (snapshot.empty) {
-        hasMore = false;
-        break;
-      }
+    console.log(`[Firebase Sync] Blindly purging chunks 0 to 2000 from workload_records to avoid getDocs timeouts...`);
+    let batch = adminDb.batch();
+    let totalDeleted = 0;
+    
+    for (let i = 0; i < 2000; i++) {
+      batch.delete(adminDb.collection('workload_records').doc(`chunk_${i}`));
+      totalDeleted++;
       
-      let batch = adminDb.batch();
-      for (const doc of snapshot.docs) {
-        batch.delete(doc.ref);
-      }
-      await batch.commit();
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
-      
-      if (snapshot.docs.length < 200) {
-        hasMore = false;
+      if (totalDeleted >= 400) {
+        await batch.commit().catch(() => {});
+        batch = adminDb.batch();
+        totalDeleted = 0;
       }
     }
-    console.log('[Firebase Sync] Purged all items and chunks from the workload_records collection.');
+    
+    if (totalDeleted > 0) {
+      await batch.commit().catch(() => {});
+    }
+    
+    console.log(`[Firebase Sync] Purged chunks from the workload_records collection.`);
   } catch (err: any) {
     console.error('[Firebase Sync] Failed to reset workload records in Firestore:', err.message);
+    throw err;
   }
 }
 
@@ -1936,7 +1878,7 @@ async function resetAllInFirestore(): Promise<void> {
     for (const doc of medsSnap.docs) {
       batch.delete(doc.ref);
       count++;
-      if (count >= 100) {
+      if (count >= 400) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
@@ -1952,7 +1894,7 @@ async function resetAllInFirestore(): Promise<void> {
     for (const doc of auditsSnap.docs) {
       batch.delete(doc.ref);
       count++;
-      if (count >= 100) {
+      if (count >= 400) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
@@ -2185,7 +2127,7 @@ app.post('/api/medications/bulk', async (req, res) => {
     fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
 
     if (adminDb) {
-      await saveMedicationsBulkToFirestore(meds).catch(err => console.error(err));
+      await saveMedicationsBulkToFirestore(newMeds).catch(err => console.error(err));
     }
 
     await updateSystemMetadataInFirestore().catch(err => console.error(err));
@@ -2297,7 +2239,7 @@ app.post('/api/audits/reset', async (req, res) => {
         for (const doc of auditsSnap.docs) {
           batch.delete(doc.ref);
           count++;
-          if (count >= 100) {
+          if (count >= 400) {
             await batch.commit();
             await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
             batch = adminDb.batch();
@@ -2698,7 +2640,7 @@ app.get('/api/workload-records', async (req, res) => {
           try {
             records.push(JSON.parse(line));
             count++;
-            if (count >= 100) break;
+            if (count >= 400) break;
           } catch {}
         }
       }
@@ -3014,8 +2956,9 @@ app.post('/api/workload-records/reset', async (req, res) => {
     }
     
     if (adminDb) {
+      // Run in background to prevent request timeout during large database resets
       resetWorkloadRecordsInFirestore().catch(err => console.error(err));
-      adminDb.collection('system').doc('uploaded_files').set({ files: [] }).catch((err: any) => {
+      await adminDb.collection('system').doc('uploaded_files').set({ files: [] }).catch((err: any) => {
         console.error('[Firebase Reset Error] Failed to reset uploaded files in Firestore:', err.message);
       });
     }
@@ -3340,7 +3283,7 @@ app.post('/api/application-storage', async (req, res) => {
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
       if (adminDb) {
         // Run in background to avoid blocking the HTTP response cycle and timing out
-        saveMismatchesBulkToFirestore(items).catch(err => console.error(err));
+        saveMismatchesBulkToFirestore(newlyAddedItems).catch(err => console.error(err));
       }
       await updateSystemMetadataInFirestore().catch(err => console.error(err));
     }
@@ -3376,9 +3319,12 @@ app.post('/api/application-storage/delete', async (req, res) => {
       items = items.filter((x: any) => x !== itemToDelete);
       fs.writeFileSync(APPLICATION_STORAGE_FILE, JSON.stringify(items, null, 2));
       
+
       if (adminDb) {
-        saveMismatchesBulkToFirestore(items).catch(err => console.error(err));
+        const idToDelete = itemToDelete.id || `${itemToDelete.mrnOrganization || ''}_${itemToDelete.actionDateTime || ''}_${itemToDelete.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
+        adminDb.collection('application_storage').doc(idToDelete).delete().catch(err => console.error(err));
       }
+
       await updateSystemMetadataInFirestore().catch(err => console.error(err));
     }
     
@@ -3994,6 +3940,7 @@ app.use(express.static(path.join(process.cwd(), 'public'), {
 }));
 
 async function startServer() {
+  console.log('--- startServer called! PID:', process.pid);
   const isProd = process.env.NODE_ENV === "production" && fs.existsSync(path.join(process.cwd(), 'dist/index.html'));
 
   // Run startup sync to fetch persistent Firestore state down into local cache asynchronously so it never blocks the server from listening

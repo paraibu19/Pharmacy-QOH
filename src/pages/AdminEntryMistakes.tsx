@@ -398,6 +398,11 @@ export default function AdminEntryMistakes() {
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [isDeletingFromStorage, setIsDeletingFromStorage] = useState(false);
+  
+  const [resetWorkloadModalOpen, setResetWorkloadModalOpen] = useState(false);
+  const [resetWorkloadPassword, setResetWorkloadPassword] = useState('');
+  const [resetWorkloadError, setResetWorkloadError] = useState('');
+  const [isResettingWorkload, setIsResettingWorkload] = useState(false);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -474,16 +479,42 @@ export default function AdminEntryMistakes() {
     }
   }, [workloadRecords, workloadUploaded, activeReportType, uploadedTotalCount]);
 
-  const resetWorkload = () => {
-    setWorkloadRecords([]);
-    setWorkloadUploaded(false);
-    setUploadedTotalCount(0);
+  const executeResetWorkload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetWorkloadError('');
+    setIsResettingWorkload(true);
+
     try {
-      sessionStorage.removeItem('daily_workload_records');
-      sessionStorage.removeItem('daily_workload_uploaded');
-      sessionStorage.removeItem('uploaded_total_count');
-    } catch (e) {
-      console.warn('Failed to clear workload from sessionStorage:', e);
+      const res = await fetch('/api/workload-records/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminPassword: resetWorkloadPassword })
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        setResetWorkloadError(error.error || 'Failed to reset workload.');
+        setIsResettingWorkload(false);
+        return;
+      }
+
+      setWorkloadRecords([]);
+      setWorkloadUploaded(false);
+      setUploadedTotalCount(0);
+      try {
+        sessionStorage.removeItem('daily_workload_records');
+        sessionStorage.removeItem('daily_workload_uploaded');
+        sessionStorage.removeItem('uploaded_total_count');
+      } catch (e) {
+        console.warn('Failed to clear workload from sessionStorage:', e);
+      }
+      setResetWorkloadModalOpen(false);
+      setResetWorkloadPassword('');
+      setIsResettingWorkload(false);
+    } catch (err) {
+      console.error(err);
+      setResetWorkloadError('An error occurred while resetting.');
+      setIsResettingWorkload(false);
     }
   };
 
@@ -2310,7 +2341,7 @@ export default function AdminEntryMistakes() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          resetWorkload();
+                          setResetWorkloadModalOpen(true);
                         }}
                         className="w-full mt-3 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors cursor-pointer active:scale-[0.98]"
                       >
@@ -3021,6 +3052,63 @@ export default function AdminEntryMistakes() {
               >
                 {isDeletingFromStorage && <RefreshCw className="w-3 h-3 animate-spin mr-1" />}
                 Authorize Removal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Workload Modal */}
+      {resetWorkloadModalOpen && (
+        <div className="fixed inset-0 bg-[#141414]/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white border border-[#141414]/10 max-w-md w-full rounded-2xl shadow-2xl p-6 relative overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex items-start gap-3">
+              <div className="p-3 bg-red-50 text-red-600 border border-red-100 rounded-xl shrink-0">
+                <AlertTriangle className="w-6 h-6 animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-black text-[#141414] uppercase tracking-wide">Purge Workload Database</h3>
+                <p className="text-xs text-[#141414]/60 mt-1 leading-relaxed">
+                  WARNING: This operation is destructive and irreversible. Continuing will permanently delete all stored Daily HBKMC Workload records from both this server and Cloud Firestore. Please verify your <strong className="text-red-600 font-bold uppercase">Admin Password</strong> to proceed:
+                </p>
+
+                <div className="mt-4">
+                  <label className="block text-[9px] uppercase font-black text-[#141414]/40 tracking-widest mb-1">Enter Admin Password</label>
+                  <input
+                    type="password"
+                    value={resetWorkloadPassword}
+                    onChange={(e) => setResetWorkloadPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full text-xs font-mono font-bold bg-[#141414]/5 border border-[#141414]/10 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-red-500 focus:bg-white text-[#141414] transition-all"
+                  />
+                  {resetWorkloadError && (
+                    <p className="mt-2 text-xs font-bold text-red-600 bg-red-50 px-2 py-1.5 rounded-md border border-red-100">
+                      {resetWorkloadError}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-5 text-[10px] font-black uppercase tracking-wider">
+              <button
+                onClick={() => {
+                  setResetWorkloadModalOpen(false);
+                  setResetWorkloadPassword('');
+                  setResetWorkloadError('');
+                }}
+                disabled={isResettingWorkload}
+                className="px-4 py-2 text-[#141414]/60 hover:text-[#141414] hover:bg-[#141414]/5 rounded-xl transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeResetWorkload}
+                disabled={!resetWorkloadPassword || isResettingWorkload}
+                className="px-4 py-2 text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:hover:bg-red-600 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1"
+              >
+                {isResettingWorkload && <RefreshCw className="w-3 h-3 animate-spin mr-1" />}
+                Purge Database
               </button>
             </div>
           </div>
