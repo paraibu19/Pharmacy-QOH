@@ -18,7 +18,6 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
-  const [isSynced, setIsSynced] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isInstallGuideOpen, setIsInstallGuideOpen] = useState(false);
   const [isLocalMode, setIsLocalMode] = useState(false);
@@ -53,21 +52,9 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
     }
   };
 
-  useEffect(() => {
-    if (!db) return;
 
-    // Monitor when Firestore completes a sync operation
-    const unsubscribe = onSnapshotsInSync(db, () => {
-      setIsSynced(true);
-      // Flash the synced state briefly
-      const timer = setTimeout(() => setIsSynced(false), 3000);
-      return () => clearTimeout(timer);
-    });
 
-    return () => unsubscribe();
-  }, []);
-
-  const NavLinks = ({ variant }: { variant: 'horizontal' | 'vertical-mobile' | 'vertical-sidebar' }) => {
+  const renderNavLinks = (variant: 'horizontal' | 'vertical-mobile' | 'vertical-sidebar') => {
     const isVertical = variant !== 'horizontal';
     
     return (
@@ -240,7 +227,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
   return (
     <div className="min-h-screen bg-[#FDFCFB] text-[#141414] font-sans flex flex-col lg:flex-row">
       {/* SIDEBAR FOR DESKTOP WINDOWS */}
-      <aside className="hidden lg:flex w-72 h-screen sticky top-0 bg-white border-r border-[#141414]/10 p-6 flex-col justify-between overflow-y-auto shrink-0 z-40">
+      <aside className="hidden lg:flex w-72 h-[100dvh] sticky top-0 bg-white border-r border-[#141414]/10 p-6 flex-col justify-between overflow-y-auto shrink-0 z-40">
         <div className="flex flex-col">
           {/* Logo / Brand */}
           <div className="flex items-center gap-2 group mb-8">
@@ -303,7 +290,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
           {/* Navigation Links */}
           <div className="space-y-1.5">
             <span className="text-[9px] font-bold uppercase text-[#141414]/30 tracking-wider">Navigation</span>
-            <NavLinks variant="vertical-sidebar" />
+            {renderNavLinks('vertical-sidebar')}
           </div>
         </div>
 
@@ -468,7 +455,7 @@ export default function Layout({ children, isAdmin, onLogout }: LayoutProps) {
                     <div className="space-y-1">
                       <span className="px-4 text-[9px] font-extrabold uppercase text-[#141414]/30 tracking-wider">Navigation Menu</span>
                       <div className="flex flex-col gap-2">
-                        <NavLinks variant="vertical-mobile" />
+                        {renderNavLinks('vertical-mobile')}
                       </div>
                     </div>
 
