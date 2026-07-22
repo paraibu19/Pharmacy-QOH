@@ -1,6 +1,7 @@
 import { 
   collection, doc, addDoc, updateDoc, deleteDoc, 
-  serverTimestamp, writeBatch, query, where, getDocs, getDoc, setDoc 
+  serverTimestamp, writeBatch, query, where, getDocs, getDoc, setDoc,
+  waitForPendingWrites
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from './firebase';
 
@@ -10,14 +11,11 @@ class FirestoreWriteQueue {
   async enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const nextPromise = this.promise.then(async () => {
       try {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Firestore operation timed out')), 60000);
-        });
-        const result = await Promise.race([operation(), timeoutPromise]);
-        await new Promise(resolve => setTimeout(resolve, 800));
+        const result = await operation();
+        await new Promise(resolve => setTimeout(resolve, 1500));
         return result;
       } catch (err: any) {
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 1500));
         throw err;
       }
     });
@@ -29,23 +27,43 @@ class FirestoreWriteQueue {
 const firestoreWriteQueue = new FirestoreWriteQueue();
 
 async function queuedAddDoc(colRef: any, data: any) {
-  return firestoreWriteQueue.enqueue(() => addDoc(colRef, data));
+  return firestoreWriteQueue.enqueue(async () => {
+    const res = await addDoc(colRef, data);
+    await waitForPendingWrites(db);
+    return res;
+  });
 }
 
 async function queuedUpdateDoc(docRef: any, data: any) {
-  return firestoreWriteQueue.enqueue(() => updateDoc(docRef, data));
+  return firestoreWriteQueue.enqueue(async () => {
+    await updateDoc(docRef, data);
+    await waitForPendingWrites(db);
+  });
 }
 
 async function queuedDeleteDoc(docRef: any) {
-  return firestoreWriteQueue.enqueue(() => deleteDoc(docRef));
+  return firestoreWriteQueue.enqueue(async () => {
+    await deleteDoc(docRef);
+    await waitForPendingWrites(db);
+  });
 }
 
 async function queuedSetDoc(docRef: any, data: any, options?: any) {
-  return firestoreWriteQueue.enqueue(() => options ? setDoc(docRef, data, options) : setDoc(docRef, data));
+  return firestoreWriteQueue.enqueue(async () => {
+    if (options) {
+      await setDoc(docRef, data, options);
+    } else {
+      await setDoc(docRef, data);
+    }
+    await waitForPendingWrites(db);
+  });
 }
 
 async function queuedCommit(batch: any) {
-  return firestoreWriteQueue.enqueue(() => batch.commit());
+  return firestoreWriteQueue.enqueue(async () => {
+    await batch.commit();
+    await waitForPendingWrites(db);
+  });
 }
 
 import { Medication, PharmacyLocation } from '../types';
@@ -225,7 +243,7 @@ export const medicationOps = {
         }));
 
         count++;
-        if (count >= 400) {
+        if (count >= 25) {
           await queuedCommit(batch);
           await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
           batch = writeBatch(db);
@@ -392,7 +410,7 @@ export const medicationOps = {
 
         opCount++;
         processedCount++;
-        if (opCount >= 400) {
+        if (opCount >= 25) {
           if (onProgress) {
             onProgress({
               current: processedCount,
@@ -536,7 +554,7 @@ export const systemOps = {
           batch.delete(d.ref);
           count++;
           
-          if (count >= 400) {
+          if (count >= 25) {
             await queuedCommit(batch);
             await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
             batch = writeBatch(db);
@@ -727,7 +745,7 @@ export const translationCacheOps = {
         }, { merge: true });
 
         count++;
-        if (count >= 400) {
+        if (count >= 25) {
           await queuedCommit(batch);
           await new Promise(resolve => setTimeout(resolve, 2000)); // Throttling delay to prevent stream exhaustion
           batch = writeBatch(db);

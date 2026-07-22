@@ -485,15 +485,15 @@ export default function AdminEntryMistakes() {
     setIsResettingWorkload(true);
 
     try {
-      const res = await fetch('/api/workload-records/reset', {
+      // Verify password via backend API to clear local workload session securely
+      const verifyRes = await fetch('/api/auth/verify-admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adminPassword: resetWorkloadPassword })
+        body: JSON.stringify({ password: resetWorkloadPassword.trim() })
       });
 
-      if (!res.ok) {
-        const error = await res.json();
-        setResetWorkloadError(error.error || 'Failed to reset workload.');
+      if (!verifyRes.ok) {
+        setResetWorkloadError('Incorrect password. Reset aborted.');
         setIsResettingWorkload(false);
         return;
       }
@@ -631,28 +631,10 @@ export default function AdminEntryMistakes() {
   };
 
   const fetchSavedWorkload = async () => {
-    try {
-      setWorkloadLoading(true);
-      const res = await fetch('/api/workload-records?mismatchOnly=true');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.summary) {
-          const totalVal = data.summary.total || 0;
-          setUploadedTotalCount(totalVal);
-          sessionStorage.setItem('uploaded_total_count', String(totalVal));
-        }
-        if (data.records && data.records.length > 0) {
-          setWorkloadRecords(data.records);
-          setWorkloadUploaded(true);
-          sessionStorage.setItem('daily_workload_records', JSON.stringify(data.records));
-          sessionStorage.setItem('daily_workload_uploaded', 'true');
-        }
-      }
-    } catch (err) {
-      console.warn('Failed to load saved workload from server:', err);
-    } finally {
-      setWorkloadLoading(false);
-    }
+    // Isolated Workload for Entry Mistakes Report Board:
+    // We intentionally DO NOT fetch from /api/workload-records here 
+    // to keep it separated from the Workload Analysis Page as requested.
+    setWorkloadLoading(false);
   };
 
   const handleSaveToStorage = async (record: WorkloadRecord) => {
@@ -3069,7 +3051,7 @@ export default function AdminEntryMistakes() {
               <div className="flex-1 min-w-0">
                 <h3 className="text-base font-black text-[#141414] uppercase tracking-wide">Purge Workload Database</h3>
                 <p className="text-xs text-[#141414]/60 mt-1 leading-relaxed">
-                  WARNING: This operation is destructive and irreversible. Continuing will permanently delete all stored Daily HBKMC Workload records from both this server and Cloud Firestore. Please verify your <strong className="text-red-600 font-bold uppercase">Admin Password</strong> to proceed:
+                  WARNING: This operation is destructive and irreversible. Continuing will permanently clear the loaded Workload records from this Entry Mistakes Report Board. The Workload Analysis database will not be affected. Please verify your <strong className="text-red-600 font-bold uppercase">Admin Password</strong> to proceed:
                 </p>
 
                 <div className="mt-4">

@@ -580,10 +580,30 @@ export default function AdminWorkload() {
     }
   };
 
+  const filterAlreadyUploadedFiles = (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    const uploadedNames = new Set(uploadedFilesList.map(f => f.filename));
+    const newFiles = fileArray.filter(f => !uploadedNames.has(f.name));
+    
+    if (newFiles.length < fileArray.length) {
+      const skipped = fileArray.length - newFiles.length;
+      setUploadError(`${skipped} file(s) were skipped because they have already been uploaded.`);
+    }
+    
+    return newFiles;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      parseAndProcessWorkload(files);
+      const newFiles = filterAlreadyUploadedFiles(files);
+      if (newFiles.length > 0) {
+        parseAndProcessWorkload(newFiles);
+      }
+    }
+    // reset input so the same file can be selected again if it failed
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
     }
   };
 
@@ -601,7 +621,10 @@ export default function AdminWorkload() {
     setIsDraggingUpload(false);
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      parseAndProcessWorkload(files);
+      const newFiles = filterAlreadyUploadedFiles(files);
+      if (newFiles.length > 0) {
+        parseAndProcessWorkload(newFiles);
+      }
     }
   };
 
@@ -706,7 +729,15 @@ export default function AdminWorkload() {
       
       const res = await fetch(`/api/workload-records?${params.toString()}`);
       if (res.ok) {
-        const data = await res.json();
+        let data = await res.json();
+        if (data._base64) {
+          const binaryString = window.atob(data._base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+          }
+          data = JSON.parse(new TextDecoder().decode(bytes));
+        }
         setRecords(data.records || []);
         if (data.summary) {
           setMetrics({
@@ -1461,6 +1492,8 @@ export default function AdminWorkload() {
             </div>
           )}
         </div>
+
+
 
         {uploadError && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">

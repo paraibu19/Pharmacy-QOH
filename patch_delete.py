@@ -2,15 +2,14 @@ import re
 
 with open('server.ts', 'r') as f:
     content = f.read()
+    
+old_delete = """      const commitPromise = batch.commit();
+      const commitTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore commit timeout')), 60000));
+      await Promise.race([commitPromise, commitTimeout]);"""
 
-replacement = """
-      if (adminDb) {
-        const idToDelete = itemToDelete.id || `${itemToDelete.mrnOrganization || ''}_${itemToDelete.actionDateTime || ''}_${itemToDelete.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
-        adminDb.collection('application_storage').doc(idToDelete).delete().catch(err => console.error(err));
-      }
-"""
+new_delete = """      await batch.commit();"""
 
-content = re.sub(r'      if \(adminDb\) \{\n        saveMismatchesBulkToFirestore\(newlyAddedItems\)\.catch\(err => console\.error\(err\)\);\n      \}', replacement, content)
+content = content.replace(old_delete, new_delete)
 
 with open('server.ts', 'w') as f:
     f.write(content)

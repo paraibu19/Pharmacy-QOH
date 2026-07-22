@@ -39,7 +39,8 @@ import {
   query,
   limit,
   orderBy,
-  startAfter
+  startAfter,
+  waitForPendingWrites
 } from 'firebase/firestore';
 
 const FieldValue = {
@@ -52,16 +53,13 @@ class FirestoreWriteQueue {
   async enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const nextPromise = this.promise.then(async () => {
       try {
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('Firestore operation timed out')), 60000);
-        });
-        const result = await Promise.race([operation(), timeoutPromise]);
+        const result = await operation();
         // Delay after every write operation to ensure client SDK can safely flush without overloading the GrpcConnection stream.
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 1500));
         return result;
       } catch (err: any) {
         // Delay still occurs to prevent a fast-failing loop from spamming the stream.
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 1500));
         throw err;
       }
     });
@@ -192,12 +190,14 @@ class DocumentRefAdapter {
       } else {
         await setDoc(this.ref, data);
       }
+      await waitForPendingWrites(this.db);
     });
   }
 
   async delete() {
     return firestoreWriteQueue.enqueue(async () => {
       await deleteDoc(this.ref);
+      await waitForPendingWrites(this.db);
     });
   }
 
@@ -282,6 +282,7 @@ class WriteBatchAdapter {
   async commit() {
     return firestoreWriteQueue.enqueue(async () => {
       await this.batch.commit();
+      await waitForPendingWrites(this.db);
     });
   }
 }
@@ -716,7 +717,7 @@ async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
       batch.set(docRef, cleaned, { merge: true });
       
       count++;
-      if (count >= 400) {
+      if (count >= 25) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
@@ -904,10 +905,13 @@ async function updateSystemMetadataInFirestore(): Promise<void> {
   notifyClients('metadata', metaPayload);
 
   if (adminDb) {
-    adminDb.collection('system').doc('metadata').set({
-      lastDataUpdate: new Date(),
-      updatedBy: 'server'
-    }, { merge: true }).catch((err: any) => {
+    firestoreWriteQueue.enqueue(async () => {
+      await adminDb.collection('system').doc('metadata').set({
+        lastDataUpdate: new Date(),
+        updatedBy: 'server'
+      }, { merge: true });
+      await waitForPendingWrites(adminDb.db);
+    }).catch((err: any) => {
       console.error('[Firebase Admin] Failed to update global metadata:', err.message);
     });
   }
@@ -985,7 +989,10 @@ function logUploadedFiles(filenames: string[], recordCount: number, addedCount: 
     
     // Also sync to firestore if adminDb is configured
     if (adminDb) {
-      adminDb.collection('system').doc('uploaded_files').set({ files: list }).catch((err: any) => {
+      firestoreWriteQueue.enqueue(async () => {
+        await adminDb.collection('system').doc('uploaded_files').set({ files: list });
+        await waitForPendingWrites(adminDb.db);
+      }).catch((err: any) => {
         console.error('[Firebase Admin] Failed to sync uploaded files list:', err.message);
       });
     }
@@ -1048,7 +1055,7 @@ async function saveMismatchesBulkToFirestore(items: any[]): Promise<void> {
       batch.set(docRef, cleanedItem);
       count++;
       
-      if (count >= 400) {
+      if (count >= 25) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 500));
         batch = adminDb.batch();
@@ -1091,9 +1098,7 @@ async function resetApplicationStorageInFirestore(): Promise<void> {
         batch.delete(doc.ref);
       }
       
-      const commitPromise = batch.commit();
-      const commitTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore commit timeout')), 60000));
-      await Promise.race([commitPromise, commitTimeout]);
+      await batch.commit();
       
       console.log(`[Firebase Sync] Batch committed for ${snapshot.docs.length} docs`);
       totalDeleted += snapshot.docs.length;
@@ -1477,7 +1482,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
   }
   isSyncingWorkload = true;
   try {
-    const CHUNK_SIZE = 250;
+    const CHUNK_SIZE = 100;
     let chunkIdx = 0;
     let currentChunk: any[] = [];
     
@@ -1508,7 +1513,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
           // Save chunk document individually to prevent exceeding WriteBatch payload size limit of 10MB
           try {
             await docRef.set(chunkData, { merge: false });
-            await new Promise(resolve => setTimeout(resolve, 800)); // Throttling delay to prevent stream exhaustion
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
           } catch (writeErr: any) {
             console.error(`[Firebase Sync] Failed to write chunk ${chunkIdx}:`, writeErr.message);
           }
@@ -1541,7 +1546,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
       cleanupBatch.delete(extraDocRef);
       cleanupCount++;
       
-      if (cleanupCount >= 400) {
+      if (cleanupCount >= 25) {
         await cleanupBatch.commit().catch(() => {});
         await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay
         cleanupBatch = adminDb.batch();
@@ -1571,7 +1576,7 @@ async function resetWorkloadRecordsInFirestore(): Promise<void> {
       batch.delete(adminDb.collection('workload_records').doc(`chunk_${i}`));
       totalDeleted++;
       
-      if (totalDeleted >= 400) {
+      if (totalDeleted >= 25) {
         await batch.commit().catch(() => {});
         batch = adminDb.batch();
         totalDeleted = 0;
@@ -1878,7 +1883,7 @@ async function resetAllInFirestore(): Promise<void> {
     for (const doc of medsSnap.docs) {
       batch.delete(doc.ref);
       count++;
-      if (count >= 400) {
+      if (count >= 25) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
@@ -1894,7 +1899,7 @@ async function resetAllInFirestore(): Promise<void> {
     for (const doc of auditsSnap.docs) {
       batch.delete(doc.ref);
       count++;
-      if (count >= 400) {
+      if (count >= 25) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
@@ -2239,7 +2244,7 @@ app.post('/api/audits/reset', async (req, res) => {
         for (const doc of auditsSnap.docs) {
           batch.delete(doc.ref);
           count++;
-          if (count >= 400) {
+          if (count >= 25) {
             await batch.commit();
             await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
             batch = adminDb.batch();
@@ -2414,10 +2419,13 @@ app.post('/api/system/metadata/settings', async (req, res) => {
     fs.writeFileSync(METADATA_SYNC_FILE, JSON.stringify(currentPayload, null, 2));
     
     if (adminDb) {
-      adminDb.collection('system').doc('metadata').set({
-        isMesaieedHidden: !!isMesaieedHidden,
-        lastSettingUpdate: new Date()
-      }, { merge: true }).catch((err: any) => console.error(err));
+      firestoreWriteQueue.enqueue(async () => {
+        await adminDb.collection('system').doc('metadata').set({
+          isMesaieedHidden: !!isMesaieedHidden,
+          lastSettingUpdate: new Date()
+        }, { merge: true });
+        await waitForPendingWrites(adminDb.db);
+      }).catch((err: any) => console.error(err));
     }
     
     notifyClients('metadata', currentPayload);
@@ -2645,7 +2653,7 @@ app.get('/api/workload-records', async (req, res) => {
         }
       }
       
-      return res.json({
+      const payload = JSON.stringify({
         records,
         summary: {
           total: summary.total,
@@ -2662,6 +2670,7 @@ app.get('/api/workload-records', async (req, res) => {
         locationBreakdown: summary.locationBreakdown,
         workloadTrend: summary.workloadTrend
       });
+      return res.json({ _base64: Buffer.from(payload, 'utf8').toString('base64') });
     }
     
     // If there are filters, we do a streaming filter pass over the NDJSON file
@@ -2832,7 +2841,7 @@ app.get('/api/workload-records', async (req, res) => {
     const total = filteredRecords.length;
     const rate = total > 0 ? ((totalMismatches / total) * 100).toFixed(1) : '0.0';
     
-    res.json({
+    const payload = JSON.stringify({
       records: filteredRecords,
       summary: {
         total,
@@ -2849,6 +2858,7 @@ app.get('/api/workload-records', async (req, res) => {
       locationBreakdown,
       workloadTrend
     });
+    res.json({ _base64: Buffer.from(payload, 'utf8').toString('base64') });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2958,7 +2968,10 @@ app.post('/api/workload-records/reset', async (req, res) => {
     if (adminDb) {
       // Run in background to prevent request timeout during large database resets
       resetWorkloadRecordsInFirestore().catch(err => console.error(err));
-      await adminDb.collection('system').doc('uploaded_files').set({ files: [] }).catch((err: any) => {
+      firestoreWriteQueue.enqueue(async () => {
+        await adminDb.collection('system').doc('uploaded_files').set({ files: [] });
+        await waitForPendingWrites(adminDb.db);
+      }).catch((err: any) => {
         console.error('[Firebase Reset Error] Failed to reset uploaded files in Firestore:', err.message);
       });
     }
@@ -3322,7 +3335,10 @@ app.post('/api/application-storage/delete', async (req, res) => {
 
       if (adminDb) {
         const idToDelete = itemToDelete.id || `${itemToDelete.mrnOrganization || ''}_${itemToDelete.actionDateTime || ''}_${itemToDelete.itemNumber || ''}`.replace(/[^a-zA-Z0-9_\-]/g, '_');
-        adminDb.collection('application_storage').doc(idToDelete).delete().catch(err => console.error(err));
+        firestoreWriteQueue.enqueue(async () => {
+          await adminDb.collection('application_storage').doc(idToDelete).delete();
+          await waitForPendingWrites(adminDb.db);
+        }).catch(err => console.error(err));
       }
 
       await updateSystemMetadataInFirestore().catch(err => console.error(err));
