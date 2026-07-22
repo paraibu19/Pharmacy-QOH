@@ -80,6 +80,7 @@ class ClientFirestoreAdapter {
     } catch (e) {
       this.db = getClientFirestore(app, firebaseConfig.firestoreDatabaseId);
     }
+    console.log("[DEBUG] ClientFirestoreAdapter initialized, this.db is:", typeof this.db);
   }
 
   settings(settings: any) {
@@ -260,9 +261,11 @@ class QuerySnapshotAdapter {
 
 class WriteBatchAdapter {
   private batch: any;
+  private db: any;
 
   constructor(db: any) {
     this.batch = writeBatch(db);
+    this.db = db;
   }
 
   set(docRefAdapter: any, data: any, options?: any) {
@@ -728,6 +731,7 @@ async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
       await batch.commit();
     }
   } catch (err: any) {
+
     handleAdminDbError(err, 'bulk-save medications');
   }
 }
@@ -1974,7 +1978,7 @@ app.post('/api/medications', async (req, res) => {
 
     res.status(201).json(newMed);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -1998,7 +2002,7 @@ app.put('/api/medications/:id', async (req, res) => {
       res.status(404).send('Not found');
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2017,7 +2021,7 @@ app.delete('/api/medications/:id', async (req, res) => {
 
     res.status(204).send();
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2140,7 +2144,7 @@ app.post('/api/medications/bulk', async (req, res) => {
     res.json({ count: newMeds.length });
   } catch (err: any) {
     console.error('Bulk import error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2215,7 +2219,7 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
     });
   } catch (err: any) {
     console.error('[Oracle QOH] Server error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2246,7 +2250,7 @@ app.post('/api/audits', async (req, res) => {
 
     res.status(201).json(newAudit);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2283,7 +2287,7 @@ app.post('/api/audits/reset', async (req, res) => {
 
     res.json({ success: true, message: 'Live Activity feed has been reset successfully.' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2323,7 +2327,7 @@ app.post('/api/system/reset', async (req, res) => {
 
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2339,7 +2343,7 @@ app.get('/api/entry-mistakes/db', async (req, res) => {
       res.json({ configured: false, parameters: [], pharmacists: [] });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2362,7 +2366,7 @@ app.post('/api/entry-mistakes/db', async (req, res) => {
 
     res.json({ success: true, dbState });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2386,7 +2390,7 @@ app.delete('/api/entry-mistakes/db', async (req, res) => {
 
     res.json({ success: true, configured: false, parameters: [], pharmacists: [] });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2419,7 +2423,7 @@ app.get('/api/system/metadata', async (req, res) => {
     }
     res.json(payload);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2449,7 +2453,7 @@ app.post('/api/system/metadata/settings', async (req, res) => {
     notifyClients('metadata', currentPayload);
     res.json({ success: true, metadata: currentPayload });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2486,7 +2490,7 @@ app.post('/api/workload-records/upload/start', (req, res) => {
     console.log(`[Chunked Upload] Initialized upload session ${uploadId}`);
     res.json({ uploadId });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2505,7 +2509,7 @@ app.post('/api/workload-records/upload/chunk', (req, res) => {
     console.log(`[Chunked Upload] Session ${uploadId}: Received chunk of ${items.length} records. Total buffered: ${list.length}`);
     res.json({ success: true, count: items.length });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2590,7 +2594,7 @@ app.post('/api/workload-records/upload/end', async (req, res) => {
     notifyClients('workload-records', { updated: true });
     res.json({ success: true, added: addedCount });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2878,7 +2882,7 @@ app.get('/api/workload-records', async (req, res) => {
     });
     res.json({ _base64: Buffer.from(payload, 'utf8').toString('base64') });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2960,7 +2964,7 @@ app.post('/api/workload-records', async (req, res) => {
     notifyClients('workload-records', { updated: true });
     res.json({ success: true, added: addedCount });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -2998,7 +3002,7 @@ app.post('/api/workload-records/reset', async (req, res) => {
     notifyClients('workload-records', { updated: true });
     res.json({ success: true, message: 'All workload records and uploaded logs purged successfully.' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -3234,7 +3238,7 @@ Use highly professional clinical terminology, clean markdown headings, and clear
     res.json({ analysis: response.text });
   } catch (err: any) {
     console.error('[Gemini AI Analysis Error]:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -3251,7 +3255,7 @@ app.get('/api/application-storage', async (req, res) => {
       res.json([]);
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -3320,7 +3324,7 @@ app.post('/api/application-storage', async (req, res) => {
     }
     res.json({ success: true, count: items.length });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -3364,7 +3368,7 @@ app.post('/api/application-storage/delete', async (req, res) => {
     
     res.json({ success: true, count: items.length });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -3388,7 +3392,7 @@ app.post('/api/application-storage/reset', async (req, res) => {
 
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -3668,7 +3672,7 @@ app.get('/api/rosters', async (req, res) => {
       res.json([]);
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -3708,7 +3712,7 @@ app.post('/api/rosters', async (req, res) => {
 
     res.json({ success: true, count: rosters.length, roster });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
@@ -3960,7 +3964,7 @@ app.post('/api/rosters/delete', async (req, res) => {
 
     res.json({ success: true, count: rosters.length });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
   }
 });
 
