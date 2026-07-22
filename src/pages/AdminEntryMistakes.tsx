@@ -409,26 +409,7 @@ export default function AdminEntryMistakes() {
   const [selectedReason, setSelectedReason] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
   const [selectedPharmacist, setSelectedPharmacist] = useState('all');
-  const [filterMismatchesOnly, setFilterMismatchesOnly] = useState<boolean>(() => {
-    try {
-      const saved = sessionStorage.getItem('filter_mismatches_only');
-      return saved === 'true';
-    } catch {
-      return false;
-    }
-  });
 
-  const toggleFilterMismatchesOnly = () => {
-    setFilterMismatchesOnly(prev => {
-      const next = !prev;
-      try {
-        sessionStorage.setItem('filter_mismatches_only', String(next));
-      } catch (e) {
-        console.warn(e);
-      }
-      return next;
-    });
-  };
 
   // Pagination states to prevent DOM rendering blockage "hanging" during search queries
   const [currentPage, setCurrentPage] = useState(1);
@@ -1776,7 +1757,7 @@ export default function AdminEntryMistakes() {
   // Filter records
   const filteredRecords = React.useMemo(() => {
     const baseList = activeReportType === 'standard' 
-      ? (filterMismatchesOnly ? workloadRecords.filter(r => r.isMismatch) : workloadRecords)
+      ? workloadRecords.filter(r => r.isMismatch)
       : brandVsGenericRecords;
 
     return baseList.filter(rec => {
@@ -1810,7 +1791,7 @@ export default function AdminEntryMistakes() {
 
       return queryMatches && reasonMatches && locationMatches && pharmacistMatches;
     });
-  }, [workloadRecords, brandVsGenericRecords, activeReportType, searchQuery, selectedReason, selectedLocation, selectedPharmacist, filterMismatchesOnly]);
+  }, [workloadRecords, brandVsGenericRecords, activeReportType, searchQuery, selectedReason, selectedLocation, selectedPharmacist]);
 
   // Paginated chunk for hyper-fast UI rendering
   const paginatedRecords = React.useMemo(() => {
@@ -2226,26 +2207,7 @@ export default function AdminEntryMistakes() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
                   <h3 className="text-lg font-black text-[#141414] uppercase tracking-wide">Upload Daily HBKMC Workload</h3>
                   
-                  {/* OPEN / CLOSE BUTTON FOR MISMATCH PARAMETERS FILTER */}
-                  <button
-                    onClick={toggleFilterMismatchesOnly}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all border cursor-pointer active:scale-95 ${
-                      filterMismatchesOnly 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
-                        : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                    }`}
-                    title={filterMismatchesOnly ? "Deactivate mismatch filtering (Show all records)" : "Activate mismatch filtering (Show mismatches only)"}
-                  >
-                    <span className="relative flex h-2 w-2">
-                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                        filterMismatchesOnly ? 'bg-emerald-400' : 'bg-amber-400'
-                      }`}></span>
-                      <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                        filterMismatchesOnly ? 'bg-emerald-500' : 'bg-amber-500'
-                      }`}></span>
-                    </span>
-                    <span>Mismatch Filter: {filterMismatchesOnly ? 'OPEN (Active)' : 'CLOSED (Deactive)'}</span>
-                  </button>
+
                 </div>
                 <p className="text-xs text-[#141414]/60 mt-1 mb-4">
                   Upload yesterday's workload file containing the detailed dispensing items table worksheets. We'll search inside "Yesterday HBKMC Workload (Detai" to filter out records based on mismatch parameters.
@@ -2314,11 +2276,7 @@ export default function AdminEntryMistakes() {
                         <p className="text-[10px] text-emerald-700/80 font-semibold leading-normal">
                           Yesterday's HBKMC Workload parsed with <span className="font-extrabold text-emerald-900">{(uploadedTotalCount || workloadRecords.length).toLocaleString()} records</span>.
                         </p>
-                        {!filterMismatchesOnly && (
-                          <p className="text-[9px] text-amber-700 font-bold mt-1 max-w-[200px]">
-                            ⚡ Fast preview mode active (100 rows loaded in UI, full dataset saved to Server Workload Database).
-                          </p>
-                        )}
+
                       </div>
                       <button
                         onClick={(e) => {
@@ -2628,12 +2586,7 @@ export default function AdminEntryMistakes() {
                                 <td className="p-3 text-center font-extrabold text-[#F27D26] font-mono bg-[#F27D26]/5">{r.dispenseQuantity || 'N/A'}</td>
                                 <td className="p-3 min-w-[280px] max-w-[360px] whitespace-normal break-words">
                                   <div className="space-y-1">
-                                    {r.reasons.length === 0 ? (
-                                      <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider px-2 py-1 rounded shadow-sm">
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Match Perfect
-                                      </span>
-                                    ) : (
-                                      r.reasons.map((re, reIdx) => (
+                                    {r.reasons.map((re, reIdx) => (
                                         <span key={`reason-${r.id || 'row'}-${reIdx}`} className="inline-flex items-start justify-between gap-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-[10px] font-semibold px-2.5 py-1.5 rounded-md leading-normal shadow-sm flex w-full">
                                           <span className="flex items-start gap-1.5 min-w-0 whitespace-normal break-words py-0.5">
                                             <AlertTriangle className="w-2.5 h-2.5 text-red-500 shrink-0 mt-0.5" />
@@ -2647,8 +2600,7 @@ export default function AdminEntryMistakes() {
                                             <X className="w-2.5 h-2.5" />
                                           </button>
                                         </span>
-                                      ))
-                                    )}
+                                      ))}
                                   </div>
                                 </td>
                                 <td className="p-3 text-center whitespace-nowrap">
