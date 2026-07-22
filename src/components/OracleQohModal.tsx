@@ -885,13 +885,12 @@ export default function OracleQohModal({
                       return (
                         <button
                           key={p.id}
-                          disabled={parsedItems.length > 0}
                           onClick={() => setSelectedLoc(p.id)}
                           className={`p-3 border rounded-2xl transition-all text-center flex flex-col justify-center items-center gap-1 ${
                             isSelected
                               ? 'bg-[#F27D26]/10 border-[#F27D26] text-[#F27D26] shadow-sm'
                               : 'bg-white border-[#141414]/10 text-[#141414]/60 hover:bg-stone-50'
-                          } ${parsedItems.length > 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          }`}
                         >
                           <span className="font-bold text-xs sm:text-sm">{p.short}</span>
                           <span className="text-[8px] uppercase font-black opacity-50 tracking-wider">Pharmacy</span>

@@ -2175,6 +2175,24 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
           };
           updatedMeds.push(meds[existingIndex]);
         }
+      } else {
+        const newItem = {
+          id: Math.random().toString(36).substring(2, 15),
+          locationId: locationId,
+          itemCode: item.itemCode,
+          itemName: item.itemName || `Item ${item.itemCode}`,
+          qoh: item.qoh || 0,
+          averageCost: item.averageCost || 0,
+          totalValue: item.totalValue || 0,
+          expiration1: '',
+          expiration2: '',
+          expiration3: '',
+          addedAt: new Date().toISOString(),
+          lastUpdatedAt: new Date().toISOString(),
+          updatedBy: 'Oracle QOH Upload'
+        };
+        meds.push(newItem);
+        createdMeds.push(newItem);
       }
     }
 
