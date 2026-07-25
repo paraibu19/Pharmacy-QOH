@@ -2136,10 +2136,10 @@ app.post('/api/medications/bulk', async (req, res) => {
     fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
 
     if (adminDb) {
-      await saveMedicationsBulkToFirestore(newMeds).catch(err => console.error(err));
+      saveMedicationsBulkToFirestore(newMeds).catch(err => console.error(err));
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.json({ count: newMeds.length });
   } catch (err: any) {
@@ -2204,10 +2204,10 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
 
     if (adminDb) {
       const allToSync = [...updatedMeds, ...createdMeds];
-      await saveMedicationsBulkToFirestore(allToSync).catch(err => console.error('[Oracle QOH] Firestore save error:', err));
+      saveMedicationsBulkToFirestore(allToSync).catch(err => console.error('[Oracle QOH] Firestore save error:', err));
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error('[Oracle QOH] Metadata update error:', err));
+    updateSystemMetadataInFirestore().catch(err => console.error('[Oracle QOH] Metadata update error:', err));
 
     notifyClients('medications', meds);
 
