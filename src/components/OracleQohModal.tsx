@@ -1014,7 +1014,7 @@ export default function OracleQohModal({
                             </span>
                           </div>
                           <div>
-                            <span className="text-[8px] font-bold uppercase text-[#F27D26]/60 block">Skip (No Match)</span>
+                            <span className="text-[8px] font-bold uppercase text-[#F27D26]/60 block">Create (New)</span>
                             <span className="text-sm font-black text-amber-600 flex items-center gap-1">
                               {skipCount}
                               <span className="text-[8px] font-bold text-[#141414]/40">new</span>
@@ -1319,7 +1319,7 @@ export default function OracleQohModal({
               {parsedItems.length > 0 && (
                 <button
                   type="button"
-                  disabled={isSaving || diffCount === 0}
+                  disabled={isSaving || (diffCount === 0 && skipCount === 0)}
                   onClick={handleSave}
                   className="px-8 py-2.5 bg-gradient-to-r from-[#F27D26] to-[#E06410] text-white hover:shadow-lg rounded-full text-xs font-extrabold transition-all uppercase tracking-widest flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                 >
@@ -1331,7 +1331,7 @@ export default function OracleQohModal({
                   ) : (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      Apply Oracle Stock ({diffCount} Items)
+                      Apply Oracle Stock ({diffCount + skipCount} Items)
                     </>
                   )}
                 </button>

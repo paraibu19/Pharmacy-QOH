@@ -3014,7 +3014,6 @@ export default function OrderView() {
         currentLocation={selectedLocation}
         allMedications={allMedications}
         onSuccess={() => {
-          setShowOracleQoh(false);
           refresh(true);
           if (refreshAll) {
             refreshAll(true).catch(err => console.warn("Background refreshAll error:", err));

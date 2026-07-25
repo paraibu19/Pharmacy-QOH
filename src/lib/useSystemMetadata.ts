@@ -54,9 +54,12 @@ export function useSystemMetadata() {
             const serverCloudActive = data.firebaseActive !== false;
             const isManualLocal = typeof window !== 'undefined' && window.sessionStorage?.getItem('firestore_fallback') === 'true';
             
+            const currentLastUpdate = storage.getItem('aw_pharmacy_last_update');
             if (serverCloudActive && !isManualLocal) {
-              storage.setItem('aw_pharmacy_last_update', timestamp);
-              setLastUpdate(timestamp);
+              if (!currentLastUpdate || new Date(timestamp) > new Date(currentLastUpdate)) {
+                storage.setItem('aw_pharmacy_last_update', timestamp);
+                setLastUpdate(timestamp);
+              }
             } else {
               const localTime = localDb.getLastUpdateTime();
               if (!localTime || new Date(timestamp) > new Date(localTime)) {
@@ -129,9 +132,12 @@ export function useSystemMetadata() {
             const serverCloudActive = data.firebaseActive !== false;
             const isManualLocal = typeof window !== 'undefined' && window.sessionStorage?.getItem('firestore_fallback') === 'true';
 
+            const currentLastUpdate = storage.getItem('aw_pharmacy_last_update');
             if (serverCloudActive && !isManualLocal) {
-              storage.setItem('aw_pharmacy_last_update', timestamp);
-              setLastUpdate(timestamp);
+              if (!currentLastUpdate || new Date(timestamp) > new Date(currentLastUpdate)) {
+                storage.setItem('aw_pharmacy_last_update', timestamp);
+                setLastUpdate(timestamp);
+              }
             } else {
               const localTime = localDb.getLastUpdateTime();
               if (!localTime || new Date(timestamp) > new Date(localTime)) {
