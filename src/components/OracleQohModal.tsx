@@ -76,6 +76,16 @@ export default function OracleQohModal({
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const locMedsMap = useMemo(() => {
+    const map = new Map();
+    allMedications.forEach((m: any) => {
+      if (m.locationId === selectedLoc) {
+        map.set(m.itemCode, m);
+      }
+    });
+    return map;
+  }, [allMedications, selectedLoc]);
+
   const { 
     totalParsedQty, 
     totalParsedValue, 
@@ -98,9 +108,7 @@ export default function OracleQohModal({
         acc.totalParsedQty += item.qoh;
         acc.totalParsedValue += item.totalValue;
 
-        const matchingMed = allMedications.find(
-          (m: any) => m.locationId === selectedLoc && m.itemCode === item.itemCode
-        );
+        const matchingMed = locMedsMap.get(item.itemCode);
 
         if (matchingMed) {
           matchC++;
@@ -134,7 +142,7 @@ export default function OracleQohModal({
       updateQty: updQ,
       updateValue: updV
     };
-  }, [parsedItems, allMedications, selectedLoc]);
+  }, [parsedItems, locMedsMap]);
 
   const filteredParsedItems = useMemo(() => {
     if (!previewSearch.trim()) return parsedItems;
@@ -357,8 +365,10 @@ export default function OracleQohModal({
                   }
 
                   let text = cell.textContent ? cell.textContent.trim() : '';
-                  const rowspan = parseInt(cell.getAttribute('rowspan') || '1', 10);
-                  const colspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+                  const rawRowspan = parseInt(cell.getAttribute('rowspan') || '1', 10);
+                  const rawColspan = parseInt(cell.getAttribute('colspan') || '1', 10);
+                  const rowspan = isNaN(rawRowspan) ? 1 : Math.min(rawRowspan, 50);
+                  const colspan = isNaN(rawColspan) ? 1 : Math.min(rawColspan, 50);
 
                   for (let rOffset = 0; rOffset < rowspan; rOffset++) {
                     const targetR = rIdx + rOffset;
@@ -1199,9 +1209,7 @@ export default function OracleQohModal({
                           </thead>
                           <tbody className="divide-y divide-[#141414]/5">
                             {visibleItems.map((item, index) => {
-                              const matchingMed = allMedications.find(
-                                (m: any) => m.locationId === selectedLoc && m.itemCode === item.itemCode
-                              );
+                              const matchingMed = locMedsMap.get(item.itemCode);
                               const exists = !!matchingMed;
                               const hasDiff = exists && (
                                 matchingMed.qoh !== item.qoh ||

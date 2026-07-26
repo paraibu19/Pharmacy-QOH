@@ -2159,8 +2159,16 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
     const updatedMeds: any[] = [];
     const createdMeds: any[] = [];
 
+    // Pre-build map for O(1) lookups
+    const medsMap = new Map();
+    meds.forEach((m: any, index: number) => {
+      if (m.locationId === locationId) {
+        medsMap.set(m.itemCode, index);
+      }
+    });
+
     for (const item of items) {
-      const existingIndex = meds.findIndex((em: any) => em.locationId === locationId && em.itemCode === item.itemCode);
+      const existingIndex = medsMap.has(item.itemCode) ? medsMap.get(item.itemCode) : -1;
       if (existingIndex !== -1) {
         const existing = meds[existingIndex];
         const hasDiff = 
@@ -2180,30 +2188,17 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
           updatedMeds.push(meds[existingIndex]);
         }
       } else {
-        const newItem = {
-          id: Math.random().toString(36).substring(2, 15),
-          locationId: locationId,
-          itemCode: item.itemCode,
-          itemName: item.itemName || `Item ${item.itemCode}`,
-          qoh: item.qoh || 0,
-          averageCost: item.averageCost || 0,
-          totalValue: item.totalValue || 0,
-          expiration1: '',
-          expiration2: '',
-          expiration3: '',
-          addedAt: new Date().toISOString(),
-          lastUpdatedAt: new Date().toISOString(),
-          updatedBy: 'Oracle QOH Upload'
-        };
-        meds.push(newItem);
-        createdMeds.push(newItem);
+        // As per requirements: If an item code from the Oracle report does not exist in the Bulk Imported Excel Data, 
+        // it will be skipped and won't be created on the application.
+        // So we do nothing here.
       }
     }
 
     fs.writeFileSync(MEDS_FILE, JSON.stringify(meds, null, 2));
 
     if (adminDb) {
-      const allToSync = [...updatedMeds, ...createdMeds];
+      const allToSync = [...updatedMeds];
+      // Background sync to prevent request timeout
       saveMedicationsBulkToFirestore(allToSync).catch(err => console.error('[Oracle QOH] Firestore save error:', err));
     }
 
@@ -2214,7 +2209,7 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
     res.json({
       success: true,
       updatedCount: updatedMeds.length,
-      createdCount: createdMeds.length,
+      createdCount: 0,
       totalCount: items.length
     });
   } catch (err: any) {
