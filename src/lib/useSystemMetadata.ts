@@ -5,7 +5,9 @@ import { localDb } from './localStorageDb';
 import { storage, sessionStorage, safeReload } from './storage';
 
 export function useSystemMetadata() {
-  const [lastUpdate, setLastUpdate] = useState<string | null>(localDb.getLastUpdateTime());
+  const [lastUpdate, setLastUpdate] = useState<string | null>(() => {
+    return storage.getItem('aw_pharmacy_last_update') || localDb.getLastUpdateTime();
+  });
   const [isMesaieedHidden, setIsMesaieedHidden] = useState<boolean>(() => {
     return storage.getItem('aw_pharmacy_hide_mesaieed') === 'true';
   });
@@ -59,12 +61,16 @@ export function useSystemMetadata() {
               if (!currentLastUpdate || new Date(timestamp) > new Date(currentLastUpdate)) {
                 storage.setItem('aw_pharmacy_last_update', timestamp);
                 setLastUpdate(timestamp);
+              } else {
+                setLastUpdate(currentLastUpdate);
               }
             } else {
               const localTime = localDb.getLastUpdateTime();
               if (!localTime || new Date(timestamp) > new Date(localTime)) {
                 storage.setItem('aw_pharmacy_last_update', timestamp);
                 setLastUpdate(timestamp);
+              } else {
+                setLastUpdate(localTime);
               }
             }
           }
@@ -111,7 +117,7 @@ export function useSystemMetadata() {
   useEffect(() => {
     // 1. Listen to Local Storage (for offline/immediate changes)
     const handleLocalUpdate = () => {
-      setLastUpdate(localDb.getLastUpdateTime());
+      setLastUpdate(storage.getItem('aw_pharmacy_last_update') || localDb.getLastUpdateTime());
       setIsMesaieedHidden(storage.getItem('aw_pharmacy_hide_mesaieed') === 'true');
     };
     window.addEventListener('local-storage-update', handleLocalUpdate);
@@ -137,12 +143,16 @@ export function useSystemMetadata() {
               if (!currentLastUpdate || new Date(timestamp) > new Date(currentLastUpdate)) {
                 storage.setItem('aw_pharmacy_last_update', timestamp);
                 setLastUpdate(timestamp);
+              } else {
+                setLastUpdate(currentLastUpdate);
               }
             } else {
               const localTime = localDb.getLastUpdateTime();
               if (!localTime || new Date(timestamp) > new Date(localTime)) {
                 storage.setItem('aw_pharmacy_last_update', timestamp);
                 setLastUpdate(timestamp);
+              } else {
+                setLastUpdate(localTime);
               }
             }
           } catch (err) {
@@ -174,6 +184,8 @@ export function useSystemMetadata() {
               if (!currentLastUpdate || new Date(timestamp) > new Date(currentLastUpdate)) {
                 storage.setItem('aw_pharmacy_last_update', timestamp);
                 setLastUpdate(timestamp);
+              } else {
+                setLastUpdate(currentLastUpdate);
               }
             } catch (e) {
               console.error('Error parsing metadata timestamp:', e);
