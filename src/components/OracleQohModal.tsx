@@ -783,36 +783,26 @@ export default function OracleQohModal({
     setError(null);
 
     try {
-      const CHUNK_SIZE = 500;
-      let totalUpdated = 0;
-      let totalCreated = 0;
+      const response = await fetch('/api/medications/oracle-qoh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          locationId: selectedLoc,
+          items: parsedItems
+        })
+      });
 
-      for (let i = 0; i < parsedItems.length; i += CHUNK_SIZE) {
-        const chunk = parsedItems.slice(i, i + CHUNK_SIZE);
-        const response = await fetch('/api/medications/oracle-qoh', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            locationId: selectedLoc,
-            items: chunk
-          })
-        });
-
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(`Failed to upload Oracle QOH data (chunk ${i / CHUNK_SIZE + 1}): ${errText}`);
-        }
-
-        const resData = await response.json();
-        totalUpdated += resData.updatedCount || 0;
-        totalCreated += resData.createdCount || 0;
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || 'Failed to upload Oracle QOH data to server');
       }
 
+      const resData = await response.json();
       setSaveResult({
-        updatedCount: totalUpdated,
-        createdCount: totalCreated
+        updatedCount: resData.updatedCount || 0,
+        createdCount: resData.createdCount || 0
       });
 
       if (onSuccess) {

@@ -60,18 +60,14 @@ export const sharedDb = {
   },
 
   async bulkAdd(meds: Omit<Medication, 'id' | 'addedAt' | 'lastUpdatedAt'>[], options: { photoStrategy: 'keep' | 'remove' } = { photoStrategy: 'keep' }): Promise<void> {
-    const CHUNK_SIZE = 500;
-    for (let i = 0; i < meds.length; i += CHUNK_SIZE) {
-      const chunk = meds.slice(i, i + CHUNK_SIZE);
-      const res = await fetch('/api/medications/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: chunk, options })
-      });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => 'Unknown error');
-        throw new Error(`Server failed to bulk add medications (chunk ${i / CHUNK_SIZE + 1}): ${errText}`);
-      }
+    const res = await fetch('/api/medications/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: meds, options })
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown error');
+      throw new Error(`Server failed to bulk add medications: ${errText}`);
     }
   },
 

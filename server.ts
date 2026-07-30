@@ -412,7 +412,14 @@ let activeUnsubscribes: (() => void)[] = [];
 let reconnectTimeout: NodeJS.Timeout | null = null;
 
 function notifyClients(type: string, data?: any) {
-  const payload = JSON.stringify({ type, timestamp: new Date().toISOString(), data });
+  // Never send the entire medications array via SSE to prevent hanging the event loop and clients.
+  // Send null for the data so the client refetches on its own schedule.
+  let payloadData = data;
+  if (type === 'medications' && Array.isArray(data)) {
+    payloadData = null;
+  }
+  
+  const payload = JSON.stringify({ type, timestamp: new Date().toISOString(), data: payloadData });
   console.log(`[SSE] Broadcasting event "${type}" to ${sseClients.size} connected clients.`);
   for (const client of sseClients) {
     try {
@@ -2171,17 +2178,20 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
       const existingIndex = medsMap.has(item.itemCode) ? medsMap.get(item.itemCode) : -1;
       if (existingIndex !== -1) {
         const existing = meds[existingIndex];
+        const newAvgCost = item.averageCost !== undefined ? item.averageCost : existing.averageCost;
+        const newTotalVal = item.totalValue !== undefined ? item.totalValue : (newAvgCost ? Number((newAvgCost * item.qoh).toFixed(3)) : existing.totalValue);
+
         const hasDiff = 
           existing.qoh !== item.qoh ||
-          existing.averageCost !== item.averageCost ||
-          existing.totalValue !== item.totalValue;
+          (item.averageCost !== undefined && existing.averageCost !== item.averageCost) ||
+          (item.totalValue !== undefined && existing.totalValue !== item.totalValue);
 
         if (hasDiff) {
           meds[existingIndex] = {
             ...existing,
             qoh: item.qoh,
-            averageCost: item.averageCost,
-            totalValue: item.totalValue,
+            averageCost: newAvgCost,
+            totalValue: newTotalVal,
             lastUpdatedAt: new Date().toISOString(),
             updatedBy: 'Oracle QOH Upload'
           };
