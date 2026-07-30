@@ -595,7 +595,20 @@ export default function OracleQohModal({
 
           // Get item code from specified index
           const rawCode = row[itemCodeIdx];
-          const code = rawCode !== undefined && rawCode !== null ? String(rawCode).trim() : '';
+          let code = rawCode !== undefined && rawCode !== null ? String(rawCode).trim() : '';
+          
+          // Normalize code to match DB format (e.g. mapping 000002103 from Excel to 8900002103 in DB)
+          if (code) {
+            const nCode = code.replace(/^(89|0)+/, '');
+            if (nCode) {
+              for (const key of locMedsMap.keys()) {
+                if (key.replace(/^(89|0)+/, '') === nCode) {
+                  code = key;
+                  break;
+                }
+              }
+            }
+          }
           
           // Skip if empty, header/metadata text, or total summaries
           if (!code || 
