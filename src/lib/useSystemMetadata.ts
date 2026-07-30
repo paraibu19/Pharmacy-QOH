@@ -58,12 +58,8 @@ export function useSystemMetadata() {
             
             const currentLastUpdate = storage.getItem('aw_pharmacy_last_update');
             if (serverCloudActive && !isManualLocal) {
-              if (!currentLastUpdate || new Date(timestamp) > new Date(currentLastUpdate)) {
-                storage.setItem('aw_pharmacy_last_update', timestamp);
-                setLastUpdate(timestamp);
-              } else {
-                setLastUpdate(currentLastUpdate);
-              }
+              storage.setItem('aw_pharmacy_last_update', timestamp);
+              setLastUpdate(timestamp);
             } else {
               const localTime = localDb.getLastUpdateTime();
               if (!localTime || new Date(timestamp) > new Date(localTime)) {
@@ -140,12 +136,8 @@ export function useSystemMetadata() {
 
             const currentLastUpdate = storage.getItem('aw_pharmacy_last_update');
             if (serverCloudActive && !isManualLocal) {
-              if (!currentLastUpdate || new Date(timestamp) > new Date(currentLastUpdate)) {
-                storage.setItem('aw_pharmacy_last_update', timestamp);
-                setLastUpdate(timestamp);
-              } else {
-                setLastUpdate(currentLastUpdate);
-              }
+              storage.setItem('aw_pharmacy_last_update', timestamp);
+              setLastUpdate(timestamp);
             } else {
               const localTime = localDb.getLastUpdateTime();
               if (!localTime || new Date(timestamp) > new Date(localTime)) {
@@ -180,13 +172,8 @@ export function useSystemMetadata() {
               const dateObj = (data.lastDataUpdate as any).toDate ? data.lastDataUpdate.toDate() : new Date(data.lastDataUpdate);
               const timestamp = dateObj.toISOString();
               
-              const currentLastUpdate = storage.getItem('aw_pharmacy_last_update');
-              if (!currentLastUpdate || new Date(timestamp) > new Date(currentLastUpdate)) {
-                storage.setItem('aw_pharmacy_last_update', timestamp);
-                setLastUpdate(timestamp);
-              } else {
-                setLastUpdate(currentLastUpdate);
-              }
+              storage.setItem('aw_pharmacy_last_update', timestamp);
+              setLastUpdate(timestamp);
             } catch (e) {
               console.error('Error parsing metadata timestamp:', e);
             }

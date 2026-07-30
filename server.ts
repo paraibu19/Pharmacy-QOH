@@ -55,11 +55,11 @@ class FirestoreWriteQueue {
       try {
         const result = await operation();
         // Delay after every write operation to ensure client SDK can safely flush without overloading the GrpcConnection stream.
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 200));
         return result;
       } catch (err: any) {
         // Delay still occurs to prevent a fast-failing loop from spamming the stream.
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 200));
         throw err;
       }
     });
@@ -720,9 +720,9 @@ async function saveMedicationsBulkToFirestore(items: any[]): Promise<void> {
       batch.set(docRef, cleaned, { merge: true });
       
       count++;
-      if (count >= 25) {
+      if (count >= 250) {
         await batch.commit();
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
+        await new Promise(resolve => setTimeout(resolve, 500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
         count = 0;
       }
@@ -1059,7 +1059,7 @@ async function saveMismatchesBulkToFirestore(items: any[]): Promise<void> {
       batch.set(docRef, cleanedItem);
       count++;
       
-      if (count >= 25) {
+      if (count >= 250) {
         await batch.commit();
         await new Promise(resolve => setTimeout(resolve, 500));
         batch = adminDb.batch();
@@ -1517,7 +1517,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
           // Save chunk document individually to prevent exceeding WriteBatch payload size limit of 10MB
           try {
             await docRef.set(chunkData, { merge: false });
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
+            await new Promise(resolve => setTimeout(resolve, 200)); // Throttling delay to prevent stream exhaustion
           } catch (writeErr: any) {
             console.error(`[Firebase Sync] Failed to write chunk ${chunkIdx}:`, writeErr.message);
           }
@@ -1552,7 +1552,7 @@ async function saveWorkloadRecordsBulkToFirestoreNdjson(): Promise<void> {
       
       if (cleanupCount >= 25) {
         await cleanupBatch.commit().catch(() => {});
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay
+        await new Promise(resolve => setTimeout(resolve, 200)); // Throttling delay
         cleanupBatch = adminDb.batch();
         cleanupCount = 0;
       }
@@ -1887,9 +1887,9 @@ async function resetAllInFirestore(): Promise<void> {
     for (const doc of medsSnap.docs) {
       batch.delete(doc.ref);
       count++;
-      if (count >= 25) {
+      if (count >= 250) {
         await batch.commit();
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
+        await new Promise(resolve => setTimeout(resolve, 500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
         count = 0;
       }
@@ -1903,9 +1903,9 @@ async function resetAllInFirestore(): Promise<void> {
     for (const doc of auditsSnap.docs) {
       batch.delete(doc.ref);
       count++;
-      if (count >= 25) {
+      if (count >= 250) {
         await batch.commit();
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
+        await new Promise(resolve => setTimeout(resolve, 500)); // Throttling delay to prevent stream exhaustion
         batch = adminDb.batch();
         count = 0;
       }
@@ -1974,7 +1974,7 @@ app.post('/api/medications', async (req, res) => {
       await saveMedicationToFirestore(newMed).catch(err => console.error(err));
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.status(201).json(newMed);
   } catch (err: any) {
@@ -1995,7 +1995,7 @@ app.put('/api/medications/:id', async (req, res) => {
         await saveMedicationToFirestore(meds[index]).catch(err => console.error(err));
       }
 
-      await updateSystemMetadataInFirestore().catch(err => console.error(err));
+      updateSystemMetadataInFirestore().catch(err => console.error(err));
 
       res.json(meds[index]);
     } else {
@@ -2017,7 +2017,7 @@ app.delete('/api/medications/:id', async (req, res) => {
       await deleteMedicationFromFirestore(id).catch(err => console.error(err));
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.status(204).send();
   } catch (err: any) {
@@ -2241,7 +2241,7 @@ app.post('/api/audits', async (req, res) => {
       await saveAuditToFirestore(newAudit).catch(err => console.error(err));
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.status(201).json(newAudit);
   } catch (err: any) {
@@ -2261,9 +2261,9 @@ app.post('/api/audits/reset', async (req, res) => {
         for (const doc of auditsSnap.docs) {
           batch.delete(doc.ref);
           count++;
-          if (count >= 25) {
+          if (count >= 250) {
             await batch.commit();
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Throttling delay to prevent stream exhaustion
+            await new Promise(resolve => setTimeout(resolve, 500)); // Throttling delay to prevent stream exhaustion
             batch = adminDb.batch();
             count = 0;
           }
@@ -2277,7 +2277,7 @@ app.post('/api/audits/reset', async (req, res) => {
       }
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
     notifyClients('audits', []);
 
     res.json({ success: true, message: 'Live Activity feed has been reset successfully.' });
@@ -2357,7 +2357,7 @@ app.post('/api/entry-mistakes/db', async (req, res) => {
       await saveEntryMistakesDbToFirestore(dbState).catch(err => console.error(err));
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.json({ success: true, dbState });
   } catch (err: any) {
@@ -2381,7 +2381,7 @@ app.delete('/api/entry-mistakes/db', async (req, res) => {
       await deleteEntryMistakesDbFromFirestore().catch(err => console.error(err));
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.json({ success: true, configured: false, parameters: [], pharmacists: [] });
   } catch (err: any) {
@@ -2993,7 +2993,7 @@ app.post('/api/workload-records/reset', async (req, res) => {
       });
     }
     
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
     notifyClients('workload-records', { updated: true });
     res.json({ success: true, message: 'All workload records and uploaded logs purged successfully.' });
   } catch (err: any) {
@@ -3315,7 +3315,7 @@ app.post('/api/application-storage', async (req, res) => {
         // Run in background to avoid blocking the HTTP response cycle and timing out
         saveMismatchesBulkToFirestore(newlyAddedItems).catch(err => console.error(err));
       }
-      await updateSystemMetadataInFirestore().catch(err => console.error(err));
+      updateSystemMetadataInFirestore().catch(err => console.error(err));
     }
     res.json({ success: true, count: items.length });
   } catch (err: any) {
@@ -3358,7 +3358,7 @@ app.post('/api/application-storage/delete', async (req, res) => {
         }).catch(err => console.error(err));
       }
 
-      await updateSystemMetadataInFirestore().catch(err => console.error(err));
+      updateSystemMetadataInFirestore().catch(err => console.error(err));
     }
     
     res.json({ success: true, count: items.length });
@@ -3383,7 +3383,7 @@ app.post('/api/application-storage/reset', async (req, res) => {
       resetApplicationStorageInFirestore().catch(err => console.error(err));
     }
 
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
 
     res.json({ success: true });
   } catch (err: any) {
@@ -3702,7 +3702,7 @@ app.post('/api/rosters', async (req, res) => {
     if (adminDb) {
       await saveRosterToFirestore(roster).catch(err => console.error(err));
     }
-    await updateSystemMetadataInFirestore().catch(err => console.error(err));
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
     notifyClients('rosters', rosters);
 
     res.json({ success: true, count: rosters.length, roster });
@@ -3953,7 +3953,7 @@ app.post('/api/rosters/delete', async (req, res) => {
       if (adminDb) {
         await deleteRosterFromFirestore(id).catch(err => console.error(err));
       }
-      await updateSystemMetadataInFirestore().catch(err => console.error(err));
+      updateSystemMetadataInFirestore().catch(err => console.error(err));
       notifyClients('rosters', rosters);
     }
 
