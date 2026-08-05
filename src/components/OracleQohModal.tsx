@@ -23,6 +23,7 @@ const PHARMACIES = [
 
 interface ParsedItem {
   itemCode: string;
+  locationId?: string;
   itemName: string;
   qoh: number;
   averageCost: number;
@@ -79,12 +80,10 @@ export default function OracleQohModal({
   const locMedsMap = useMemo(() => {
     const map = new Map();
     allMedications.forEach((m: any) => {
-      if (m.locationId === selectedLoc) {
-        map.set(m.itemCode, m);
-      }
+      map.set(`${m.locationId}_${m.itemCode}`, m);
     });
     return map;
-  }, [allMedications, selectedLoc]);
+  }, [allMedications]);
 
   const { 
     totalParsedQty, 
@@ -108,7 +107,7 @@ export default function OracleQohModal({
         acc.totalParsedQty += item.qoh;
         acc.totalParsedValue += item.totalValue;
 
-        const matchingMed = locMedsMap.get(item.itemCode);
+        const matchingMed = locMedsMap.get(`${item.locationId || selectedLoc}_${item.itemCode}`);
 
         if (matchingMed) {
           matchC++;
@@ -564,6 +563,10 @@ export default function OracleQohModal({
             valIdx = normalizedHeaders.findIndex(h => h.includes('totalval') || h.includes('totalvalue') || h.includes('value') || h.includes('totalcost') || h.includes('amount') || h.includes('valqar') || h.includes('total'));
           }
 
+          let subinvIdx = normalizedHeaders.findIndex(h => 
+            h === 'subinventory' || h === 'subinv' || h === 'locator' || h === 'location' || h === 'org'
+          );
+
           if (codeIdx !== -1) itemCodeIdx = codeIdx;
           if (nameIdx !== -1) itemNameIdx = nameIdx;
           if (qtyIdx !== -1) qohIdx = qtyIdx;
@@ -578,6 +581,16 @@ export default function OracleQohModal({
         if (qohIdx < 0 || qohIdx >= safeMaxCol) qohIdx = safeMaxCol <= 10 ? Math.min(2, safeMaxCol - 1) : Math.min(12, safeMaxCol - 1);
         if (avgCostIdx < 0 || avgCostIdx >= safeMaxCol) avgCostIdx = safeMaxCol <= 10 ? Math.min(3, safeMaxCol - 1) : Math.min(13, safeMaxCol - 1);
         if (totalValIdx < 0 || totalValIdx >= safeMaxCol) totalValIdx = safeMaxCol <= 10 ? Math.min(4, safeMaxCol - 1) : Math.min(14, safeMaxCol - 1);
+
+        // Try to guess subinvIdx if not found, it is usually before qtyIdx
+        let finalSubinvIdx = -1;
+        if (aoa.length > headerRowIndex) {
+          const headerRow = aoa[headerRowIndex];
+          const normalizedHeaders = headerRow.map(h => h ? String(h).toLowerCase().trim().replace(/[\s\-_.]/g, '') : '');
+          finalSubinvIdx = normalizedHeaders.findIndex(h => 
+            h === 'subinventory' || h === 'subinv' || h === 'locator' || h === 'location' || h === 'org'
+          );
+        }
 
         // Save detected columns for visual diagnostic feedback
         setDetectedColumns({
@@ -596,16 +609,26 @@ export default function OracleQohModal({
           // Get item code from specified index
           const rawCode = row[itemCodeIdx];
           let code = rawCode !== undefined && rawCode !== null ? String(rawCode).trim() : '';
+
+          let targetLoc = selectedLoc;
+          if (finalSubinvIdx !== -1 && row[finalSubinvIdx] !== undefined && row[finalSubinvIdx] !== null) {
+            const subStr = String(row[finalSubinvIdx]).toLowerCase();
+            if (subStr.includes('ped')) targetLoc = PharmacyLocation.PEDIATRIC;
+            else if (subStr.includes('adult') || subStr.includes('aer')) targetLoc = PharmacyLocation.ADULT;
+            else if (subStr.includes('mes') || subStr.includes('mic')) targetLoc = PharmacyLocation.MESAIEED;
+            // if we are processing a cross-location sheet and this row is for a different loc, we map it,
+            // otherwise we skip if it matches nothing in our known list? No, if it matches nothing, we 
+            // should either fallback to selectedLoc or skip. To be safe, skip if it explicitly matches inpatient or something.
+            else if (subStr.includes('inp') || subStr.includes('ward')) continue; 
+          }
           
           // Normalize code to match DB format (e.g. mapping 000002103 from Excel to 8900002103 in DB)
           if (code) {
             const nCode = code.replace(/^(89|0)+/, '');
-            if (nCode) {
-              for (const key of locMedsMap.keys()) {
-                if (key.replace(/^(89|0)+/, '') === nCode) {
-                  code = key;
-                  break;
-                }
+            if (nCode && allMedications) {
+              const match = allMedications.find((m: any) => m.itemCode.replace(/^(89|0)+/, '') === nCode);
+              if (match) {
+                 code = match.itemCode;
               }
             }
           }
@@ -663,8 +686,10 @@ export default function OracleQohModal({
             finalCost = Number((finalVal / qty).toFixed(4));
           }
 
-          if (itemsMap.has(code)) {
-            const existing = itemsMap.get(code)!;
+          // Use composite key for itemsMap
+          const compKey = `${targetLoc}_${code}`;
+          if (itemsMap.has(compKey)) {
+            const existing = itemsMap.get(compKey)!;
             existing.qoh += qty;
             existing.totalValue += finalVal;
             if (existing.qoh > 0 && existing.totalValue > 0) {
@@ -673,8 +698,9 @@ export default function OracleQohModal({
               existing.averageCost = finalCost;
             }
           } else {
-            itemsMap.set(code, {
+            itemsMap.set(compKey, {
               itemCode: code,
+              locationId: targetLoc,
               itemName: desc || `Item ${code}`,
               qoh: qty,
               averageCost: finalCost,
@@ -1222,7 +1248,7 @@ export default function OracleQohModal({
                           </thead>
                           <tbody className="divide-y divide-[#141414]/5">
                             {visibleItems.map((item, index) => {
-                              const matchingMed = locMedsMap.get(item.itemCode);
+                              const matchingMed = locMedsMap.get(`${item.locationId || selectedLoc}_${item.itemCode}`);
                               const exists = !!matchingMed;
                               const hasDiff = exists && (
                                 matchingMed.qoh !== item.qoh ||

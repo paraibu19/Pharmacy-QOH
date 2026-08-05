@@ -2158,24 +2158,27 @@ app.post('/api/medications/bulk', async (req, res) => {
 app.post('/api/medications/oracle-qoh', async (req, res) => {
   try {
     const { locationId, items } = req.body;
-    if (!locationId || !Array.isArray(items)) {
-      return res.status(400).json({ error: 'locationId and items array are required' });
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'items array is required' });
     }
 
     const meds = JSON.parse(fs.readFileSync(MEDS_FILE, 'utf8'));
     const updatedMeds: any[] = [];
     const createdMeds: any[] = [];
 
-    // Pre-build map for O(1) lookups
+    // Pre-build map for O(1) lookups. Key: `${locationId}_${itemCode}`
     const medsMap = new Map();
     meds.forEach((m: any, index: number) => {
-      if (m.locationId === locationId) {
-        medsMap.set(m.itemCode, index);
-      }
+      medsMap.set(`${m.locationId}_${m.itemCode}`, index);
     });
 
     for (const item of items) {
-      const existingIndex = medsMap.has(item.itemCode) ? medsMap.get(item.itemCode) : -1;
+      const itemLoc = item.locationId || locationId;
+      if (!itemLoc) continue;
+
+      const key = `${itemLoc}_${item.itemCode}`;
+      const existingIndex = medsMap.has(key) ? medsMap.get(key) : -1;
+      
       if (existingIndex !== -1) {
         const existing = meds[existingIndex];
         const newAvgCost = item.averageCost !== undefined ? item.averageCost : existing.averageCost;
@@ -3941,6 +3944,36 @@ If there are days with no shifts or when a pharmacist is OFF, use "O" as the shi
 });
 
 // POST to delete a duty roster (Requires Admin Password)
+app.post('/api/rosters/reset', async (req, res) => {
+  try {
+    const { adminPassword } = req.body;
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    if (adminPassword !== settings.adminPassword) {
+      return res.status(401).json({ error: 'Incorrect administrator password. Action unauthorized.' });
+    }
+
+    if (!fs.existsSync(ROSTERS_FILE)) {
+      return res.json({ success: true, count: 0 });
+    }
+
+    const rosters = JSON.parse(fs.readFileSync(ROSTERS_FILE, 'utf8'));
+    fs.writeFileSync(ROSTERS_FILE, JSON.stringify([], null, 2));
+
+    if (adminDb) {
+      // Loop over rosters and delete from firestore
+      for (const roster of rosters) {
+        await deleteRosterFromFirestore(roster.id).catch(err => console.error(err));
+      }
+    }
+    updateSystemMetadataInFirestore().catch(err => console.error(err));
+    notifyClients('rosters', []);
+
+    res.json({ success: true, count: 0 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, stack: err.stack, details: String(err) });
+  }
+});
+
 app.post('/api/rosters/delete', async (req, res) => {
   try {
     const { id, adminPassword } = req.body;

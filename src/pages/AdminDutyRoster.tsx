@@ -330,6 +330,11 @@ export default function AdminDutyRoster() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
+  const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
+  const [resetAdminPassword, setResetAdminPassword] = useState<string>('');
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
+
   // Load Saved Rosters
   const fetchRosters = async () => {
     try {
@@ -643,6 +648,38 @@ export default function AdminDutyRoster() {
       setDeleteError(err.message || 'Failed to delete roster');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleResetArchive = async () => {
+    if (!resetAdminPassword) {
+      setResetError('Please enter the administrator password');
+      return;
+    }
+    try {
+      setIsResetting(true);
+      setResetError(null);
+      const res = await fetch('/api/rosters/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminPassword: resetAdminPassword })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Authorization failed');
+      }
+
+      setSavedRosters([]);
+      setCurrentRoster(null);
+      setSelectedRosterId('');
+      setIsResetModalOpen(false);
+      setResetAdminPassword('');
+      alert('Roster archive reset successfully.');
+    } catch (err: any) {
+      setResetError(err.message || 'Failed to reset archive');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -1247,10 +1284,21 @@ export default function AdminDutyRoster() {
 
           {/* B. Saved Months List selector */}
           <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 flex flex-col gap-4">
-            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-              <Grid className="w-4 h-4 text-emerald-600" />
-              <span>Roster Archive</span>
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Grid className="w-4 h-4 text-emerald-600" />
+                <span>Roster Archive</span>
+              </h2>
+              {savedRosters.length > 0 && (
+                <button
+                  onClick={() => setIsResetModalOpen(true)}
+                  className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-all flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Reset Archive
+                </button>
+              )}
+            </div>
 
             {loading ? (
               <div className="py-6 text-center text-gray-400">
@@ -2628,6 +2676,66 @@ export default function AdminDutyRoster() {
                   disabled={isDeleting}
                 >
                   {isDeleting ? 'Deleting...' : 'Authorize Deletion'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Reset Archive Password confirmation */}
+      <AnimatePresence>
+        {isResetModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-gray-100"
+            >
+              <h3 className="text-lg font-black text-gray-900 mb-2">Reset Roster Archive</h3>
+              <p className="text-xs text-gray-500 mb-6">
+                You are about to completely wipe the entire Duty Roster Archive. All saved months will be deleted permanently. This action is irreversible. Please enter the administrator password to authorize.
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                  Admin Password
+                </label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={resetAdminPassword}
+                  onChange={(e) => setResetAdminPassword(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-600 shadow-inner"
+                />
+              </div>
+
+              {resetError && (
+                <div className="p-3 bg-red-50 rounded-xl border border-red-100 flex items-center gap-2 text-xs font-bold text-red-700 mb-4">
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                  <span>{resetError}</span>
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setIsResetModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-gray-200 hover:border-gray-300 hover:bg-gray-50 bg-white transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleResetArchive}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-xl text-xs font-bold text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                  disabled={isResetting}
+                >
+                  {isResetting ? 'Resetting...' : 'Authorize Reset'}
                 </button>
               </div>
             </motion.div>
