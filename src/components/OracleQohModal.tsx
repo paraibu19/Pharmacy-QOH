@@ -65,6 +65,7 @@ export default function OracleQohModal({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveResult, setSaveResult] = useState<{ updatedCount: number; createdCount: number } | null>(null);
+  const [zeroOutMissing, setZeroOutMissing] = useState(true);
   const [detectedColumns, setDetectedColumns] = useState<{
     codeCol: string;
     nameCol: string;
@@ -816,7 +817,8 @@ export default function OracleQohModal({
         },
         body: JSON.stringify({
           locationId: selectedLoc,
-          items: parsedItems
+          items: parsedItems,
+          zeroOutMissing: zeroOutMissing
         })
       });
 
@@ -1339,11 +1341,22 @@ export default function OracleQohModal({
                       </div>
                     </div>
 
-                    <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3.5 flex items-start gap-2.5 text-amber-800 text-[11px] leading-normal font-medium">
-                      <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                      <p>
-                        Applying this will update the stock quantities (QOH), average costs, and total values of matching medication codes in the **{PHARMACIES.find(p => p.id === selectedLoc)?.name}** on the server. If an item code from the Oracle report does not exist in the Bulk Imported Excel Data (Application Database), it will be skipped and won't be created on the application. <strong>Medications not listed in the Excel file will remain unchanged on the application with their latest stored quantities and details.</strong>
-                      </p>
+                    <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3.5 flex flex-col gap-3 text-amber-800 text-[11px] leading-normal font-medium">
+                      <div className="flex items-start gap-2.5">
+                        <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <p>
+                          Applying this will update the stock quantities (QOH), average costs, and total values of matching medication codes in the **{PHARMACIES.find(p => p.id === selectedLoc)?.name}** on the server. If an item code from the Oracle report does not exist in the Bulk Imported Excel Data (Application Database), it will be skipped and won't be created on the application.
+                        </p>
+                      </div>
+                      <label className="flex items-center gap-2 mt-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={zeroOutMissing}
+                          onChange={(e) => setZeroOutMissing(e.target.checked)}
+                          className="rounded text-amber-600 focus:ring-amber-500 border-amber-300 w-4 h-4"
+                        />
+                        <span className="font-bold">Zero out quantities (QOH) for items not present in this uploaded Oracle sheet. (Recommended to maintain exact sync with Oracle).</span>
+                      </label>
                     </div>
                   </div>
                 )}

@@ -51,6 +51,29 @@ export default function AdminWorkload() {
     totalUploadedFiles: 0
   });
   const [uploadedFilesList, setUploadedFilesList] = useState<any[]>([]);
+  const sortedUploadedFiles = useMemo(() => {
+    return [...uploadedFilesList].sort((a, b) => {
+      const parseDateFromFilename = (filename: string) => {
+        const match = filename?.match(/(?:^|[^0-9])(\d{2})[-/](\d{2})[-/](\d{4})(?:[^0-9]|$)/);
+        if (match) {
+          const month = parseInt(match[1], 10);
+          const day = parseInt(match[2], 10);
+          const year = parseInt(match[3], 10);
+          return new Date(year, month - 1, day).getTime();
+        }
+        return 0;
+      };
+      const dateA = parseDateFromFilename(a.filename);
+      const dateB = parseDateFromFilename(b.filename);
+      if (dateA && dateB && dateA !== dateB) {
+        return dateA - dateB;
+      }
+      const timeA = new Date(a.uploadedAt || 0).getTime();
+      const timeB = new Date(b.uploadedAt || 0).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return (a.filename || '').localeCompare(b.filename || '');
+    });
+  }, [uploadedFilesList]);
   const [topMedications, setTopMedications] = useState<any[]>([]);
   const [topStaff, setTopStaff] = useState<any[]>([]);
   const [locationBreakdown, setLocationBreakdown] = useState<any>({
@@ -582,7 +605,7 @@ export default function AdminWorkload() {
 
   const filterAlreadyUploadedFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files);
-    const uploadedNames = new Set(uploadedFilesList.map(f => f.filename));
+    const uploadedNames = new Set(sortedUploadedFiles.map(f => f.filename));
     const newFiles = fileArray.filter(f => !uploadedNames.has(f.name));
     
     if (newFiles.length < fileArray.length) {
@@ -1622,14 +1645,14 @@ export default function AdminWorkload() {
               </span>
               <p className="text-2xl font-black text-indigo-700">{loading ? '...' : metrics.totalUploadedFiles.toLocaleString()}</p>
             </div>
-            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors" title={uploadedFilesList.map(f => f.filename).join('\n')}>
+            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors" title={sortedUploadedFiles.map(f => f.filename).join('\n')}>
               <FileSpreadsheet className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-4 flex items-center justify-between text-[11px] font-bold text-indigo-600">
-            <span className="truncate max-w-[120px]" title={uploadedFilesList.map(f => f.filename).join(', ') || "No files uploaded yet"}>
+            <span className="truncate max-w-[120px]" title={sortedUploadedFiles.map(f => f.filename).join(', ') || "No files uploaded yet"}>
               {uploadedFilesList.length > 0 
-                ? `${uploadedFilesList[uploadedFilesList.length - 1].filename}` 
+                ? `${sortedUploadedFiles[sortedUploadedFiles.length - 1].filename}` 
                 : "Excel spreadsheets parsed"}
             </span>
             <span className="text-[10px] underline decoration-indigo-300 font-extrabold uppercase group-hover:text-indigo-800 transition-colors">
@@ -2460,7 +2483,7 @@ export default function AdminWorkload() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#141414]/5 font-medium">
-                        {uploadedFilesList.map((file, idx) => {
+                        {sortedUploadedFiles.map((file, idx) => {
                           const parsed = file.recordCount || 0;
                           const added = file.addedCount !== undefined ? file.addedCount : parsed;
                           const skipped = Math.max(0, parsed - added);

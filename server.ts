@@ -2157,7 +2157,7 @@ app.post('/api/medications/bulk', async (req, res) => {
 
 app.post('/api/medications/oracle-qoh', async (req, res) => {
   try {
-    const { locationId, items } = req.body;
+    const { locationId, items, zeroOutMissing } = req.body;
     if (!Array.isArray(items)) {
       return res.status(400).json({ error: 'items array is required' });
     }
@@ -2172,11 +2172,17 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
       medsMap.set(`${m.locationId}_${m.itemCode}`, index);
     });
 
+    const processedKeys = new Set<string>();
+    const involvedLocations = new Set<string>();
+
     for (const item of items) {
       const itemLoc = item.locationId || locationId;
       if (!itemLoc) continue;
 
       const key = `${itemLoc}_${item.itemCode}`;
+      processedKeys.add(key);
+      involvedLocations.add(itemLoc);
+
       const existingIndex = medsMap.has(key) ? medsMap.get(key) : -1;
       
       if (existingIndex !== -1) {
@@ -2200,10 +2206,25 @@ app.post('/api/medications/oracle-qoh', async (req, res) => {
           };
           updatedMeds.push(meds[existingIndex]);
         }
-      } else {
-        // As per requirements: If an item code from the Oracle report does not exist in the Bulk Imported Excel Data, 
-        // it will be skipped and won't be created on the application.
-        // So we do nothing here.
+      }
+    }
+
+    if (zeroOutMissing) {
+      for (let i = 0; i < meds.length; i++) {
+        const m = meds[i];
+        if (involvedLocations.has(m.locationId)) {
+          const key = `${m.locationId}_${m.itemCode}`;
+          if (!processedKeys.has(key) && m.qoh !== 0) {
+            meds[i] = {
+              ...m,
+              qoh: 0,
+              totalValue: 0,
+              lastUpdatedAt: new Date().toISOString(),
+              updatedBy: 'Oracle QOH Sync (Zeroed Out)'
+            };
+            updatedMeds.push(meds[i]);
+          }
+        }
       }
     }
 
@@ -2617,6 +2638,29 @@ app.get('/api/workload-records', async (req, res) => {
     if (fs.existsSync(UPLOADED_FILES_FILE)) {
       try {
         uploadedFilesList = JSON.parse(fs.readFileSync(UPLOADED_FILES_FILE, 'utf8'));
+        
+        // Sort chronologically (assuming DD-MM-YYYY format from filename)
+        uploadedFilesList.sort((a, b) => {
+          const parseDate = (filename: string) => {
+            const match = filename?.match(/(?:^|[^0-9])(\d{2})[-/](\d{2})[-/](\d{4})(?:[^0-9]|$)/);
+            if (match) {
+              const month = parseInt(match[1], 10);
+              const day = parseInt(match[2], 10);
+              const year = parseInt(match[3], 10);
+              return new Date(year, month - 1, day).getTime();
+            }
+            return 0;
+          };
+          const dateA = parseDate(a.filename);
+          const dateB = parseDate(b.filename);
+          if (dateA && dateB && dateA !== dateB) {
+            return dateA - dateB; // ASCENDING
+          }
+          const timeA = new Date(a.uploadedAt || 0).getTime();
+          const timeB = new Date(b.uploadedAt || 0).getTime();
+          if (timeA !== timeB) return timeA - timeB;
+          return (a.filename || '').localeCompare(b.filename || '');
+        });
       } catch (e) {}
     }
     const totalUploadedFiles = uploadedFilesList.length;
@@ -4044,8 +4088,19 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+        }
+      }
+    }));
     app.get('*', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
