@@ -973,7 +973,6 @@ export default function OracleQohModal({
                         type="file"
                         ref={fileInputRef}
                         onChange={handleFileChange}
-                        accept=".xlsx,.xls,.XLSX,.XLS,.xml,.XML,.csv,.CSV,.tsv,.TSV,.html,.HTML,.txt,.TXT,*/*"
                         className="hidden"
                       />
                       

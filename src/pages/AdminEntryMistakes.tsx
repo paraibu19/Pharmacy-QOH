@@ -2151,7 +2151,6 @@ export default function AdminEntryMistakes() {
               type="file" 
               ref={fileInputDbRef} 
               className="hidden" 
-              accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel, */*"
               onChange={handleFileChangeDb}
             />
             <Upload className="w-8 h-8 text-[#141414]/40 mx-auto mb-3" />
@@ -2259,7 +2258,6 @@ export default function AdminEntryMistakes() {
                       type="file" 
                       ref={fileInputWorkloadRef} 
                       className="hidden" 
-                      accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel, */*"
                       multiple
                       onChange={handleFileChangeWorkload}
                     />

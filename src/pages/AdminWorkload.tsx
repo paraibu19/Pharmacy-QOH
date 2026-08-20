@@ -1481,7 +1481,6 @@ export default function AdminWorkload() {
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel, */*"
             multiple
             className="hidden"
           />

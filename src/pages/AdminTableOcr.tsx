@@ -637,7 +637,6 @@ export default function AdminTableOcr({
               ref={fileInputRef}
               onChange={handleFileSelect}
               multiple 
-              accept=".pdf" 
               className="hidden" 
             />
             <div className={`p-4 rounded-2xl mb-4 transition-transform ${isDragging ? 'scale-110 bg-[#F27D26]/10 text-[#F27D26]' : 'bg-[#141414]/5 text-[#141414]/40'}`}>

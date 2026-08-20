@@ -1224,7 +1224,6 @@ export default function AdminDutyRoster() {
               <input 
                 type="file" 
                 id="roster-file-upload" 
-                accept=".pdf" 
                 className="hidden" 
                 onChange={handleFileChange}
               />
