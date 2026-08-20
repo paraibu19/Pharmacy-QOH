@@ -3900,7 +3900,7 @@ export default function AdminDashboard() {
                       type="file"
                       ref={fileInputRef}
                       onChange={handleExcelUpload}
-                      accept=".xlsx, .xls"
+                      accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel, */*"
                       className="hidden"
                     />
                   </div>

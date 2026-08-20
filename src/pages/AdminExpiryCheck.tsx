@@ -1224,7 +1224,7 @@ export default function AdminExpiryCheck({
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept=".xlsx, .xls, .csv"
+              accept=".xlsx, .xls, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel, */*"
               className="hidden"
             />
 
